@@ -1,0 +1,74 @@
+/**
+ * 设计语言 Token - CSS 变量定义
+ * 上游依据: docs/design-language.md §2 色彩系统
+ * 所有色彩通过 CSS 变量定义，组件只引用变量，不硬编码颜色。
+ */
+
+/* ===== 暗色主题（默认） ===== */
+:root,
+[data-theme="dark"] {
+  /* 背景层次（由深到浅） */
+  --bg-base: #1e1e1e;
+  --bg-panel: #252526;
+  --bg-elevated: #2d2d30;
+  --bg-input: #2a2a2d;
+
+  /* 前景文字 */
+  --fg-primary: #e8e8e8;
+  --fg-secondary: #a0a0a0;
+  --fg-tertiary: #6a6a6a;
+
+  /* 边框 / 分隔 */
+  --border-default: #3c3c3c;
+  --border-strong: #555555;
+
+  /* 语义色 */
+  --accent: #3b82f6;
+  --accent-hover: #4a90f7;
+  --success: #4ec9b0;
+  --warning: #dcdcaa;
+  --danger: #f48771;
+  --info: #569cd6;
+
+  /* diff 专用色 */
+  --diff-add-bg: #1e3a1e;
+  --diff-add-fg: #4ec9b0;
+  --diff-del-bg: #3a1e1e;
+  --diff-del-fg: #f48771;
+  --diff-hunk-bg: #2a2a3a;
+  --diff-word-bg: #5a5a2e;
+}
+
+/* ===== 亮色主题 ===== */
+[data-theme="light"] {
+  /* 背景层次 */
+  --bg-base: #ffffff;
+  --bg-panel: #f8f8f8;
+  --bg-elevated: #ffffff;
+  --bg-input: #f0f0f0;
+
+  /* 前景文字 */
+  --fg-primary: #1e1e1e;
+  --fg-secondary: #5a5a5a;
+  --fg-tertiary: #9a9a9a;
+
+  /* 边框 / 分隔 */
+  --border-default: #e0e0e0;
+  --border-strong: #bdbdbd;
+
+  /* 语义色 */
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --success: #1a7d1a;
+  --warning: #b8860b;
+  --danger: #c0392b;
+  --info: #2563eb;
+
+  /* diff 专用色 */
+  --diff-add-bg: #e6f4e6;
+  --diff-add-fg: #1a7d1a;
+  --diff-del-bg: #fde8e8;
+  --diff-del-fg: #c0392b;
+  --diff-hunk-bg: #f0f0f8;
+  --diff-word-bg: #fff3bf;
+}

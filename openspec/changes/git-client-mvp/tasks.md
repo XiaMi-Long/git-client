@@ -1,10 +1,10 @@
 ## 1. 项目初始化与基础设施
 
-- [ ] 1.1 用 Tauri 2 + Vue 3 脚手架初始化项目，验证：`cargo tauri dev` 能起空窗口
-- [ ] 1.2 搭建目录结构（`src-tauri/src/{git,watcher,commands}`、`src/{components,views,stores,composables,styles}`），验证：目录存在且 import 路径可用
-- [ ] 1.3 落地设计语言 token（CSS 变量，暗色 `:root` + 亮色 `[data-theme="light"]`），验证：组件引用变量取色正确
-- [ ] 1.4 实现主题切换与持久化，验证：切换亮暗即时生效且重启保持
-- [ ] 1.5 全局基础组件中文化，验证：按钮 / 菜单 / 占位符均为简体中文
+- [x] 1.1 用 Tauri 2 + Vue 3 脚手架初始化项目，验证：`cargo tauri dev` 能起空窗口
+- [x] 1.2 搭建目录结构（`src-tauri/src/{git,watcher,commands}`、`src/{components,views,stores,composables,styles}`），验证：目录存在且 import 路径可用
+- [x] 1.3 落地设计语言 token（CSS 变量，暗色 `:root` + 亮色 `[data-theme="light"]`），验证：组件引用变量取色正确
+- [x] 1.4 实现主题切换与持久化，验证：切换亮暗即时生效且重启保持
+- [x] 1.5 全局基础组件中文化，验证：按钮 / 菜单 / 占位符均为简体中文
 
 ## 2. Rust 后端 git 封装
 
