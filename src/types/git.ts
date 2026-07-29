@@ -98,6 +98,14 @@ export interface BranchOperationResult {
   current_branch: string | null;
 }
 
+/** 远程操作结果（对应后端 RemoteResult） */
+export interface RemoteResult {
+  success: boolean;
+  message: string;
+  has_conflict: boolean;
+  status: WorkingAreaStatus | null;
+}
+
 /** diff 行类型（对应后端 DiffLineType） */
 export type DiffLineType =
   | "context"

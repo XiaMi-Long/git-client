@@ -1,15 +1,15 @@
 /**
  * 选中状态管理
  * 管理当前选中对象（工作区 / 提交）、选中文件、提交信息，
- * 以及暂存 / 提交操作、分支操作
- * 依据: tasks 7.x / 8.x / 9.x
+ * 以及暂存 / 提交操作、分支操作、远程同步
+ * 依据: tasks 7.x / 8.x / 9.x / 10.x
  */
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "./repo";
 import { useCommitStore } from "./commit";
-import type { FileDiff, BranchOperationResult } from "@/types/git";
+import type { FileDiff, BranchOperationResult, RemoteResult } from "@/types/git";
 
 export const useSelectionStore = defineStore("selection", () => {
   const repoStore = useRepoStore();
@@ -173,6 +173,35 @@ export const useSelectionStore = defineStore("selection", () => {
     return result;
   }
 
+  // ===== 远程同步（10.x） =====
+
+  /** 拉取（10.1） */
+  async function pull(): Promise<RemoteResult | null> {
+    const path = repoStore.activeRepo?.path;
+    if (!path) return null;
+    const result = await invoke<RemoteResult>("git_pull", { path });
+    if (result.success) {
+      await repoStore.refreshActive();
+      await commitStore.loadCommits();
+    } else if (result.status) {
+      // 冲突时后端返回最新状态，更新到 store
+      const tab = repoStore.activeRepo;
+      if (tab) tab.status = result.status;
+    }
+    return result;
+  }
+
+  /** 推送（10.2） */
+  async function push(): Promise<RemoteResult | null> {
+    const path = repoStore.activeRepo?.path;
+    if (!path) return null;
+    const result = await invoke<RemoteResult>("git_push", { path });
+    if (result.success) {
+      await repoStore.refreshActive();
+    }
+    return result;
+  }
+
   // commitHash 变化时加载该提交的所有文件 diff
   watch(commitHash, () => {
     loadCommitDiffs();
@@ -199,5 +228,7 @@ export const useSelectionStore = defineStore("selection", () => {
     deleteBranch,
     renameBranch,
     mergeBranch,
+    pull,
+    push,
   };
 });

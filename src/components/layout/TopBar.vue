@@ -1,26 +1,29 @@
 <!--
   @component TopBar
   @description
-    顶栏 - 仓库标签页（打开 / 切换 / 关闭）、当前分支、拉取 / 推送按钮、搜索框、主题切换。
+    顶栏 - 仓库标签页、分支下拉选择、拉取 / 推送按钮、搜索框、主题切换。
   @workflow
-    1. [+] 按钮调系统目录选择对话框 -> openRepo 校验并加载 -> 启动文件监听。
-    2. 标签单击切换激活仓库，× 关闭仓库。
-    3. 搜索框 300ms 防抖后驱动提交列表过滤（6.7）。
-    4. 拉取 / 推送为占位，数据接入在 10 组。
+    1. [+] 按钮调系统目录选择对话框 -> openRepo。
+    2. 分支按钮点击 -> 弹出分支下拉，选中即检出。
+    3. 拉取 / 推送按钮（Ctrl+P / Ctrl+Shift+P）-> 调 git_pull / git_push，结果用对话框提示。
+    4. 搜索框 300ms 防抖驱动提交列表过滤（6.7）。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 接入仓库打开与标签动态化（5.1 / 5.2 / 5.3）。
-    - 2026-07-29: Updated. 搜索框接入提交列表过滤（6.7）。
+    - 2026-07-29: Updated. 仓库打开与标签动态化（5.x）、搜索接入（6.7）。
+    - 2026-07-29: Updated. 分支下拉、拉取推送接入与快捷键（9.2 / 10.1 / 10.2）。
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { computed, ref, watch, onMounted, onUnmounted } from "vue";
+import { open, confirm, message } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
+import { useSelectionStore } from "@/stores/selection";
 import ThemeToggle from "@/components/ThemeToggle.vue";
+import ContextMenu from "./ContextMenu.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
+const selectionStore = useSelectionStore();
 
 // 错误提示（如无效目录），3 秒后自动消失
 const errorMsg = ref<string | null>(null);
@@ -42,7 +45,75 @@ const currentBranch = computed(() => {
   return branch?.name ?? repo.status?.current_branch ?? null;
 });
 
-// 搜索框本地值，300ms 防抖后同步到 commitStore（6.7）
+// ===== 分支下拉 =====
+const branchMenu = ref<{ x: number; y: number } | null>(null);
+
+function onBranchSelectClick(e: MouseEvent) {
+  if (!currentBranch.value) return;
+  const target = e.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  branchMenu.value = { x: rect.left, y: rect.bottom };
+}
+
+function closeBranchMenu() {
+  branchMenu.value = null;
+}
+
+// 分支下拉菜单项（本地分支，选中检出）
+const branchItems = computed(() => {
+  const branches = repoStore.activeRepo?.branches.filter((b) => !b.is_remote) ?? [];
+  return branches.map((b) => ({
+    label: b.name + (b.is_current ? "  ✓" : ""),
+    action: () => {
+      selectionStore.checkoutBranch(b.name);
+    },
+    disabled: b.is_current,
+  }));
+});
+
+// ===== 拉取 / 推送 =====
+const pulling = ref(false);
+const pushing = ref(false);
+
+async function handlePull() {
+  if (pulling.value || !repoStore.activeRepo) return;
+  pulling.value = true;
+  try {
+    const result = await selectionStore.pull();
+    if (result) {
+      await message(result.message, result.success ? "拉取" : "拉取失败");
+    }
+  } finally {
+    pulling.value = false;
+  }
+}
+
+async function handlePush() {
+  if (pushing.value || !repoStore.activeRepo) return;
+  pushing.value = true;
+  try {
+    const result = await selectionStore.push();
+    if (result) {
+      await message(result.message, result.success ? "推送" : "推送失败");
+    }
+  } finally {
+    pushing.value = false;
+  }
+}
+
+// 快捷键：Ctrl+P 拉取，Ctrl+Shift+P 推送
+function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    e.preventDefault();
+    if (e.shiftKey) handlePush();
+    else handlePull();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+
+// ===== 搜索 =====
 const localSearch = ref("");
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 watch(localSearch, (val) => {
@@ -52,7 +123,7 @@ watch(localSearch, (val) => {
   }, 300);
 });
 
-// 打开仓库：选目录 -> 校验 -> 加载
+// 打开仓库
 async function handleOpenRepo() {
   const selected = await open({ directory: true, multiple: false });
   if (typeof selected !== "string") return;
@@ -96,26 +167,37 @@ function handleSwitchRepo(id: string) {
         class="branch-select"
         :disabled="!currentBranch"
         :title="currentBranch ? '切换分支' : '未打开仓库'"
+        @click="onBranchSelectClick"
       >
         <span class="branch-dot" />
         <span>{{ currentBranch ?? "未打开仓库" }}</span>
         <span class="caret">▾</span>
       </button>
-      <button class="action-btn" title="拉取 (Ctrl+P)" :disabled="!repoStore.activeRepo">
+      <button
+        class="action-btn"
+        title="拉取 (Ctrl+P)"
+        :disabled="!repoStore.activeRepo || pulling"
+        @click="handlePull"
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-        <span>拉取</span>
+        <span>{{ pulling ? "拉取中…" : "拉取" }}</span>
       </button>
-      <button class="action-btn" title="推送 (Ctrl+Shift+P)" :disabled="!repoStore.activeRepo">
+      <button
+        class="action-btn"
+        title="推送 (Ctrl+Shift+P)"
+        :disabled="!repoStore.activeRepo || pushing"
+        @click="handlePush"
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <span>推送</span>
+        <span>{{ pushing ? "推送中…" : "推送" }}</span>
       </button>
     </div>
 
@@ -133,6 +215,15 @@ function handleSwitchRepo(id: string) {
 
     <!-- 错误提示条 -->
     <div v-if="errorMsg" class="error-bar">{{ errorMsg }}</div>
+
+    <!-- 分支下拉 -->
+    <ContextMenu
+      v-if="branchMenu"
+      :x="branchMenu.x"
+      :y="branchMenu.y"
+      :items="branchItems"
+      @close="closeBranchMenu"
+    />
   </div>
 </template>
 
