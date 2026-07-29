@@ -54,6 +54,8 @@ pub struct LogQuery {
     pub branch: Option<String>,
     /// 搜索关键词（匹配提交信息/作者/哈希）
     pub search: Option<String>,
+    /// 是否查询所有分支（--all），为 true 时忽略 branch
+    pub all_branches: bool,
 }
 
 impl Default for LogQuery {
@@ -63,6 +65,7 @@ impl Default for LogQuery {
             limit: PAGE_SIZE,
             branch: None,
             search: None,
+            all_branches: false,
         }
     }
 }
@@ -89,8 +92,10 @@ impl GitExecutor {
             format!("-n{}", query.limit),
         ];
 
-        // 分支过滤
-        if let Some(branch) = &query.branch {
+        // 分支范围：all_branches 用 --all，否则指定分支或默认 HEAD
+        if query.all_branches {
+            args.push("--all".to_string());
+        } else if let Some(branch) = &query.branch {
             args.push(branch.clone());
         }
 

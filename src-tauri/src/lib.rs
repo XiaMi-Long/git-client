@@ -10,13 +10,19 @@ pub mod commands;
 // 文件监听模块
 pub mod watcher;
 
+use std::sync::Mutex;
+
 use tauri::Manager;
+
+use watcher::WatcherState;
 
 /// 应用启动入口
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(Mutex::new(WatcherState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::git_detect_version,
             commands::git_is_valid_repo,
@@ -49,7 +55,9 @@ pub fn run() {
             commands::git_unstage,
             commands::git_add_all,
             commands::git_unstage_all,
-            commands::git_commit
+            commands::git_commit,
+            watcher::watcher_start,
+            watcher::watcher_stop
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

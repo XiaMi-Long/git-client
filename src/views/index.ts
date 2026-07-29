@@ -2,4 +2,4 @@
  * 视图目录
  * 三栏主视图及子视图
  */
-export {};
+export { default as MainView } from "./MainView.vue";

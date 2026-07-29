@@ -64,7 +64,7 @@ impl GitExecutor {
             repo_path,
             &[
                 "for-each-ref",
-                "--format=%(HEAD)%00%(refname)%00%(objectname)%00%(subject)%00%(upstream:short)%00%(upstream:track,nocrumbs)",
+                "--format=%(HEAD)%00%(refname)%00%(objectname)%00%(subject)%00%(upstream:short)%00%(upstream:track)",
                 "refs/heads/",
                 "refs/remotes/",
             ],

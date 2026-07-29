@@ -15,9 +15,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
+# 文件监听（tasks 3.x）
+notify = "7"
+# .gitignore 过滤（ripgrep 同源）
+ignore = "0.4"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
