@@ -1,4 +1,341 @@
 ﻿// Tauri command 处理模块
 // 前端通过 invoke 调用的命令在此注册
+// 依据: design.md D3, tasks 2.x
 
-// 模块占位，后续任务 2.x 实现
+use std::path::PathBuf;
+
+use crate::git::{
+    BranchOperationResult, BranchInfo, CommitInfo, FileDiff, GitExecutor,
+    GitVersionInfo, LogQuery, OperationState, RemoteResult, TagInfo, WorkingAreaStatus,
+};
+
+/// 将路径字符串转为 PathBuf
+fn to_path(path: &str) -> PathBuf {
+    PathBuf::from(path)
+}
+
+/// 检测 git 版本（2.1）
+#[tauri::command]
+pub async fn git_detect_version() -> Result<GitVersionInfo, String> {
+    GitExecutor::detect_version()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 验证目录是否为有效 git 仓库
+#[tauri::command]
+pub async fn git_is_valid_repo(path: String) -> Result<bool, String> {
+    Ok(GitExecutor::is_valid_repo(&to_path(&path)).await)
+}
+
+/// 获取工作区状态（2.2）
+#[tauri::command]
+pub async fn git_get_status(path: String) -> Result<WorkingAreaStatus, String> {
+    GitExecutor::get_status(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取提交日志（2.3）
+#[tauri::command]
+pub async fn git_get_log(path: String, query: LogQuery) -> Result<Vec<CommitInfo>, String> {
+    GitExecutor::get_log(&to_path(&path), &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取提交总数
+#[tauri::command]
+pub async fn git_get_commit_count(path: String, branch: Option<String>) -> Result<usize, String> {
+    GitExecutor::get_commit_count(&to_path(&path), branch.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取工作区某文件的 diff（2.4）
+#[tauri::command]
+pub async fn git_get_working_diff(path: String, file_path: String) -> Result<Vec<FileDiff>, String> {
+    GitExecutor::get_working_diff(&to_path(&path), &file_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取已暂存某文件的 diff
+#[tauri::command]
+pub async fn git_get_staged_diff(path: String, file_path: String) -> Result<Vec<FileDiff>, String> {
+    GitExecutor::get_staged_diff(&to_path(&path), &file_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取指定提交中某文件的 diff
+#[tauri::command]
+pub async fn git_get_commit_diff(
+    path: String,
+    commit_hash: String,
+    file_path: Option<String>,
+) -> Result<Vec<FileDiff>, String> {
+    GitExecutor::get_commit_diff(&to_path(&path), &commit_hash, file_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取所有分支（2.5）
+#[tauri::command]
+pub async fn git_list_branches(path: String) -> Result<Vec<BranchInfo>, String> {
+    GitExecutor::list_branches(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取所有标签
+#[tauri::command]
+pub async fn git_list_tags(path: String) -> Result<Vec<TagInfo>, String> {
+    GitExecutor::list_tags(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取当前分支名
+#[tauri::command]
+pub async fn git_get_current_branch(path: String) -> Result<Option<String>, String> {
+    GitExecutor::get_current_branch(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 新建分支（2.6）
+#[tauri::command]
+pub async fn git_create_branch(
+    path: String,
+    name: String,
+    checkout: bool,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::create_branch(&to_path(&path), &name, checkout)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 检出分支
+#[tauri::command]
+pub async fn git_checkout_branch(
+    path: String,
+    name: String,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::checkout_branch(&to_path(&path), &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 删除分支
+#[tauri::command]
+pub async fn git_delete_branch(
+    path: String,
+    name: String,
+    force: bool,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::delete_branch(&to_path(&path), &name, force)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 重命名分支
+#[tauri::command]
+pub async fn git_rename_branch(
+    path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::rename_branch(&to_path(&path), &old_name, &new_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 合并分支
+#[tauri::command]
+pub async fn git_merge_branch(
+    path: String,
+    source: String,
+    no_ff: bool,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::merge_branch(&to_path(&path), &source, no_ff)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// cherry-pick（2.7）
+#[tauri::command]
+pub async fn git_cherry_pick(
+    path: String,
+    commit_hash: String,
+) -> Result<RemoteResult, String> {
+    GitExecutor::cherry_pick(&to_path(&path), &commit_hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// cherry-pick 继续
+#[tauri::command]
+pub async fn git_cherry_pick_continue(path: String) -> Result<RemoteResult, String> {
+    GitExecutor::cherry_pick_continue(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// cherry-pick 中止
+#[tauri::command]
+pub async fn git_cherry_pick_abort(path: String) -> Result<(), String> {
+    GitExecutor::cherry_pick_abort(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 拉取（2.8）
+#[tauri::command]
+pub async fn git_pull(path: String) -> Result<RemoteResult, String> {
+    GitExecutor::pull(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 推送
+#[tauri::command]
+pub async fn git_push(path: String) -> Result<RemoteResult, String> {
+    GitExecutor::push(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 推送到指定远程分支
+#[tauri::command]
+pub async fn git_push_upstream(
+    path: String,
+    remote: String,
+    branch: String,
+) -> Result<RemoteResult, String> {
+    GitExecutor::push_upstream(&to_path(&path), &remote, &branch)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 检测冲突状态（2.9）
+#[tauri::command]
+pub async fn git_check_conflict(path: String) -> Result<bool, String> {
+    GitExecutor::check_conflict(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取冲突文件列表
+#[tauri::command]
+pub async fn git_list_conflicted_files(path: String) -> Result<Vec<String>, String> {
+    GitExecutor::list_conflicted_files(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 标记冲突文件为已解决
+#[tauri::command]
+pub async fn git_mark_resolved(path: String, file_path: String) -> Result<(), String> {
+    GitExecutor::mark_resolved(&to_path(&path), &file_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 中止操作（合并/rebase/cherry-pick）
+#[tauri::command]
+pub async fn git_abort_operation(path: String) -> Result<(), String> {
+    GitExecutor::abort_operation(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取当前操作状态
+#[tauri::command]
+pub async fn git_get_operation_state(path: String) -> Result<OperationState, String> {
+    GitExecutor::get_operation_state(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 暂存文件（git add）
+#[tauri::command]
+pub async fn git_add(path: String, file_path: String) -> Result<(), String> {
+    GitExecutor::run_git(&to_path(&path), &["add", &file_path])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 取消暂存（git reset HEAD --）
+#[tauri::command]
+pub async fn git_unstage(path: String, file_path: String) -> Result<(), String> {
+    GitExecutor::run_git(&to_path(&path), &["reset", "HEAD", "--", &file_path])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 全部暂存
+#[tauri::command]
+pub async fn git_add_all(path: String) -> Result<(), String> {
+    GitExecutor::run_git(&to_path(&path), &["add", "-A"])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 全部取消暂存
+#[tauri::command]
+pub async fn git_unstage_all(path: String) -> Result<(), String> {
+    GitExecutor::run_git(&to_path(&path), &["reset", "HEAD"])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 提交
+#[tauri::command]
+pub async fn git_commit(path: String, message: String) -> Result<String, String> {
+    GitExecutor::run_git(&to_path(&path), &["commit", "-m", &message])
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取所有已注册的 command 列表，用于 lib.rs 注册
+pub fn all_commands() -> Vec<&'static str> {
+    vec![
+        "git_detect_version",
+        "git_is_valid_repo",
+        "git_get_status",
+        "git_get_log",
+        "git_get_commit_count",
+        "git_get_working_diff",
+        "git_get_staged_diff",
+        "git_get_commit_diff",
+        "git_list_branches",
+        "git_list_tags",
+        "git_get_current_branch",
+        "git_create_branch",
+        "git_checkout_branch",
+        "git_delete_branch",
+        "git_rename_branch",
+        "git_merge_branch",
+        "git_cherry_pick",
+        "git_cherry_pick_continue",
+        "git_cherry_pick_abort",
+        "git_pull",
+        "git_push",
+        "git_push_upstream",
+        "git_check_conflict",
+        "git_list_conflicted_files",
+        "git_mark_resolved",
+        "git_abort_operation",
+        "git_get_operation_state",
+        "git_add",
+        "git_unstage",
+        "git_add_all",
+        "git_unstage_all",
+        "git_commit",
+    ]
+}
