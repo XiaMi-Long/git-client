@@ -2,23 +2,25 @@
   @component CommitList
   @description
     提交列表区 - 分支范围切换、工作区伪节点、提交列表（含 mini 图谱列占位）。
-    工作区伪节点点击进入工作区模式；提交项点击选中该提交（退出工作区模式）。
+    提交项右键：cherry-pick / 复制哈希（11.1）。
   @workflow
     1. 仓库切换 -> loadCommits 加载第一页。
     2. 滚动到底 -> loadMore 加载下一页（6.2）。
-    3. scope / browseBranch / search 变化 -> 重新加载第一页（store 内 watch）。
-    4. 点击工作区伪节点 -> 进入工作区模式（7.2）。
+    3. 点击工作区伪节点 -> 进入工作区模式（7.2）。
+    4. 右键提交 -> cherry-pick（11.1）。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 接入提交列表渲染、分页、范围切换（6.1 / 6.2 / 6.5）。
-    - 2026-07-29: Fixed. 提交项时间列换行问题。
-    - 2026-07-29: Updated. 工作区伪节点接入选中、未提交数（7.1 / 7.2）。
+    - 2026-07-29: Updated. 提交列表渲染、分页、范围切换（6.x）、工作区伪节点（7.x）。
+    - 2026-07-29: Updated. 提交右键 cherry-pick（11.1）。
 -->
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import { message } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
+import type { CommitInfo } from "@/types/git";
+import ContextMenu from "./ContextMenu.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -26,12 +28,38 @@ const selectionStore = useSelectionStore();
 
 const listEl = ref<HTMLElement | null>(null);
 
-// 未提交文件数（已暂存 + 未暂存 + 未跟踪）
+// 未提交文件数
 const workingCount = computed(() => {
   const s = repoStore.activeRepo?.status;
   if (!s) return 0;
   return s.staged.length + s.unstaged.length + s.untracked.length;
 });
+
+// 提交右键菜单
+const commitMenu = ref<{ x: number; y: number; commit: CommitInfo } | null>(null);
+
+function onCommitContextmenu(e: MouseEvent, c: CommitInfo) {
+  e.preventDefault();
+  commitMenu.value = { x: e.clientX, y: e.clientY, commit: c };
+}
+
+function closeCommitMenu() {
+  commitMenu.value = null;
+}
+
+async function handleCherryPick(c: CommitInfo) {
+  const result = await selectionStore.cherryPick(c.hash);
+  if (result) {
+    await message(result.message, result.success ? "cherry-pick" : "cherry-pick 失败");
+  }
+}
+
+function commitMenuItems(c: CommitInfo) {
+  return [
+    { label: "cherry-pick", action: () => handleCherryPick(c) },
+    { label: "复制哈希", action: () => navigator.clipboard?.writeText(c.hash) },
+  ];
+}
 
 // 仓库切换时重新加载提交
 watch(
@@ -95,8 +123,8 @@ function onScroll() {
         :class="{ active: selectionStore.commitHash === c.hash }"
         :title="c.subject"
         @click="selectionStore.selectCommit(c.hash)"
+        @contextmenu="onCommitContextmenu($event, c)"
       >
-        <!-- mini 图谱列占位（6.4 实现） -->
         <span class="graph-col" />
         <span class="commit-hash">{{ c.short_hash }}</span>
         <span class="commit-subject">{{ c.subject }}</span>
@@ -107,7 +135,6 @@ function onScroll() {
         <span class="commit-date">{{ c.relative_date }}</span>
       </div>
 
-      <!-- 加载更多提示 -->
       <div v-if="commitStore.loadingMore" class="load-hint">加载中…</div>
       <div
         v-else-if="!commitStore.hasMore && commitStore.commits.length > 0"
@@ -115,11 +142,7 @@ function onScroll() {
       >
         没有更多了
       </div>
-
-      <!-- 首次加载 -->
       <div v-if="commitStore.loading" class="load-hint">加载中…</div>
-
-      <!-- 空状态 -->
       <div
         v-if="!commitStore.loading && commitStore.commits.length === 0"
         class="list-empty"
@@ -127,6 +150,15 @@ function onScroll() {
         <p>{{ repoStore.activeRepo ? "暂无提交" : "打开仓库后展示提交历史" }}</p>
       </div>
     </div>
+
+    <!-- 提交右键菜单 -->
+    <ContextMenu
+      v-if="commitMenu"
+      :x="commitMenu.x"
+      :y="commitMenu.y"
+      :items="commitMenuItems(commitMenu.commit)"
+      @close="closeCommitMenu"
+    />
   </div>
 </template>
 

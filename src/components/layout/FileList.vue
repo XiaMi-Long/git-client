@@ -2,12 +2,13 @@
   @component FileList
   @description
     右侧上方 - 更改文件列表。
+    冲突模式：冲突文件列表 + 标记已解决（12.2 / 12.3）。
     工作区模式：已暂存 / 未暂存两组 + 文件级暂存操作（7.3 / 7.4）。
-    提交模式：该提交的文件列表（8.4，从 commitFileDiffs 提取）。
+    提交模式：该提交的文件列表（8.4）。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 工作区模式已暂存 / 未暂存两组与暂存操作（7.3 / 7.4）。
-    - 2026-07-29: Updated. 提交模式文件列表（8.4）。
+    - 2026-07-29: Updated. 工作区模式两组与暂存（7.x）、提交模式文件列表（8.4）。
+    - 2026-07-29: Updated. 冲突模式冲突文件列表与标记已解决（12.2 / 12.3）。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -22,11 +23,9 @@ const staged = computed(() => repoStore.activeRepo?.status.staged ?? []);
 const unstaged = computed(() => repoStore.activeRepo?.status.unstaged ?? []);
 const untracked = computed(() => repoStore.activeRepo?.status.untracked ?? []);
 const isWorking = computed(() => selectionStore.isWorkingMode);
-
-// 提交模式的文件列表（从 commitFileDiffs 提取）
+const isConflicted = computed(() => selectionStore.isConflicted);
 const commitFiles = computed(() => selectionStore.commitFileDiffs);
 
-// 变更类型 -> 状态字母
 function statusLetter(type: FileChangeType): string {
   const map: Record<string, string> = {
     added: "A",
@@ -41,7 +40,6 @@ function statusLetter(type: FileChangeType): string {
   return map[type] ?? "M";
 }
 
-// 变更类型 -> 状态色
 function statusColor(type: FileChangeType): string {
   switch (type) {
     case "added":
@@ -55,7 +53,6 @@ function statusColor(type: FileChangeType): string {
   }
 }
 
-// FileDiff -> 状态字母（提交模式）
 function diffStatusLetter(f: FileDiff): string {
   if (f.is_new) return "A";
   if (f.is_deleted) return "D";
@@ -77,15 +74,32 @@ function diffPath(f: FileDiff): string {
 
 <template>
   <div class="file-list">
-    <template v-if="isWorking">
-      <!-- 已暂存组 -->
+    <!-- 冲突模式（12.2 / 12.3）优先 -->
+    <template v-if="isConflicted">
+      <div class="group-header conflict-header">
+        <span>⚠ 冲突文件 ({{ selectionStore.conflictedFiles.length }})</span>
+      </div>
+      <div
+        v-for="f in selectionStore.conflictedFiles"
+        :key="f"
+        class="file-item conflict"
+        :title="f"
+      >
+        <span class="file-status" style="color: var(--danger)">!</span>
+        <span class="file-path">{{ f }}</span>
+        <button class="file-action" @click="selectionStore.markResolved(f)">
+          标记已解决
+        </button>
+      </div>
+      <div v-if="selectionStore.conflictedFiles.length === 0" class="list-empty">
+        <p>无冲突文件</p>
+      </div>
+    </template>
+
+    <template v-else-if="isWorking">
       <div class="group-header">
         <span>已暂存 ({{ staged.length }})</span>
-        <button
-          v-if="staged.length > 0"
-          class="group-action"
-          @click="selectionStore.unstageAll()"
-        >
+        <button v-if="staged.length > 0" class="group-action" @click="selectionStore.unstageAll()">
           全部取消暂存
         </button>
       </div>
@@ -100,12 +114,9 @@ function diffPath(f: FileDiff): string {
           {{ statusLetter(f.change_type) }}
         </span>
         <span class="file-path">{{ f.path }}</span>
-        <button class="file-action" @click.stop="selectionStore.unstageFile(f.path)">
-          取消暂存
-        </button>
+        <button class="file-action" @click.stop="selectionStore.unstageFile(f.path)">取消暂存</button>
       </div>
 
-      <!-- 未暂存组 -->
       <div class="group-header">
         <span>未暂存 ({{ unstaged.length + untracked.length }})</span>
         <button
@@ -127,9 +138,7 @@ function diffPath(f: FileDiff): string {
           {{ statusLetter(f.change_type) }}
         </span>
         <span class="file-path">{{ f.path }}</span>
-        <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">
-          暂存
-        </button>
+        <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
       </div>
       <div
         v-for="f in untracked"
@@ -142,12 +151,9 @@ function diffPath(f: FileDiff): string {
           {{ statusLetter(f.change_type) }}
         </span>
         <span class="file-path">{{ f.path }}</span>
-        <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">
-          暂存
-        </button>
+        <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
       </div>
 
-      <!-- 空状态 -->
       <div
         v-if="staged.length === 0 && unstaged.length === 0 && untracked.length === 0"
         class="list-empty"
@@ -157,7 +163,6 @@ function diffPath(f: FileDiff): string {
     </template>
 
     <template v-else-if="selectionStore.commitHash">
-      <!-- 提交模式文件列表 -->
       <div class="group-header">
         <span>更改文件 ({{ commitFiles.length }})</span>
       </div>
@@ -183,12 +188,8 @@ function diffPath(f: FileDiff): string {
     </template>
 
     <template v-else>
-      <div class="panel-header">
-        <span>更改文件</span>
-      </div>
-      <div class="list-empty">
-        <p>选中提交或工作区后展示文件列表</p>
-      </div>
+      <div class="panel-header"><span>更改文件</span></div>
+      <div class="list-empty"><p>选中提交或工作区后展示文件列表</p></div>
     </template>
   </div>
 </template>
@@ -214,6 +215,10 @@ function diffPath(f: FileDiff): string {
   font-size: 12px;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.conflict-header {
+  color: var(--danger);
 }
 
 .group-action {
@@ -254,6 +259,10 @@ function diffPath(f: FileDiff): string {
 
 .file-item.active .file-action {
   color: #fff;
+}
+
+.file-item.conflict .file-path {
+  color: var(--danger);
 }
 
 .file-status {

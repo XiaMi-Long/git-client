@@ -1,21 +1,24 @@
 <!--
   @component StatusBar
   @description
-    状态栏 - 连接状态、领先 / 落后计数、编码。
+    状态栏 - 连接状态、领先 / 落后计数、冲突时显示继续 / 中止（12.4）、编码。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 接入仓库连接状态与领先 / 落后（5.4）。
+    - 2026-07-29: Updated. 连接状态与领先落后（5.4）、冲突继续 / 中止（12.4）。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRepoStore } from "@/stores/repo";
+import { useSelectionStore } from "@/stores/selection";
 
 const repoStore = useRepoStore();
+const selectionStore = useSelectionStore();
 
 const hasRepo = computed(() => !!repoStore.activeRepo);
 const isConnected = computed(() => !!repoStore.activeRepo?.status?.upstream);
 const ahead = computed(() => repoStore.activeRepo?.status?.ahead ?? 0);
 const behind = computed(() => repoStore.activeRepo?.status?.behind ?? 0);
+const isConflicted = computed(() => selectionStore.isConflicted);
 
 const connectionText = computed(() => {
   const repo = repoStore.activeRepo;
@@ -23,6 +26,22 @@ const connectionText = computed(() => {
   const upstream = repo.status?.upstream;
   if (upstream) return `已连接 ${upstream}`;
   return "无远程";
+});
+
+// 冲突状态文案
+const conflictText = computed(() => {
+  switch (selectionStore.operationState) {
+    case "cherrypicking":
+      return "cherry-pick 冲突";
+    case "merging":
+      return "合并冲突";
+    case "rebasing":
+      return "rebase 冲突";
+    case "conflict":
+      return "存在冲突";
+    default:
+      return "冲突中";
+  }
 });
 </script>
 
@@ -33,15 +52,22 @@ const connectionText = computed(() => {
       <span class="status-dot" :class="{ connected: isConnected }" />
       <span>{{ connectionText }}</span>
     </div>
-    <!-- 中：领先/落后 -->
+
+    <!-- 中：冲突时显示继续 / 中止（12.4），否则领先 / 落后 -->
     <div class="center">
-      <template v-if="hasRepo">
+      <template v-if="isConflicted">
+        <span class="conflict-text">⚠ {{ conflictText }}</span>
+        <button class="op-btn" @click="selectionStore.continueOperation()">继续</button>
+        <button class="op-btn danger" @click="selectionStore.abortOperation()">中止</button>
+      </template>
+      <template v-else-if="hasRepo">
         <span v-if="ahead > 0" class="ahead">领先 {{ ahead }}</span>
         <span v-if="behind > 0" class="behind">落后 {{ behind }}</span>
         <span v-if="ahead === 0 && behind === 0">-</span>
       </template>
       <template v-else>-</template>
     </div>
+
     <!-- 右：编码 -->
     <div class="right">UTF-8</div>
   </div>
@@ -93,6 +119,31 @@ const connectionText = computed(() => {
 
 .behind {
   color: var(--warning);
+}
+
+.conflict-text {
+  color: var(--danger);
+}
+
+.op-btn {
+  height: 18px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.op-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-strong);
+}
+
+.op-btn.danger {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .right {

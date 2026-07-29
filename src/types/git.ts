@@ -106,6 +106,9 @@ export interface RemoteResult {
   status: WorkingAreaStatus | null;
 }
 
+/** 当前 git 操作状态（对应后端 OperationState） */
+export type OperationState = "normal" | "merging" | "rebasing" | "cherrypicking" | "conflict";
+
 /** diff 行类型（对应后端 DiffLineType） */
 export type DiffLineType =
   | "context"

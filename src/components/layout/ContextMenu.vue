@@ -1,14 +1,16 @@
 <!--
   @component ContextMenu
   @description
-    通用右键菜单，Teleport 到 body 避免被父容器裁剪。点击空白或项后关闭。
+    通用右键菜单 / 下拉菜单，Teleport 到 body 避免被父容器裁剪。
+    点击菜单外部（mousedown）或菜单项后关闭。
   @usage
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="items" @close="menu=null" />
   @changeLog
     - 2026-07-29: Created. 用于分支右键操作（9.x）。
+    - 2026-07-29: Fixed. 关闭机制改用 mousedown + contains，避免点击外部不关闭。
 -->
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 
 interface MenuItem {
   label: string;
@@ -26,24 +28,27 @@ defineProps<{
 
 const emit = defineEmits<{ close: [] }>();
 
-function onDocClick() {
-  emit("close");
+const rootEl = ref<HTMLElement | null>(null);
+
+// 点击菜单外部时关闭（mousedown 比 click 早，避免与打开事件冲突）
+function onDocMouseDown(e: MouseEvent) {
+  if (rootEl.value && !rootEl.value.contains(e.target as Node)) {
+    emit("close");
+  }
 }
 
 onMounted(() => {
-  document.addEventListener("click", onDocClick);
-  document.addEventListener("contextmenu", onDocClick);
+  document.addEventListener("mousedown", onDocMouseDown);
 });
 
 onUnmounted(() => {
-  document.removeEventListener("click", onDocClick);
-  document.removeEventListener("contextmenu", onDocClick);
+  document.removeEventListener("mousedown", onDocMouseDown);
 });
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="context-menu" :style="{ left: x + 'px', top: y + 'px' }" @click.stop @contextmenu.prevent>
+    <div ref="rootEl" class="context-menu" :style="{ left: x + 'px', top: y + 'px' }" @contextmenu.prevent>
       <template v-for="(item, i) in items" :key="i">
         <div v-if="item.divider" class="menu-divider" />
         <button
