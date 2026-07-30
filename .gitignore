@@ -18,7 +18,7 @@ Thumbs.db
 
 # 日志
 *.log
-*.txt
+# *.txt
 
 # 会话记录
 *caveat*
