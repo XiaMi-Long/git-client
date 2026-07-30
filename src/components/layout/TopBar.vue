@@ -14,7 +14,7 @@
     - 2026-07-30: Updated. 拉取/推送结果改用统一 ConfirmDialog（替代原生 message）。
 -->
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted, onUnmounted } from "vue";
+import { computed, ref, watch, onMounted, onUnmounted } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
@@ -120,10 +120,7 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
-  window.addEventListener("keydown", onKeydown);
-  nextTick(() => updateHidden());
-});
+onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 // ===== 搜索 =====
@@ -154,56 +151,24 @@ async function handleCloseRepo(id: string) {
 function handleSwitchRepo(id: string) {
   repoStore.setActive(id);
 }
-
-// 仓库标签 x 轴滚动 + 右侧隐藏计数
-const repoTabsEl = ref<HTMLElement | null>(null);
-const hiddenCount = ref(0);
-
-function updateHidden() {
-  const el = repoTabsEl.value;
-  if (!el) return;
-  const visibleEnd = el.scrollLeft + el.clientWidth;
-  let visible = 0;
-  el.querySelectorAll(".repo-tab").forEach((t) => {
-    const node = t as HTMLElement;
-    if (node.offsetLeft + node.offsetWidth <= visibleEnd + 2) visible++;
-  });
-  hiddenCount.value = Math.max(0, repoStore.repos.length - visible);
-}
-
-function onTabsScroll() {
-  updateHidden();
-}
-
-watch(
-  () => repoStore.repos.length,
-  () => nextTick(() => updateHidden())
-);
 </script>
 
 <template>
   <div class="top-bar">
     <!-- 仓库标签页 -->
-    <div class="repo-tabs-wrap">
-      <div ref="repoTabsEl" class="repo-tabs" @scroll="onTabsScroll">
-        <div
-          v-for="tab in repoStore.repos"
-          :key="tab.id"
-          class="repo-tab"
-          :class="{ active: tab.id === repoStore.activeId }"
-          :title="tab.path"
-          @click="handleSwitchRepo(tab.id)"
-        >
-          <span>{{ tab.name }}</span>
-          <span class="repo-close" @click.stop="handleCloseRepo(tab.id)">×</span>
-        </div>
-        <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">+</button>
+    <div class="repo-tabs">
+      <div
+        v-for="tab in repoStore.repos"
+        :key="tab.id"
+        class="repo-tab"
+        :class="{ active: tab.id === repoStore.activeId }"
+        :title="tab.path"
+        @click="handleSwitchRepo(tab.id)"
+      >
+        <span class="repo-tab-name">{{ tab.name }}</span>
+        <span class="repo-close" @click.stop="handleCloseRepo(tab.id)">×</span>
       </div>
-      <span
-        v-if="hiddenCount > 0"
-        class="hidden-tag"
-        :title="`右侧还有 ${hiddenCount} 个标签`"
-      >+{{ hiddenCount }}</span>
+      <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">+</button>
     </div>
 
     <!-- 当前分支 + 拉取/推送 -->
@@ -313,33 +278,18 @@ watch(
 }
 
 /* 仓库标签页 */
-.repo-tabs-wrap {
-  position: relative;
+.repo-tabs {
   display: flex;
   align-items: center;
+  gap: 2px;
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.repo-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.repo-tabs::-webkit-scrollbar {
-  height: 4px;
-}
-
-.repo-tabs::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-}
-
 .repo-tab {
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 60px;
   height: 28px;
   padding: 0 8px 0 12px;
   display: flex;
@@ -349,20 +299,14 @@ watch(
   color: var(--fg-secondary);
   border-bottom: 2px solid transparent;
   cursor: pointer;
+  overflow: hidden;
 }
 
-.hidden-tag {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 2px;
-  pointer-events: none;
-  z-index: 1;
+.repo-tab-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repo-tab.active {
