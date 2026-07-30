@@ -24,6 +24,7 @@ import ThemeToggle from "@/components/ThemeToggle.vue";
 import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import SettingsDialog from "./SettingsDialog.vue";
+import SquashPickDialog from "./SquashPickDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -32,6 +33,8 @@ const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 
 // 设置弹窗
 const settingsOpen = ref(false);
+// 压缩挑拣弹窗
+const squashOpen = ref(false);
 
 // 错误提示（如无效目录），3 秒后自动消失
 const errorMsg = ref<string | null>(null);
@@ -206,6 +209,14 @@ function handleSwitchRepo(id: string) {
         </svg>
         <span>{{ pushing ? "推送中…" : "推送" }}</span>
       </button>
+      <button
+        class="action-btn primary"
+        title="压缩挑拣"
+        :disabled="!repoStore.activeRepo"
+        @click="squashOpen = true"
+      >
+        <span>压缩挑拣</span>
+      </button>
     </div>
 
     <!-- 搜索框 + 主题 -->
@@ -225,6 +236,7 @@ function handleSwitchRepo(id: string) {
         </svg>
       </button>
       <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
+      <SquashPickDialog v-if="squashOpen" @close="squashOpen = false" />
     </div>
 
     <!-- 错误提示条 -->
@@ -392,6 +404,16 @@ function handleSwitchRepo(id: string) {
 .action-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.action-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 /* 右侧 */

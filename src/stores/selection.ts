@@ -271,6 +271,46 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  // ===== 压缩挑拣 =====
+
+  /** 场景1：跨分支压缩挑拣 -- cherry-pick --no-commit 多个 + commit */
+  async function squashPickFromBranch(hashes: string[], message: string): Promise<RemoteResult | null> {
+    return withOp("压缩挑拣中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      try {
+        await invoke("git_cherry_pick_no_commit", { path, hashes });
+        await invoke("git_commit", { path, message });
+        await repoStore.refreshActive();
+        await commitStore.loadCommits();
+        return { success: true, message: "压缩挑拣成功", has_conflict: false, status: null };
+      } catch {
+        // 冲突 -> 转入冲突处理，用户解决后在工作区手动提交
+        await loadOperationState();
+        return {
+          success: false,
+          message: "压缩挑拣产生冲突，请解决冲突后在工作区提交",
+          has_conflict: true,
+          status: null,
+        };
+      }
+    });
+  }
+
+  /** 场景2：本分支压缩 -- reset --soft HEAD~N + commit（选中须为最近连续 N 个） */
+  async function squashPickLocal(hashes: string[], message: string): Promise<RemoteResult | null> {
+    return withOp("压缩本分支中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      const n = hashes.length;
+      await invoke("git_reset_soft", { path, toCommit: `HEAD~${n}` });
+      await invoke("git_commit", { path, message });
+      await repoStore.refreshActive();
+      await commitStore.loadCommits();
+      return { success: true, message: "本分支压缩成功", has_conflict: false, status: null };
+    });
+  }
+
   // ===== 冲突处理（12.x） =====
 
   async function loadOperationState() {
@@ -364,6 +404,8 @@ export const useSelectionStore = defineStore("selection", () => {
     pull,
     push,
     cherryPick,
+    squashPickFromBranch,
+    squashPickLocal,
     markResolved,
     continueOperation,
     abortOperation,

@@ -58,6 +58,8 @@ pub fn run() {
             commands::git_unstage_all,
             commands::git_commit,
             commands::git_apply_hunk,
+            commands::git_cherry_pick_no_commit,
+            commands::git_reset_soft,
             watcher::watcher_start,
             watcher::watcher_stop
         ])

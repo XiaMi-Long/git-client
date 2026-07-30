@@ -89,4 +89,23 @@ impl GitExecutor {
         }
         Ok(())
     }
+
+    /// cherry-pick 多个提交但不提交（压缩挑拣场景1：跨分支压缩）
+    /// 改动应用到暂存区与工作区，由调用方随后 git commit 完成压缩
+    pub async fn cherry_pick_no_commit(repo_path: &Path, hashes: &[String]) -> GitResult<()> {
+        let mut args: Vec<String> = vec!["cherry-pick".to_string(), "--no-commit".to_string()];
+        for h in hashes {
+            args.push(h.clone());
+        }
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        Self::run_git(repo_path, &arg_refs).await?;
+        Ok(())
+    }
+
+    /// soft reset 到指定提交（压缩挑拣场景2：本分支压缩）
+    /// 将该提交之后的改动退回暂存区，由调用方重新 commit
+    pub async fn reset_soft(repo_path: &Path, to_commit: &str) -> GitResult<()> {
+        Self::run_git(repo_path, &["reset", "--soft", to_commit]).await?;
+        Ok(())
+    }
 }

@@ -322,6 +322,22 @@ pub async fn git_apply_hunk(path: String, patch: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// cherry-pick 多个提交但不提交（压缩挑拣场景1：跨分支压缩）
+#[tauri::command]
+pub async fn git_cherry_pick_no_commit(path: String, hashes: Vec<String>) -> Result<(), String> {
+    GitExecutor::cherry_pick_no_commit(&to_path(&path), &hashes)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// soft reset 到指定提交（压缩挑拣场景2：本分支压缩）
+#[tauri::command]
+pub async fn git_reset_soft(path: String, to_commit: String) -> Result<(), String> {
+    GitExecutor::reset_soft(&to_path(&path), &to_commit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 获取所有已注册的 command 列表，用于 lib.rs 注册
 pub fn all_commands() -> Vec<&'static str> {
     vec![
