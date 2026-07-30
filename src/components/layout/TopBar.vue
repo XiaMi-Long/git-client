@@ -14,7 +14,7 @@
     - 2026-07-30: Updated. 拉取/推送结果改用统一 ConfirmDialog（替代原生 message）。
 -->
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from "vue";
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
@@ -120,7 +120,10 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener("keydown", onKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+  nextTick(() => updateScrollState());
+});
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 // ===== 搜索 =====
@@ -151,24 +154,62 @@ async function handleCloseRepo(id: string) {
 function handleSwitchRepo(id: string) {
   repoStore.setActive(id);
 }
+
+// 仓库标签滚动：滚轮 y->x、边缘渐变遮罩
+const repoTabsEl = ref<HTMLElement | null>(null);
+const canScrollLeft = ref(false);
+const canScrollRight = ref(false);
+
+function updateScrollState() {
+  const el = repoTabsEl.value;
+  if (!el) return;
+  canScrollLeft.value = el.scrollLeft > 0;
+  canScrollRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+function onTabsScroll() {
+  updateScrollState();
+}
+
+// 滚轮纵向滚动转为标签横向滚动
+function onTabsWheel(e: WheelEvent) {
+  const el = repoTabsEl.value;
+  if (!el || e.deltaY === 0) return;
+  e.preventDefault();
+  el.scrollLeft += e.deltaY;
+}
+
+watch(
+  () => repoStore.repos.length,
+  () => nextTick(() => updateScrollState())
+);
 </script>
 
 <template>
   <div class="top-bar">
     <!-- 仓库标签页 -->
-    <div class="repo-tabs">
+    <div class="repo-tabs-wrap">
       <div
-        v-for="tab in repoStore.repos"
-        :key="tab.id"
-        class="repo-tab"
-        :class="{ active: tab.id === repoStore.activeId }"
-        :title="tab.path"
-        @click="handleSwitchRepo(tab.id)"
+        ref="repoTabsEl"
+        class="repo-tabs"
+        @scroll="onTabsScroll"
+        @wheel="onTabsWheel"
       >
-        <span class="repo-tab-name">{{ tab.name }}</span>
-        <span class="repo-close" @click.stop="handleCloseRepo(tab.id)">×</span>
+        <div
+          v-for="tab in repoStore.repos"
+          :key="tab.id"
+          class="repo-tab"
+          :class="{ active: tab.id === repoStore.activeId }"
+          :title="tab.path"
+          @click="handleSwitchRepo(tab.id)"
+        >
+          <span class="repo-tab-name">{{ tab.name }}</span>
+          <span class="repo-close" @click.stop="handleCloseRepo(tab.id)">×</span>
+        </div>
+        <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">+</button>
       </div>
-      <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">+</button>
+      <div v-if="canScrollLeft" class="scroll-fade left"></div>
+      <div v-if="canScrollRight" class="scroll-fade right"></div>
     </div>
 
     <!-- 当前分支 + 拉取/推送 -->
@@ -278,18 +319,28 @@ function handleSwitchRepo(id: string) {
 }
 
 /* 仓库标签页 */
-.repo-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.repo-tabs-wrap {
+  position: relative;
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
 }
 
+.repo-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  height: 40px;
+  scrollbar-width: none;
+}
+
+.repo-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .repo-tab {
-  flex-shrink: 1;
-  min-width: 60px;
+  flex-shrink: 0;
   height: 28px;
   padding: 0 8px 0 12px;
   display: flex;
@@ -299,14 +350,34 @@ function handleSwitchRepo(id: string) {
   color: var(--fg-secondary);
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  overflow: hidden;
+  white-space: nowrap;
 }
 
 .repo-tab-name {
-  flex: 1;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 边缘渐变遮罩，暗示可滚动 */
+.scroll-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scroll-fade.left {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-panel), transparent);
+}
+
+.scroll-fade.right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-panel), transparent);
 }
 
 .repo-tab.active {
