@@ -321,9 +321,8 @@ watch(
 /* 仓库标签页 */
 .repo-tabs-wrap {
   position: relative;
-  flex-shrink: 1;
+  flex: 0 1 40%;
   min-width: 0;
-  max-width: 240px;
   overflow: hidden;
 }
 
