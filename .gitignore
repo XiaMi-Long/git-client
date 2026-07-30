@@ -15,6 +15,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+.history/
 
 # 日志
 *.log

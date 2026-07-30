@@ -22,11 +22,51 @@ import { useDialog } from "@/composables/useDialog";
 import type { CommitInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import SquashPickDialog from "./SquashPickDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
 const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
+
+// 拉取 / 推送 / 压缩挑拣（从顶栏移入）
+const pulling = ref(false);
+const pushing = ref(false);
+const squashOpen = ref(false);
+
+async function handlePull() {
+  if (pulling.value || !repoStore.activeRepo) return;
+  pulling.value = true;
+  try {
+    const result = await selectionStore.pull();
+    if (result) await showMessage(result.success ? "拉取" : "拉取失败", result.message);
+  } finally {
+    pulling.value = false;
+  }
+}
+
+async function handlePush() {
+  if (pushing.value || !repoStore.activeRepo) return;
+  pushing.value = true;
+  try {
+    const result = await selectionStore.push();
+    if (result) await showMessage(result.success ? "推送" : "推送失败", result.message);
+  } finally {
+    pushing.value = false;
+  }
+}
+
+// 快捷键 Ctrl+P 拉取，Ctrl+Shift+P 推送
+function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    e.preventDefault();
+    if (e.shiftKey) handlePush();
+    else handlePull();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 const listEl = ref<HTMLElement | null>(null);
 
@@ -224,25 +264,38 @@ function commitMenuItems(c: CommitInfo) {
 
 <template>
   <div class="commit-list">
-    <!-- 范围切换（6.5） -->
-    <div class="scope-bar">
-      <button
-        class="scope-btn"
-        :class="{ active: commitStore.scope === 'current' && !commitStore.browseBranch }"
-        @click="commitStore.setScope('current')"
-      >
-        当前分支
-      </button>
-      <button
-        class="scope-btn"
-        :class="{ active: commitStore.scope === 'all' }"
-        @click="commitStore.setScope('all')"
-      >
-        所有分支
-      </button>
-      <span v-if="commitStore.browseBranch" class="browse-hint">
-        浏览: {{ commitStore.browseBranch }}
-      </span>
+    <!-- 工具栏：拉取/推送/压缩挑拣 + 范围切换 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="tool-btn" :disabled="!repoStore.activeRepo || pulling" @click="handlePull">
+          {{ pulling ? "拉取中…" : "拉取" }}
+        </button>
+        <button class="tool-btn" :disabled="!repoStore.activeRepo || pushing" @click="handlePush">
+          {{ pushing ? "推送中…" : "推送" }}
+        </button>
+        <button class="tool-btn" :disabled="!repoStore.activeRepo" @click="squashOpen = true">
+          压缩挑拣
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <button
+          class="tool-btn"
+          :class="{ active: commitStore.scope === 'current' && !commitStore.browseBranch }"
+          @click="commitStore.setScope('current')"
+        >
+          当前分支
+        </button>
+        <button
+          class="tool-btn"
+          :class="{ active: commitStore.scope === 'all' }"
+          @click="commitStore.setScope('all')"
+        >
+          所有分支
+        </button>
+        <span v-if="commitStore.browseBranch" class="browse-hint">
+          浏览: {{ commitStore.browseBranch }}
+        </span>
+      </div>
     </div>
 
     <!-- 工作区伪节点 -->
@@ -348,6 +401,9 @@ function commitMenuItems(c: CommitInfo) {
       @confirm="onConfirm"
       @cancel="onCancel"
     />
+
+    <!-- 压缩挑拣弹窗 -->
+    <SquashPickDialog v-if="squashOpen" @close="squashOpen = false" />
   </div>
 </template>
 
@@ -359,16 +415,24 @@ function commitMenuItems(c: CommitInfo) {
   background: var(--bg-base);
 }
 
-.scope-bar {
+.toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px;
   border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
 
-.scope-btn {
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-btn {
   height: 24px;
   padding: 0 10px;
   background: transparent;
@@ -380,10 +444,21 @@ function commitMenuItems(c: CommitInfo) {
   transition: all 150ms ease;
 }
 
-.scope-btn.active {
+.tool-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+  border-color: var(--border-strong);
+}
+
+.tool-btn.active {
   background: var(--bg-elevated);
   color: var(--fg-primary);
   border-color: var(--border-strong);
+}
+
+.tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .browse-hint {

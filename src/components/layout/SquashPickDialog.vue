@@ -77,11 +77,15 @@ async function loadCommits() {
   }
 }
 
-watch(sourceBranch, () => {
-  selectedHashes.value = new Set();
-  commitMessage.value = "";
-  loadCommits();
-});
+watch(
+  sourceBranch,
+  () => {
+    selectedHashes.value = new Set();
+    commitMessage.value = "";
+    loadCommits();
+  },
+  { immediate: true }
+);
 
 function toggleHash(hash: string) {
   const s = new Set(selectedHashes.value);
