@@ -323,6 +323,7 @@ watch(
   position: relative;
   flex-shrink: 1;
   min-width: 0;
+  max-width: 240px;
   overflow: hidden;
 }
 
