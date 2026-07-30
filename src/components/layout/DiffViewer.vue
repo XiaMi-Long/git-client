@@ -349,7 +349,7 @@ async function handleStageHunk(hunk: DiffHunk) {
   flex: 1;
   overflow: auto;
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--mono-font-size);
   line-height: 1.5;
 }
 

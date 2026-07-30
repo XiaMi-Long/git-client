@@ -23,11 +23,15 @@ import { useDialog } from "@/composables/useDialog";
 import ThemeToggle from "@/components/ThemeToggle.vue";
 import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import SettingsDialog from "./SettingsDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
 const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
+
+// 设置弹窗
+const settingsOpen = ref(false);
 
 // 错误提示（如无效目录），3 秒后自动消失
 const errorMsg = ref<string | null>(null);
@@ -214,6 +218,13 @@ function handleSwitchRepo(id: string) {
         <input v-model="localSearch" type="text" placeholder="搜索提交信息 / 作者 / 哈希" />
       </div>
       <ThemeToggle />
+      <button class="icon-btn" title="设置" @click="settingsOpen = true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
     </div>
 
     <!-- 错误提示条 -->
@@ -389,6 +400,26 @@ function handleSwitchRepo(id: string) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+  border-color: var(--border-strong);
 }
 
 .search-box {

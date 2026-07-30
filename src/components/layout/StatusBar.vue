@@ -1,11 +1,13 @@
 <!--
   @component StatusBar
   @description
-    状态栏 - 连接状态、操作加载提示（spinner + 文案）、领先 / 落后、冲突继续 / 中止、编码。
+    状态栏 - 分左右两区域。
+    left：连接状态 -> loading -> 领先/落后 -> 冲突[继续][中止]（按序追加）
+    right：UTF-8 编码
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 连接状态与领先落后（5.4）、冲突继续 / 中止（12.4）。
-    - 2026-07-29: Updated. 操作加载提示 spinner + 文案（A 状态栏加载提示系统）。
+    - 2026-07-29: Updated. 连接状态、领先落后、冲突继续/中止、加载提示。
+    - 2026-07-30: Updated. 改为左右两区域，loading 不再居中，跟在连接状态后。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -48,35 +50,35 @@ const conflictText = computed(() => {
 
 <template>
   <div class="status-bar">
-    <!-- 左：连接状态 -->
+    <!-- left 区域：连接状态 -> loading -> 领先落后 -> 冲突 -->
     <div class="left">
       <span class="status-dot" :class="{ connected: isConnected }" />
       <span>{{ connectionText }}</span>
-    </div>
 
-    <!-- 中：操作中 > 冲突 > 领先落后 -->
-    <div class="center">
-      <!-- 操作加载提示（最高优先级） -->
+      <!-- 操作加载提示（紧跟连接状态） -->
       <template v-if="currentOp">
+        <span class="separator">|</span>
         <span class="spinner" />
         <span class="op-text">{{ currentOp }}</span>
       </template>
+
       <!-- 冲突 -->
       <template v-else-if="isConflicted">
+        <span class="separator">|</span>
         <span class="conflict-text">⚠ {{ conflictText }}</span>
         <button class="op-btn" @click="selectionStore.continueOperation()">继续</button>
         <button class="op-btn danger" @click="selectionStore.abortOperation()">中止</button>
       </template>
+
       <!-- 领先 / 落后 -->
-      <template v-else-if="hasRepo">
+      <template v-else-if="hasRepo && (ahead > 0 || behind > 0)">
+        <span class="separator">|</span>
         <span v-if="ahead > 0" class="ahead">领先 {{ ahead }}</span>
         <span v-if="behind > 0" class="behind">落后 {{ behind }}</span>
-        <span v-if="ahead === 0 && behind === 0">-</span>
       </template>
-      <template v-else>-</template>
     </div>
 
-    <!-- 右：编码 -->
+    <!-- right 区域 -->
     <div class="right">UTF-8</div>
   </div>
 </template>
@@ -95,9 +97,17 @@ const conflictText = computed(() => {
 }
 
 .left {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.right {
+  flex-shrink: 0;
+  color: var(--fg-tertiary);
 }
 
 .status-dot {
@@ -105,20 +115,16 @@ const conflictText = computed(() => {
   height: 8px;
   border-radius: 50%;
   background: var(--fg-tertiary);
+  flex-shrink: 0;
 }
 
 .status-dot.connected {
   background: var(--success);
 }
 
-.center {
-  flex: 1;
-  text-align: center;
+.separator {
   color: var(--fg-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  opacity: 0.5;
 }
 
 /* 操作加载提示 */
@@ -173,9 +179,5 @@ const conflictText = computed(() => {
 .op-btn.danger {
   color: var(--danger);
   border-color: var(--danger);
-}
-
-.right {
-  color: var(--fg-tertiary);
 }
 </style>

@@ -38,6 +38,8 @@
   --diff-del-fg: #f48771;
   --diff-hunk-bg: #2a2a3a;
   --diff-word-bg: #5a5a2e;
+  /* 等宽字体大小（设置可调，默认 13px） */
+  --mono-font-size: 13px;
 }
 
 /* ===== 亮色主题 ===== */

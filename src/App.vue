@@ -9,13 +9,16 @@
 import { onMounted } from "vue";
 import { useThemeStore } from "@/stores/theme";
 import { useRepoStore } from "@/stores/repo";
+import { useSettingsStore } from "@/stores/settings";
 import MainView from "@/views/MainView.vue";
 
 const themeStore = useThemeStore();
 const repoStore = useRepoStore();
+const settingsStore = useSettingsStore();
 
 onMounted(() => {
   themeStore.initTheme();
+  settingsStore.load();
   // 恢复上次打开的仓库（异步，不阻塞渲染）
   repoStore.restoreRepos();
 });
