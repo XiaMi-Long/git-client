@@ -1,10 +1,11 @@
 <!--
   @component StatusBar
   @description
-    状态栏 - 连接状态、领先 / 落后计数、冲突时显示继续 / 中止（12.4）、编码。
+    状态栏 - 连接状态、操作加载提示（spinner + 文案）、领先 / 落后、冲突继续 / 中止、编码。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
     - 2026-07-29: Updated. 连接状态与领先落后（5.4）、冲突继续 / 中止（12.4）。
+    - 2026-07-29: Updated. 操作加载提示 spinner + 文案（A 状态栏加载提示系统）。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -19,6 +20,7 @@ const isConnected = computed(() => !!repoStore.activeRepo?.status?.upstream);
 const ahead = computed(() => repoStore.activeRepo?.status?.ahead ?? 0);
 const behind = computed(() => repoStore.activeRepo?.status?.behind ?? 0);
 const isConflicted = computed(() => selectionStore.isConflicted);
+const currentOp = computed(() => selectionStore.currentOp);
 
 const connectionText = computed(() => {
   const repo = repoStore.activeRepo;
@@ -28,7 +30,6 @@ const connectionText = computed(() => {
   return "无远程";
 });
 
-// 冲突状态文案
 const conflictText = computed(() => {
   switch (selectionStore.operationState) {
     case "cherrypicking":
@@ -53,13 +54,20 @@ const conflictText = computed(() => {
       <span>{{ connectionText }}</span>
     </div>
 
-    <!-- 中：冲突时显示继续 / 中止（12.4），否则领先 / 落后 -->
+    <!-- 中：操作中 > 冲突 > 领先落后 -->
     <div class="center">
-      <template v-if="isConflicted">
+      <!-- 操作加载提示（最高优先级） -->
+      <template v-if="currentOp">
+        <span class="spinner" />
+        <span class="op-text">{{ currentOp }}</span>
+      </template>
+      <!-- 冲突 -->
+      <template v-else-if="isConflicted">
         <span class="conflict-text">⚠ {{ conflictText }}</span>
         <button class="op-btn" @click="selectionStore.continueOperation()">继续</button>
         <button class="op-btn danger" @click="selectionStore.abortOperation()">中止</button>
       </template>
+      <!-- 领先 / 落后 -->
       <template v-else-if="hasRepo">
         <span v-if="ahead > 0" class="ahead">领先 {{ ahead }}</span>
         <span v-if="behind > 0" class="behind">落后 {{ behind }}</span>
@@ -111,6 +119,27 @@ const conflictText = computed(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+/* 操作加载提示 */
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.op-text {
+  color: var(--accent);
 }
 
 .ahead {
