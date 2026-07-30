@@ -156,6 +156,9 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           </div>
 
           <div class="dialog-body">
+            <!-- 当前分支提示（固定） -->
+            <div class="current-branch-hint">当前分支：<strong>{{ currentBranch }}</strong></div>
+
             <!-- 源分支选择 -->
             <div class="form-row">
               <label>源分支</label>
@@ -279,6 +282,21 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.current-branch-hint {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  font-size: 13px;
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+
+.current-branch-hint strong {
+  color: var(--accent);
 }
 
 .form-row {
