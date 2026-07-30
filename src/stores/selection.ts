@@ -122,6 +122,16 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** hunk 级暂存（7.5）：应用单个 hunk patch 到暂存区 */
+  async function stageHunk(patch: string) {
+    return withOp("暂存 hunk 中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return;
+      await invoke("git_apply_hunk", { path, patch });
+      await repoStore.refreshActive();
+    });
+  }
+
   async function commit() {
     return withOp("提交中", async () => {
       const path = repoStore.activeRepo?.path;
@@ -342,6 +352,7 @@ export const useSelectionStore = defineStore("selection", () => {
     stageFile,
     unstageFile,
     stageAll,
+    stageHunk,
     unstageAll,
     commit,
     createBranch,

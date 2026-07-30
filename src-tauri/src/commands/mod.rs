@@ -314,6 +314,14 @@ pub async fn git_commit(path: String, message: String) -> Result<String, String>
         .map_err(|e| e.to_string())
 }
 
+/// hunk 级暂存（7.5）：应用单个 hunk patch 到暂存区
+#[tauri::command]
+pub async fn git_apply_hunk(path: String, patch: String) -> Result<(), String> {
+    GitExecutor::apply_hunk(&to_path(&path), &patch)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 获取所有已注册的 command 列表，用于 lib.rs 注册
 pub fn all_commands() -> Vec<&'static str> {
     vec![

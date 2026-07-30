@@ -57,6 +57,7 @@ pub fn run() {
             commands::git_add_all,
             commands::git_unstage_all,
             commands::git_commit,
+            commands::git_apply_hunk,
             watcher::watcher_start,
             watcher::watcher_stop
         ])

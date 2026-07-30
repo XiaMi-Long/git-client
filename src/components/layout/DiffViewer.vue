@@ -181,6 +181,35 @@ const splitHunks = computed(() => {
   if (!fileDiff.value) return [];
   return fileDiff.value.hunks.map((h) => splitHunk(h));
 });
+
+// 是否可 hunk 级暂存（工作区模式 + 未暂存文件）
+const canStageHunk = computed(
+  () => selectionStore.isWorkingMode && !isStagedFile.value && !!fileDiff.value
+);
+
+/** 构造单个 hunk 的 unified diff patch，用于 git apply --cached（7.5） */
+function buildHunkPatch(file: FileDiff, hunk: DiffHunk): string {
+  const oldPath = file.is_new ? "/dev/null" : `a/${file.old_path}`;
+  const newPath = file.is_deleted ? "/dev/null" : `b/${file.new_path}`;
+  let patch = `diff --git a/${file.old_path} b/${file.new_path}\n`;
+  if (file.is_new) patch += `new file mode 100644\n`;
+  patch += `--- ${oldPath}\n`;
+  patch += `+++ ${newPath}\n`;
+  patch += hunk.header + "\n";
+  for (const line of hunk.lines) {
+    let prefix = " ";
+    if (line.line_type === "added") prefix = "+";
+    else if (line.line_type === "deleted") prefix = "-";
+    patch += prefix + line.content + "\n";
+  }
+  return patch;
+}
+
+async function handleStageHunk(hunk: DiffHunk) {
+  if (!fileDiff.value) return;
+  const patch = buildHunkPatch(fileDiff.value, hunk);
+  await selectionStore.stageHunk(patch);
+}
 </script>
 
 <template>
@@ -201,7 +230,12 @@ const splitHunks = computed(() => {
       <!-- 统一视图（8.1） -->
       <div v-else-if="diffMode === 'unified'" class="diff-content" :class="{ wrap }">
         <template v-for="hunk in processedHunks" :key="hunk.header">
-          <div class="hunk-header">{{ hunk.header }}</div>
+          <div class="hunk-header">
+            <span class="hunk-header-text">{{ hunk.header }}</span>
+            <button v-if="canStageHunk" class="hunk-action" @click="handleStageHunk(hunk)">
+              暂存此块
+            </button>
+          </div>
           <div
             v-for="(line, i) in hunk.lines"
             :key="i"
@@ -330,10 +364,29 @@ const splitHunks = computed(() => {
 }
 
 .hunk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: var(--diff-hunk-bg);
   color: var(--fg-secondary);
   padding: 2px 8px;
   font-size: 12px;
+}
+
+.hunk-action {
+  height: 18px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.hunk-action:hover {
+  color: var(--fg-primary);
+  border-color: var(--accent);
 }
 
 .split-hunk-header {
