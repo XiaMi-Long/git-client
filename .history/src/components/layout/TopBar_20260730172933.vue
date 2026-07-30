@@ -368,22 +368,9 @@ watch(
 /* 仓库标签页 */
 .repo-tabs-wrap {
   position: relative;
-  flex: 0 1 25%;
+  flex: 0 1 30%;
   min-width: 0;
   overflow: hidden;
-}
-
-/* 响应式：宽屏放宽标签区占比 */
-@media (min-width: 1200px) {
-  .repo-tabs-wrap {
-    flex: 0 1 35%;
-  }
-}
-
-@media (min-width: 1400px) {
-  .repo-tabs-wrap {
-    flex: 0 1 50%;
-  }
 }
 
 .repo-tabs {
