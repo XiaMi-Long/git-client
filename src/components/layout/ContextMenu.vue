@@ -2,12 +2,13 @@
   @component ContextMenu
   @description
     通用右键菜单 / 下拉菜单，Teleport 到 body 避免被父容器裁剪。
-    点击菜单外部（mousedown）或菜单项后关闭。
+    点击菜单外部（mousedown）或菜单项后关闭。扁平化样式，hover 高亮。
   @usage
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="items" @close="menu=null" />
   @changeLog
     - 2026-07-29: Created. 用于分支右键操作（9.x）。
-    - 2026-07-29: Fixed. 关闭机制改用 mousedown + contains，避免点击外部不关闭。
+    - 2026-07-29: Fixed. 关闭机制改用 mousedown + contains。
+    - 2026-07-30: Updated. 样式优化（圆角、间距、hover、快捷键提示位）。
 -->
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
@@ -69,33 +70,40 @@ onUnmounted(() => {
 .context-menu {
   position: fixed;
   z-index: 1000;
-  min-width: 140px;
+  min-width: 160px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  padding: 4px 0;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px;
 }
 
 .menu-item {
   display: block;
   width: 100%;
   text-align: left;
-  height: 28px;
-  padding: 0 16px;
+  height: 30px;
+  padding: 0 12px;
   background: transparent;
   border: none;
+  border-radius: 2px;
   color: var(--fg-primary);
   font-size: 13px;
   cursor: pointer;
+  transition: background 100ms ease;
 }
 
 .menu-item:hover:not(:disabled) {
-  background: var(--bg-panel);
+  background: var(--bg-hover);
 }
 
 .menu-item.danger {
   color: var(--danger);
+}
+
+.menu-item.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
 }
 
 .menu-item:disabled {
@@ -105,7 +113,7 @@ onUnmounted(() => {
 
 .menu-divider {
   height: 1px;
-  margin: 4px 0;
+  margin: 4px 8px;
   background: var(--border-default);
 }
 </style>

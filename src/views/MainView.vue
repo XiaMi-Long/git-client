@@ -123,7 +123,6 @@ onMounted(() => {
 
 .pane-sidebar {
   flex-shrink: 0;
-  overflow: hidden;
 }
 
 .pane-commit {

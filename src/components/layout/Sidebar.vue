@@ -3,20 +3,21 @@
   @description
     侧栏 - 分支 / 远程 / 标签 三组树形列表，支持分组折叠 / 展开。
     单击分支浏览其历史（6.6）；双击检出（9.2）；右键菜单：新建/检出/删除/重命名/合并/对比（9.x）。
+    所有确认/消息弹窗统一用 ConfirmDialog（替代原生 message/confirm）。
   @changeLog
     - 2026-07-29: Created. 布局骨架与分组标题。
     - 2026-07-29: Updated. 分支/标签数据（5.4）、浏览（6.6）、右键与双击（9.x）。
-    - 2026-07-30: Updated. 分组折叠/展开、hover 色用 --bg-hover（白色主题可见）。
+    - 2026-07-30: Updated. 分组折叠/展开、hover --bg-hover、统一 ConfirmDialog 弹窗。
 -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
 import type { BranchInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
 import PromptDialog from "./PromptDialog.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -40,8 +41,17 @@ function toggleGroup(g: "branches" | "remotes" | "tags") {
 // 右键菜单状态
 const menu = ref<{ x: number; y: number; branch: BranchInfo } | null>(null);
 
-// 输入对话框状态
+// 输入对话框状态（新建/重命名）
 const promptState = ref<{ title: string; default?: string; resolve: (v: string | null) => void } | null>(null);
+
+// 确认/消息对话框状态
+const dialogState = ref<{
+  title: string;
+  message: string;
+  hideCancel?: boolean;
+  danger?: boolean;
+  resolve: (v: boolean) => void;
+} | null>(null);
 
 const currentBranchName = computed(
   () => repoStore.activeRepo?.branches.find((b) => b.is_current)?.name ?? null
@@ -56,6 +66,7 @@ function closeMenu() {
   menu.value = null;
 }
 
+// 模态输入对话框（替代 Tauri 缺失的 prompt）
 function showPrompt(title: string, def?: string): Promise<string | null> {
   return new Promise((resolve) => {
     promptState.value = { title, default: def, resolve };
@@ -72,44 +83,68 @@ function onPromptCancel() {
   promptState.value = null;
 }
 
+// 统一确认/消息对话框
+function showConfirm(title: string, msg: string, danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    dialogState.value = { title, message: msg, danger, resolve: (v) => resolve(v) };
+  });
+}
+
+function showMessage(title: string, msg: string): Promise<void> {
+  return new Promise((resolve) => {
+    dialogState.value = { title, message: msg, hideCancel: true, resolve: () => resolve(true) };
+  });
+}
+
+function onDialogConfirm() {
+  dialogState.value?.resolve(true);
+  dialogState.value = null;
+}
+
+function onDialogCancel() {
+  dialogState.value?.resolve(false);
+  dialogState.value = null;
+}
+
 // ===== 分支操作 =====
 
 async function handleNewBranch() {
   const name = await showPrompt("新建分支", "");
   if (!name) return;
-  const checkout = await confirm("立即检出该分支？", "新建分支");
+  const checkout = await showConfirm("新建分支", "立即检出该分支？");
   const result = await selectionStore.createBranch(name, checkout);
-  if (result) await message(result.message, result.success ? "新建分支" : "失败");
+  if (result) await showMessage(result.success ? "新建分支" : "失败", result.message);
 }
 
 async function handleCheckout(branch: BranchInfo) {
   const result = await selectionStore.checkoutBranch(branch.name);
-  if (result && !result.success) await message(result.message, "检出失败");
+  if (result && !result.success) await showMessage("检出失败", result.message);
 }
 
 async function handleDelete(branch: BranchInfo) {
-  const ok = await confirm(`确定删除分支 "${branch.name}"？`, "删除分支");
+  const ok = await showConfirm("删除分支", `确定删除分支 "${branch.name}"？`, true);
   if (!ok) return;
   const result = await selectionStore.deleteBranch(branch.name, false);
-  if (result) await message(result.message, result.success ? "删除分支" : "失败");
+  if (result) await showMessage(result.success ? "删除分支" : "失败", result.message);
 }
 
 async function handleRename(branch: BranchInfo) {
   const newName = await showPrompt("重命名分支", branch.name);
   if (!newName || newName === branch.name) return;
   const result = await selectionStore.renameBranch(branch.name, newName);
-  if (result) await message(result.message, result.success ? "重命名分支" : "失败");
+  if (result) await showMessage(result.success ? "重命名分支" : "失败", result.message);
 }
 
 async function handleMerge(branch: BranchInfo) {
   const result = await selectionStore.mergeBranch(branch.name, false);
-  if (result) await message(result.message, result.success ? "合并" : "合并失败");
+  if (result) await showMessage(result.success ? "合并" : "合并失败", result.message);
 }
 
 async function handleCompare(branch: BranchInfo) {
-  await message(
-    `${branch.name}\n领先当前 ${branch.ahead}\n落后当前 ${branch.behind}`,
-    "分支对比"
+  // 注意：ahead/behind 为相对上游的数据，精确两分支对比待 9.6 后端命令
+  await showMessage(
+    "分支对比",
+    `${branch.name}\n领先 ${branch.ahead}\n落后 ${branch.behind}\n（当前为相对上游数据，精确对比待 9.6）`
   );
 }
 
@@ -224,6 +259,17 @@ function menuItems(branch: BranchInfo) {
       :default="promptState.default"
       @confirm="onPromptConfirm"
       @cancel="onPromptCancel"
+    />
+
+    <!-- 确认/消息对话框 -->
+    <ConfirmDialog
+      v-if="dialogState"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :hide-cancel="dialogState.hideCancel"
+      :danger="dialogState.danger"
+      @confirm="onDialogConfirm"
+      @cancel="onDialogCancel"
     />
   </div>
 </template>
