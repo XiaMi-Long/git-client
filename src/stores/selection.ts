@@ -9,7 +9,7 @@ import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "./repo";
 import { useCommitStore } from "./commit";
-import type { FileDiff, BranchOperationResult, RemoteResult, OperationState } from "@/types/git";
+import type { FileDiff, BranchOperationResult, CompareResult, RemoteResult, OperationState } from "@/types/git";
 
 export const useSelectionStore = defineStore("selection", () => {
   const repoStore = useRepoStore();
@@ -202,6 +202,15 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** 比较两分支领先/落后（9.6 精确对比） */
+  async function compareBranches(from: string, to: string): Promise<CompareResult | null> {
+    return withOp("对比中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      return await invoke<CompareResult>("git_compare_branches", { path, from, to });
+    });
+  }
+
   // ===== 远程同步 =====
 
   async function pull(): Promise<RemoteResult | null> {
@@ -340,6 +349,7 @@ export const useSelectionStore = defineStore("selection", () => {
     deleteBranch,
     renameBranch,
     mergeBranch,
+    compareBranches,
     pull,
     push,
     cherryPick,

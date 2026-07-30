@@ -15,16 +15,18 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { message } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
+import { useDialog } from "@/composables/useDialog";
 import type { CommitInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
+const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 
 const listEl = ref<HTMLElement | null>(null);
 
@@ -208,7 +210,7 @@ function closeCommitMenu() {
 async function handleCherryPick(c: CommitInfo) {
   const result = await selectionStore.cherryPick(c.hash);
   if (result) {
-    await message(result.message, result.success ? "cherry-pick" : "cherry-pick 失败");
+    await showMessage(result.success ? "cherry-pick" : "cherry-pick 失败", result.message);
   }
 }
 
@@ -334,6 +336,17 @@ function commitMenuItems(c: CommitInfo) {
       :y="commitMenu.y"
       :items="commitMenuItems(commitMenu.commit)"
       @close="closeCommitMenu"
+    />
+
+    <!-- 确认/消息对话框 -->
+    <ConfirmDialog
+      v-if="dialogState"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :hide-cancel="dialogState.hideCancel"
+      :danger="dialogState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
     />
   </div>
 </template>

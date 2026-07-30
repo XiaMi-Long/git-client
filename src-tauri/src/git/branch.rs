@@ -57,6 +57,15 @@ pub struct BranchOperationResult {
     pub current_branch: Option<String>,
 }
 
+/// 两分支对比结果（9.6）
+#[derive(Debug, Clone, Serialize)]
+pub struct CompareResult {
+    /// from 领先 to 的提交数
+    pub ahead: u32,
+    /// from 落后 to 的提交数
+    pub behind: u32,
+}
+
 impl GitExecutor {
     /// 获取所有本地和远程分支（2.5）
     pub async fn list_branches(repo_path: &Path) -> GitResult<Vec<BranchInfo>> {
@@ -350,5 +359,23 @@ impl GitExecutor {
                 current_branch: None,
             }),
         }
+    }
+
+    /// 比较两分支的领先/落后提交数（9.6）
+    /// ahead = from 领先 to（to..from 的提交数），behind = from 落后 to（from..to 的提交数）
+    pub async fn compare_branches(repo_path: &Path, from: &str, to: &str) -> GitResult<CompareResult> {
+        let ahead_str = Self::run_git(
+            repo_path,
+            &["rev-list", "--count", &format!("{to}..{from}")],
+        )
+        .await?;
+        let behind_str = Self::run_git(
+            repo_path,
+            &["rev-list", "--count", &format!("{from}..{to}")],
+        )
+        .await?;
+        let ahead = ahead_str.trim().parse().unwrap_or(0);
+        let behind = behind_str.trim().parse().unwrap_or(0);
+        Ok(CompareResult { ahead, behind })
     }
 }

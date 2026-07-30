@@ -2,28 +2,32 @@
   @component TopBar
   @description
     顶栏 - 仓库标签页、分支下拉选择、拉取 / 推送按钮、搜索框、主题切换。
+    拉取/推送结果用统一 ConfirmDialog 提示。
   @workflow
     1. [+] 按钮调系统目录选择对话框 -> openRepo。
     2. 分支按钮点击 -> 弹出分支下拉，选中即检出。
-    3. 拉取 / 推送按钮（Ctrl+P / Ctrl+Shift+P）-> 调 git_pull / git_push，结果用对话框提示。
+    3. 拉取 / 推送按钮（Ctrl+P / Ctrl+Shift+P）-> 调 git_pull / git_push，结果用 ConfirmDialog 提示。
     4. 搜索框 300ms 防抖驱动提交列表过滤（6.7）。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
-    - 2026-07-29: Updated. 仓库打开与标签动态化（5.x）、搜索接入（6.7）。
-    - 2026-07-29: Updated. 分支下拉、拉取推送接入与快捷键（9.2 / 10.1 / 10.2）。
+    - 2026-07-29: Updated. 仓库打开、搜索、分支下拉、拉取推送（5.x / 6.7 / 9.2 / 10.x）。
+    - 2026-07-30: Updated. 拉取/推送结果改用统一 ConfirmDialog（替代原生 message）。
 -->
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from "vue";
-import { open, confirm, message } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
+import { useDialog } from "@/composables/useDialog";
 import ThemeToggle from "@/components/ThemeToggle.vue";
 import ContextMenu from "./ContextMenu.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
+const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 
 // 错误提示（如无效目录），3 秒后自动消失
 const errorMsg = ref<string | null>(null);
@@ -59,7 +63,6 @@ function closeBranchMenu() {
   branchMenu.value = null;
 }
 
-// 分支下拉菜单项（本地分支，选中检出）
 const branchItems = computed(() => {
   const branches = repoStore.activeRepo?.branches.filter((b) => !b.is_remote) ?? [];
   return branches.map((b) => ({
@@ -81,7 +84,7 @@ async function handlePull() {
   try {
     const result = await selectionStore.pull();
     if (result) {
-      await message(result.message, result.success ? "拉取" : "拉取失败");
+      await showMessage(result.success ? "拉取" : "拉取失败", result.message);
     }
   } finally {
     pulling.value = false;
@@ -94,7 +97,7 @@ async function handlePush() {
   try {
     const result = await selectionStore.push();
     if (result) {
-      await message(result.message, result.success ? "推送" : "推送失败");
+      await showMessage(result.success ? "推送" : "推送失败", result.message);
     }
   } finally {
     pushing.value = false;
@@ -223,6 +226,17 @@ function handleSwitchRepo(id: string) {
       :y="branchMenu.y"
       :items="branchItems"
       @close="closeBranchMenu"
+    />
+
+    <!-- 确认/消息对话框 -->
+    <ConfirmDialog
+      v-if="dialogState"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :hide-cancel="dialogState.hideCancel"
+      :danger="dialogState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
     />
   </div>
 </template>
@@ -359,7 +373,7 @@ function handleSwitchRepo(id: string) {
 }
 
 .action-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
   color: var(--fg-primary);
   border-color: var(--border-strong);
 }

@@ -40,6 +40,7 @@ pub fn run() {
             commands::git_delete_branch,
             commands::git_rename_branch,
             commands::git_merge_branch,
+            commands::git_compare_branches,
             commands::git_cherry_pick,
             commands::git_cherry_pick_continue,
             commands::git_cherry_pick_abort,

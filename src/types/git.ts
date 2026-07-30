@@ -98,6 +98,12 @@ export interface BranchOperationResult {
   current_branch: string | null;
 }
 
+/** 两分支对比结果（对应后端 CompareResult） */
+export interface CompareResult {
+  ahead: number;
+  behind: number;
+}
+
 /** 远程操作结果（对应后端 RemoteResult） */
 export interface RemoteResult {
   success: boolean;

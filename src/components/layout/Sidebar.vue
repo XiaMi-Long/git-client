@@ -141,11 +141,19 @@ async function handleMerge(branch: BranchInfo) {
 }
 
 async function handleCompare(branch: BranchInfo) {
-  // 注意：ahead/behind 为相对上游的数据，精确两分支对比待 9.6 后端命令
-  await showMessage(
-    "分支对比",
-    `${branch.name}\n领先 ${branch.ahead}\n落后 ${branch.behind}\n（当前为相对上游数据，精确对比待 9.6）`
-  );
+  const current = currentBranchName.value;
+  if (!current) {
+    await showMessage("分支对比", "未找到当前分支");
+    return;
+  }
+  // 9.6 精确对比：branch 相对当前分支的领先/落后
+  const result = await selectionStore.compareBranches(branch.name, current);
+  if (result) {
+    await showMessage(
+      "分支对比",
+      `${branch.name} 相对 ${current}\n领先 ${result.ahead}  落后 ${result.behind}`
+    );
+  }
 }
 
 function menuItems(branch: BranchInfo) {

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use crate::git::{
-    BranchOperationResult, BranchInfo, CommitInfo, FileDiff, GitExecutor,
+    BranchOperationResult, BranchInfo, CommitInfo, CompareResult, FileDiff, GitExecutor,
     GitVersionInfo, LogQuery, OperationState, RemoteResult, TagInfo, WorkingAreaStatus,
 };
 
@@ -159,6 +159,18 @@ pub async fn git_merge_branch(
     no_ff: bool,
 ) -> Result<BranchOperationResult, String> {
     GitExecutor::merge_branch(&to_path(&path), &source, no_ff)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 比较两分支领先/落后（9.6）
+#[tauri::command]
+pub async fn git_compare_branches(
+    path: String,
+    from: String,
+    to: String,
+) -> Result<CompareResult, String> {
+    GitExecutor::compare_branches(&to_path(&path), &from, &to)
         .await
         .map_err(|e| e.to_string())
 }

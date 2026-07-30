@@ -19,7 +19,7 @@ pub use executor::GitExecutor;
 pub use status::{FileStatus, WorkingAreaStatus, FileChangeType, StageStatus};
 pub use log::{CommitInfo, LogQuery, PAGE_SIZE};
 pub use diff::{DiffHunk, DiffLine, DiffLineType, FileDiff};
-pub use branch::{BranchInfo, TagInfo, BranchOperationResult};
+pub use branch::{BranchInfo, TagInfo, BranchOperationResult, CompareResult};
 pub use remote::{RemoteResult, OperationState};
 
 /// git 版本检测结果
