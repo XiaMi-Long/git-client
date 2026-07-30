@@ -11,6 +11,7 @@
   --bg-base: #1e1e1e;
   --bg-panel: #252526;
   --bg-elevated: #2d2d30;
+  --bg-hover: #333333;
   --bg-input: #2a2a2d;
 
   /* 前景文字 */
@@ -45,6 +46,7 @@
   --bg-base: #ffffff;
   --bg-panel: #f8f8f8;
   --bg-elevated: #ffffff;
+  --bg-hover: #e8e8e8;
   --bg-input: #f0f0f0;
 
   /* 前景文字 */

@@ -1,10 +1,11 @@
 /**
  * 提交历史状态管理
  * 提交列表的分页加载、分支范围切换、侧栏浏览、搜索
+ * 切换仓库时通过 switchRepo 重置浏览状态（避免旧分支残留）
  * 依据: design.md D6, tasks 6.x
  */
 import { defineStore } from "pinia";
-import { ref, computed, watch } from "vue";
+import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommitInfo, LogQuery } from "@/types/git";
 import { useRepoStore } from "./repo";
@@ -28,9 +29,7 @@ export const useCommitStore = defineStore("commit", () => {
   // 6.7 搜索关键词
   const search = ref<string>("");
 
-  // 是否查询所有分支
   const queryAllBranches = computed(() => scope.value === "all");
-  // 实际查询的 branch：所有分支时为 null（配合 all_branches=true），侧栏浏览时为该分支
   const queryBranch = computed<string | null>(() => {
     if (scope.value === "all") return null;
     return browseBranch.value;
@@ -91,23 +90,29 @@ export const useCommitStore = defineStore("commit", () => {
   function setScope(s: "current" | "all") {
     scope.value = s;
     browseBranch.value = null;
+    loadCommits();
   }
 
   /** 浏览指定分支历史（6.6，不切换工作区） */
   function browseTo(branch: string | null) {
     scope.value = "current";
     browseBranch.value = branch;
+    loadCommits();
   }
 
   /** 设置搜索关键词（6.7，防抖在调用方） */
   function setSearch(q: string) {
     search.value = q;
+    loadCommits();
   }
 
-  // scope / browseBranch / search 变化时重新加载第一页
-  watch([scope, browseBranch, search], () => {
-    loadCommits();
-  });
+  /** 切换仓库时重置浏览状态（旧分支在新仓库不存在） */
+  async function switchRepo() {
+    browseBranch.value = null;
+    search.value = "";
+    scope.value = "current";
+    await loadCommits();
+  }
 
   return {
     commits,
@@ -124,5 +129,6 @@ export const useCommitStore = defineStore("commit", () => {
     setScope,
     browseTo,
     setSearch,
+    switchRepo,
   };
 });

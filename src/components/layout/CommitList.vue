@@ -184,11 +184,11 @@ function updateViewport() {
 onMounted(() => updateViewport());
 onUnmounted(() => {});
 
-// 仓库切换时重新加载提交
+// 仓库切换时重置浏览状态并重新加载
 watch(
   () => repoStore.activeRepo?.id,
   () => {
-    commitStore.loadCommits();
+    commitStore.switchRepo();
   },
   { immediate: true }
 );
@@ -446,13 +446,13 @@ function commitMenuItems(c: CommitInfo) {
   right: 0;
 }
 
-/* mini 图谱 SVG，绝对定位在左侧 20px 列 */
+/* mini 图谱 SVG，绝对定位在左侧 20px 列，z-index 高于提交项背景避免被覆盖 */
 .graph-svg {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: 2;
 }
 
 .commit-item {
@@ -469,7 +469,7 @@ function commitMenuItems(c: CommitInfo) {
 }
 
 .commit-item:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
 }
 
 .commit-item.active {

@@ -1,13 +1,12 @@
 <!--
   @component Sidebar
   @description
-    侧栏 - 分支 / 远程 / 标签 三组树形列表，展示当前仓库数据。
+    侧栏 - 分支 / 远程 / 标签 三组树形列表，支持分组折叠 / 展开。
     单击分支浏览其历史（6.6）；双击检出（9.2）；右键菜单：新建/检出/删除/重命名/合并/对比（9.x）。
   @changeLog
     - 2026-07-29: Created. 布局骨架与分组标题。
-    - 2026-07-29: Updated. 接入分支/标签数据（5.4）、分支浏览（6.6）。
-    - 2026-07-29: Updated. 右键菜单与双击检出（9.1-9.5）。
-    - 2026-07-29: Fixed. 用 PromptDialog 替代 Tauri 缺失的 prompt。
+    - 2026-07-29: Updated. 分支/标签数据（5.4）、浏览（6.6）、右键与双击（9.x）。
+    - 2026-07-30: Updated. 分组折叠/展开、hover 色用 --bg-hover（白色主题可见）。
 -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
@@ -32,13 +31,18 @@ const remoteBranches = computed(
 );
 const tags = computed(() => repoStore.activeRepo?.tags ?? []);
 
+// 分组折叠状态
+const collapsed = ref({ branches: false, remotes: false, tags: false });
+function toggleGroup(g: "branches" | "remotes" | "tags") {
+  collapsed.value[g] = !collapsed.value[g];
+}
+
 // 右键菜单状态
 const menu = ref<{ x: number; y: number; branch: BranchInfo } | null>(null);
 
 // 输入对话框状态
 const promptState = ref<{ title: string; default?: string; resolve: (v: string | null) => void } | null>(null);
 
-// 当前分支名（用于菜单禁用判断）
 const currentBranchName = computed(
   () => repoStore.activeRepo?.branches.find((b) => b.is_current)?.name ?? null
 );
@@ -52,7 +56,6 @@ function closeMenu() {
   menu.value = null;
 }
 
-// 模态输入对话框（替代 Tauri 缺失的 prompt）
 function showPrompt(title: string, def?: string): Promise<string | null> {
   return new Promise((resolve) => {
     promptState.value = { title, default: def, resolve };
@@ -71,7 +74,6 @@ function onPromptCancel() {
 
 // ===== 分支操作 =====
 
-// 9.1 新建分支
 async function handleNewBranch() {
   const name = await showPrompt("新建分支", "");
   if (!name) return;
@@ -80,13 +82,11 @@ async function handleNewBranch() {
   if (result) await message(result.message, result.success ? "新建分支" : "失败");
 }
 
-// 9.2 检出
 async function handleCheckout(branch: BranchInfo) {
   const result = await selectionStore.checkoutBranch(branch.name);
   if (result && !result.success) await message(result.message, "检出失败");
 }
 
-// 9.3 删除
 async function handleDelete(branch: BranchInfo) {
   const ok = await confirm(`确定删除分支 "${branch.name}"？`, "删除分支");
   if (!ok) return;
@@ -94,7 +94,6 @@ async function handleDelete(branch: BranchInfo) {
   if (result) await message(result.message, result.success ? "删除分支" : "失败");
 }
 
-// 9.4 重命名
 async function handleRename(branch: BranchInfo) {
   const newName = await showPrompt("重命名分支", branch.name);
   if (!newName || newName === branch.name) return;
@@ -102,13 +101,11 @@ async function handleRename(branch: BranchInfo) {
   if (result) await message(result.message, result.success ? "重命名分支" : "失败");
 }
 
-// 9.5 合并到当前
 async function handleMerge(branch: BranchInfo) {
   const result = await selectionStore.mergeBranch(branch.name, false);
   if (result) await message(result.message, result.success ? "合并" : "合并失败");
 }
 
-// 9.6 与当前对比（领先/落后）
 async function handleCompare(branch: BranchInfo) {
   await message(
     `${branch.name}\n领先当前 ${branch.ahead}\n落后当前 ${branch.behind}`,
@@ -116,7 +113,6 @@ async function handleCompare(branch: BranchInfo) {
   );
 }
 
-// 菜单项
 function menuItems(branch: BranchInfo) {
   const isCurrent = branch.name === currentBranchName.value;
   const isRemote = branch.is_remote;
@@ -137,12 +133,12 @@ function menuItems(branch: BranchInfo) {
     <template v-if="hasRepo">
       <!-- 分支 -->
       <div class="group">
-        <div class="group-header">
-          <span class="caret">▾</span>
+        <div class="group-header" @click="toggleGroup('branches')">
+          <span class="caret">{{ collapsed.branches ? "▶" : "▾" }}</span>
           <span class="group-title">分支</span>
-          <button class="group-add" title="新建分支" @click="handleNewBranch">+</button>
+          <button class="group-add" title="新建分支" @click.stop="handleNewBranch">+</button>
         </div>
-        <div class="group-body">
+        <div v-show="!collapsed.branches" class="group-body">
           <div
             v-for="b in localBranches"
             :key="b.full_name"
@@ -162,11 +158,11 @@ function menuItems(branch: BranchInfo) {
 
       <!-- 远程 -->
       <div class="group">
-        <div class="group-header">
-          <span class="caret">▾</span>
+        <div class="group-header" @click="toggleGroup('remotes')">
+          <span class="caret">{{ collapsed.remotes ? "▶" : "▾" }}</span>
           <span class="group-title">远程</span>
         </div>
-        <div class="group-body">
+        <div v-show="!collapsed.remotes" class="group-body">
           <div
             v-for="b in remoteBranches"
             :key="b.full_name"
@@ -185,11 +181,11 @@ function menuItems(branch: BranchInfo) {
 
       <!-- 标签 -->
       <div class="group">
-        <div class="group-header">
-          <span class="caret">▾</span>
+        <div class="group-header" @click="toggleGroup('tags')">
+          <span class="caret">{{ collapsed.tags ? "▶" : "▾" }}</span>
           <span class="group-title">标签</span>
         </div>
-        <div class="group-body">
+        <div v-show="!collapsed.tags" class="group-body">
           <div
             v-for="t in tags"
             :key="t.name"
@@ -254,6 +250,12 @@ function menuItems(branch: BranchInfo) {
   color: var(--fg-secondary);
   font-size: 13px;
   font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: var(--bg-hover);
 }
 
 .group-title {
@@ -263,6 +265,7 @@ function menuItems(branch: BranchInfo) {
 .caret {
   font-size: 10px;
   color: var(--fg-tertiary);
+  width: 12px;
 }
 
 .group-add {
@@ -297,7 +300,7 @@ function menuItems(branch: BranchInfo) {
 }
 
 .tree-node:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-hover);
 }
 
 .tree-node.current {
