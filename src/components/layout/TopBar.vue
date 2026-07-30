@@ -88,7 +88,7 @@ function onTabsWheel(e: WheelEvent) {
 
 watch(
   () => repoStore.repos.length,
-  () => nextTick(() => updateScrollState())
+  () => nextTick(() => updateScrollState()),
 );
 
 onMounted(() => nextTick(() => updateScrollState()));
@@ -98,7 +98,12 @@ onMounted(() => nextTick(() => updateScrollState()));
   <div class="top-bar">
     <!-- 仓库标签页 -->
     <div class="repo-tabs-wrap">
-      <div ref="repoTabsEl" class="repo-tabs" @scroll="onTabsScroll" @wheel="onTabsWheel">
+      <div
+        ref="repoTabsEl"
+        class="repo-tabs"
+        @scroll="onTabsScroll"
+        @wheel="onTabsWheel"
+      >
         <div
           v-for="tab in repoStore.repos"
           :key="tab.id"
@@ -108,9 +113,13 @@ onMounted(() => nextTick(() => updateScrollState()));
           @click="handleSwitchRepo(tab.id)"
         >
           <span class="repo-tab-name">{{ tab.name }}</span>
-          <span class="repo-close" @click.stop="handleCloseRepo(tab.id)">×</span>
+          <span class="repo-close" @click.stop="handleCloseRepo(tab.id)"
+            >×</span
+          >
         </div>
-        <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">+</button>
+        <button class="repo-tab-add" title="打开仓库" @click="handleOpenRepo">
+          +
+        </button>
       </div>
       <div v-if="canScrollLeft" class="scroll-fade left"></div>
       <div v-if="canScrollRight" class="scroll-fade right"></div>
@@ -119,17 +128,41 @@ onMounted(() => nextTick(() => updateScrollState()));
     <!-- 搜索 + 主题 + 设置 -->
     <div class="right">
       <div class="search-box">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
-        <input v-model="localSearch" type="text" placeholder="搜索提交信息 / 作者 / 哈希" />
+        <input
+          v-model="localSearch"
+          type="text"
+          placeholder="搜索提交信息 / 作者 / 哈希"
+        />
       </div>
       <ThemeToggle />
       <button class="icon-btn" title="设置" @click="settingsOpen = true">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
         </svg>
       </button>
       <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
@@ -156,21 +189,9 @@ onMounted(() => nextTick(() => updateScrollState()));
 /* 仓库标签页 */
 .repo-tabs-wrap {
   position: relative;
-  flex: 0 1 25%;
+  flex: 0 1 70%;
   min-width: 0;
   overflow: hidden;
-}
-
-@media (min-width: 1200px) {
-  .repo-tabs-wrap {
-    flex: 0 1 35%;
-  }
-}
-
-@media (min-width: 1400px) {
-  .repo-tabs-wrap {
-    flex: 0 1 50%;
-  }
 }
 
 .repo-tabs {
