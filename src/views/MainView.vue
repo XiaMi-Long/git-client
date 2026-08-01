@@ -25,7 +25,6 @@ import FileList from "@/components/layout/FileList.vue";
 import DiffViewer from "@/components/layout/DiffViewer.vue";
 import CommitBox from "@/components/layout/CommitBox.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
-import ToastContainer from "@/components/layout/ToastContainer.vue";
 import GlobalProgress from "@/components/layout/GlobalProgress.vue";
 import { useResizable } from "@/composables/useResizable";
 import { useRepoStore } from "@/stores/repo";
@@ -83,9 +82,8 @@ onUnmounted(() => {
 
 <template>
   <div class="main-view">
-    <!-- 全局操作反馈：顶部进度条 + Toast 气泡 -->
+    <!-- 全局操作反馈：顶部进度条 -->
     <GlobalProgress />
-    <ToastContainer />
 
     <!-- 顶栏 -->
     <TopBar />
