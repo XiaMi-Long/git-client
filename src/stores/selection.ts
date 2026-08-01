@@ -426,11 +426,21 @@ export const useSelectionStore = defineStore("selection", () => {
     return withOp("中止中", async () => {
       const path = repoStore.activeRepo?.path;
       if (!path) return;
-      await invoke("git_abort_operation", { path });
-      operationState.value = "normal";
-      conflictedFiles.value = [];
-      await repoStore.refreshActive();
-      await commitStore.loadCommits();
+      try {
+        await invoke("git_abort_operation", { path });
+        operationState.value = "normal";
+        conflictedFiles.value = [];
+        await repoStore.refreshActive();
+        await commitStore.loadCommits();
+      } catch {
+        // 中止失败（常见：实际已无进行中的合并/cherry-pick，如用户之前手动撤回过）：
+        // 重新检测真实状态，若已是 normal 则清除前端缓存的冲突状态，界面自动恢复
+        await loadOperationState();
+        await repoStore.refreshActive();
+        if (operationState.value === "normal") {
+          conflictedFiles.value = [];
+        }
+      }
     });
   }
 
