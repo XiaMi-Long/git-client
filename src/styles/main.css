@@ -22,7 +22,7 @@ body,
 
 /* 字体系统 - 见设计语言 §3 */
 body {
-  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--ui-font-family, "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif);
   font-size: 13px;
   line-height: 1.4;
   background: var(--bg-base);

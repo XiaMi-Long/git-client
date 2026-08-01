@@ -119,7 +119,23 @@ async function detectGit() {
                     <span class="font-size-value">{{ settingsStore.fontSize }}px</span>
                   </div>
                 </div>
-                <div class="hint">影响 diff / 代码 / 哈希等区域的等宽字体</div>
+                <div class="setting-row">
+                  <label>界面字体</label>
+                  <select
+                    class="font-select"
+                    :value="settingsStore.uiFontFamily"
+                    @change="settingsStore.setUiFontFamily(($event.target as HTMLSelectElement).value)"
+                  >
+                    <option
+                      v-for="opt in settingsStore.uiFontOptions"
+                      :key="opt.key"
+                      :value="opt.key"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
+                <div class="hint">界面字体影响侧栏 / 列表 / 按钮等界面文字；代码区用等宽字体</div>
               </div>
             </div>
 
@@ -358,6 +374,23 @@ async function detectGit() {
 }
 
 .setting-row input[type="text"]:focus {
+  border-color: var(--accent);
+}
+
+.setting-row select.font-select {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.setting-row select.font-select:focus {
   border-color: var(--accent);
 }
 
