@@ -217,6 +217,35 @@ impl GitExecutor {
         Ok(())
     }
 
+    // ===== 获取远程更新（fetch） =====
+
+    /// 获取远程更新（git fetch）
+    /// 只更新远程引用（origin/*），不动工作区；之后才能算出分支落后数
+    pub async fn fetch_repo(repo_path: &Path) -> GitResult<()> {
+        Self::run_git(repo_path, &["fetch"]).await?;
+        Ok(())
+    }
+
+    /// 快进更新指定本地分支到其上游（git fetch <remote> <branch>:refs/heads/<branch>）
+    /// * `branch` - 本地分支名
+    /// * `upstream` - 上游如 origin/main，拆分为远程名与分支名
+    /// 仅允许 fast-forward：本地分支没有独有提交时直接快进到远端最新；
+    /// 有本地提交（non-fast-forward）时 git 拒绝，避免覆盖本地历史
+    pub async fn fetch_branch_ff(repo_path: &Path, branch: &str, upstream: &str) -> GitResult<()> {
+        let (remote, _remote_branch) = upstream
+            .split_once('/')
+            .ok_or_else(|| super::types::GitError::CommandFailed {
+                stderr: format!("无效的上游: {upstream}"),
+                exit_code: None,
+            })?;
+        Self::run_git(
+            repo_path,
+            &["fetch", remote, &format!("{branch}:refs/heads/{branch}")],
+        )
+        .await?;
+        Ok(())
+    }
+
     // ===== 冲突检测（2.9） =====
 
     /// 检测当前是否处于冲突状态

@@ -23,6 +23,12 @@ const ahead = computed(() => repoStore.activeRepo?.status?.ahead ?? 0);
 const behind = computed(() => repoStore.activeRepo?.status?.behind ?? 0);
 const isConflicted = computed(() => selectionStore.isConflicted);
 const currentOp = computed(() => selectionStore.currentOp);
+const isFetching = computed(() => repoStore.fetching);
+
+// 汇总可拉取分支数（本地分支落后上游的数量）
+const pullableCount = computed(
+  () => repoStore.activeRepo?.branches.filter((b) => !b.is_remote && b.behind > 0).length ?? 0
+);
 
 const connectionText = computed(() => {
   const repo = repoStore.activeRepo;
@@ -60,6 +66,19 @@ const conflictText = computed(() => {
         <span class="separator">|</span>
         <span class="spinner" />
         <span class="op-text">{{ currentOp }}</span>
+      </template>
+
+      <!-- 正在检查远程更新 -->
+      <template v-else-if="isFetching">
+        <span class="separator">|</span>
+        <span class="spinner" />
+        <span class="op-text">正在检查更新…</span>
+      </template>
+
+      <!-- 有分支可拉取汇总 -->
+      <template v-else-if="pullableCount > 0">
+        <span class="separator">|</span>
+        <span class="behind">有 {{ pullableCount }} 个分支可拉取</span>
       </template>
 
       <!-- 冲突 -->

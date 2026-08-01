@@ -36,6 +36,8 @@ export const useRepoStore = defineStore("repo", () => {
   const repos = ref<RepoTab[]>([]);
   // 当前激活的标签 id
   const activeId = ref<string | null>(null);
+  // 是否正在检查远程更新（git fetch）
+  const fetching = ref(false);
 
   // 当前激活的仓库
   const activeRepo = computed(
@@ -49,8 +51,36 @@ export const useRepoStore = defineStore("repo", () => {
   }
 
   /**
+   * 通知后端当前激活仓库（供后台定时 fetch 轮询）
+   */
+  async function notifyActiveRepo(): Promise<void> {
+    const tab = activeRepo.value;
+    if (!tab) return;
+    await invoke("git_set_active_repo", { path: tab.path }).catch(() => {});
+  }
+
+  /**
+   * 获取远程更新并刷新分支（git fetch + refresh）
+   * 失败静默（离线 / 认证失败不打扰）
+   */
+  async function fetchAndRefresh(): Promise<void> {
+    const tab = activeRepo.value;
+    if (!tab || fetching.value) return;
+    fetching.value = true;
+    try {
+      await invoke("git_fetch", { path: tab.path });
+      await refreshRepo(tab.id);
+    } catch {
+      // 静默
+    } finally {
+      fetching.value = false;
+    }
+  }
+
+  /**
    * 打开仓库
    * 校验目录 -> 加载分支 / 标签 / 状态 -> 启动文件监听 -> 持久化路径
+   * 打开后通知后台轮询并立即检查一次远程更新
    */
   async function openRepo(path: string): Promise<void> {
     // 校验仓库有效性
@@ -86,6 +116,9 @@ export const useRepoStore = defineStore("repo", () => {
       await refreshRepo(id);
       // 启动文件监听
       await invoke("watcher_start", { path });
+      // 通知后台轮询并立即检查远程更新（不阻塞，完成后刷新分支）
+      notifyActiveRepo();
+      fetchAndRefresh();
     } catch (e) {
       tab.error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -142,16 +175,19 @@ export const useRepoStore = defineStore("repo", () => {
 
   /**
    * 切换激活标签
+   * 切换后立即检查一次远程更新（用户需求）
    */
   async function setActive(id: string): Promise<void> {
     if (activeId.value === id) return;
     // 停止旧仓库监听
     await invoke("watcher_stop").catch(() => {});
     activeId.value = id;
-    // 启动新仓库监听
+    // 启动新仓库监听 + 通知后台轮询 + 立即检查远程更新
     const tab = repos.value.find((r) => r.id === id);
     if (tab) {
       await invoke("watcher_start", { path: tab.path }).catch(() => {});
+      notifyActiveRepo();
+      fetchAndRefresh();
     }
   }
 
@@ -180,11 +216,14 @@ export const useRepoStore = defineStore("repo", () => {
     repos,
     activeId,
     activeRepo,
+    fetching,
     openRepo,
     refreshRepo,
     refreshActive,
     closeRepo,
     setActive,
     restoreRepos,
+    notifyActiveRepo,
+    fetchAndRefresh,
   };
 });

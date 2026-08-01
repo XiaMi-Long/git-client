@@ -253,6 +253,37 @@ pub async fn git_push_delete_remote(
         .map_err(|e| e.to_string())
 }
 
+/// 获取远程更新（git fetch，更新 origin/* 引用，不动工作区）
+#[tauri::command]
+pub async fn git_fetch(path: String) -> Result<(), String> {
+    GitExecutor::fetch_repo(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 快进更新指定本地分支到其上游（不切换分支，仅 fast-forward）
+#[tauri::command]
+pub async fn git_fetch_branch_ff(
+    path: String,
+    branch: String,
+    upstream: String,
+) -> Result<(), String> {
+    GitExecutor::fetch_branch_ff(&to_path(&path), &branch, &upstream)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 设置当前激活仓库（供后台定时 fetch 使用）
+#[tauri::command]
+pub fn git_set_active_repo(
+    state: tauri::State<'_, std::sync::Mutex<crate::FetcherState>>,
+    path: String,
+) -> Result<(), String> {
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    s.current_repo = Some(path);
+    Ok(())
+}
+
 /// 检测冲突状态（2.9）
 #[tauri::command]
 pub async fn git_check_conflict(path: String) -> Result<bool, String> {
@@ -388,6 +419,9 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_push",
         "git_push_upstream",
         "git_push_delete_remote",
+        "git_fetch",
+        "git_fetch_branch_ff",
+        "git_set_active_repo",
         "git_check_conflict",
         "git_list_conflicted_files",
         "git_mark_resolved",

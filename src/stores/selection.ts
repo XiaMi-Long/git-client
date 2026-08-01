@@ -190,6 +190,30 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** 快进更新本地分支到其上游（右键获取最新，不切换分支，仅 fast-forward） */
+  async function fetchBranchFF(branch: BranchInfo): Promise<BranchOperationResult | null> {
+    return withOp("获取最新中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      const upstream = branch.upstream;
+      if (!upstream) {
+        return { success: false, message: `分支 ${branch.name} 没有上游，无法获取最新`, current_branch: null };
+      }
+      try {
+        await invoke("git_fetch_branch_ff", { path, branch: branch.name, upstream });
+        await repoStore.refreshActive();
+        return { success: true, message: `分支 ${branch.name} 已更新到 ${upstream} 最新`, current_branch: null };
+      } catch (e) {
+        // 常见原因：本地有独有提交（non-fast-forward），git 拒绝覆盖
+        return {
+          success: false,
+          message: e instanceof Error ? e.message : String(e),
+          current_branch: null,
+        };
+      }
+    });
+  }
+
   async function deleteBranch(name: string, force: boolean): Promise<BranchOperationResult | null> {
     return withOp("删除分支中", async () => {
       const path = repoStore.activeRepo?.path;
@@ -435,6 +459,7 @@ export const useSelectionStore = defineStore("selection", () => {
     createBranch,
     checkoutBranch,
     createBranchFromRemote,
+    fetchBranchFF,
     deleteBranch,
     deleteRemoteBranch,
     renameBranch,

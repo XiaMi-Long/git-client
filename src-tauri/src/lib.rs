@@ -11,10 +11,20 @@ pub mod commands;
 pub mod watcher;
 
 use std::sync::Mutex;
+use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use watcher::WatcherState;
+
+/// 后台定时 fetch 状态：记录当前激活仓库路径，供轮询任务使用
+#[derive(Default)]
+pub struct FetcherState {
+    pub current_repo: Option<String>,
+}
+
+/// 后台 fetch 轮询间隔：10 分钟
+const FETCH_INTERVAL: Duration = Duration::from_secs(600);
 
 /// 应用启动入口
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -23,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(WatcherState::default()))
+        .manage(Mutex::new(FetcherState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::git_detect_version,
             commands::git_is_valid_repo,
@@ -49,6 +60,9 @@ pub fn run() {
             commands::git_push,
             commands::git_push_upstream,
             commands::git_push_delete_remote,
+            commands::git_fetch,
+            commands::git_fetch_branch_ff,
+            commands::git_set_active_repo,
             commands::git_check_conflict,
             commands::git_list_conflicted_files,
             commands::git_mark_resolved,
@@ -66,6 +80,29 @@ pub fn run() {
             watcher::watcher_stop
         ])
         .setup(|app| {
+            // 后台定时 fetch：每 10 分钟检查当前激活仓库是否有可拉取更新，
+            // 完成后 emit "repo-fetched" 事件通知前端刷新落后数
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(FETCH_INTERVAL);
+                // 跳过第一次立即触发（打开仓库时前端会手动 fetch）
+                interval.tick().await;
+                loop {
+                    interval.tick().await;
+                    let path = {
+                        let state = handle.state::<Mutex<FetcherState>>();
+                        state.lock().ok().and_then(|s| s.current_repo.clone())
+                    };
+                    if let Some(path) = path {
+                        let p = std::path::PathBuf::from(&path);
+                        if git::GitExecutor::is_valid_repo(&p).await {
+                            let _ = git::GitExecutor::fetch_repo(&p).await;
+                            let _ = handle.emit("repo-fetched", ());
+                        }
+                    }
+                }
+            });
+
             #[cfg(debug_assertions)]
             {
                 // 开发模式自动打开 DevTools

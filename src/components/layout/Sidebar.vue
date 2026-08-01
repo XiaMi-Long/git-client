@@ -123,6 +123,12 @@ async function handleCheckout(branch: BranchInfo) {
   if (result && !result.success) await showMessage("检出失败", result.message);
 }
 
+// 获取最新：快进更新本地分支到其上游（不切换分支）
+async function handleFetchLatest(branch: BranchInfo) {
+  const result = await selectionStore.fetchBranchFF(branch);
+  if (result) await showMessage(result.success ? "获取最新" : "获取最新失败", result.message);
+}
+
 // 基于远程分支创建本地分支并切换（弹窗输入本地名，默认同名）
 async function handleCreateLocalFromRemote(branch: BranchInfo) {
   // 默认本地名 = 去掉远程名前缀，如 origin/feature -> feature
@@ -197,6 +203,7 @@ function menuItems(branch: BranchInfo) {
   }
   return [
     { label: "切换到该分支", action: () => handleCheckout(branch), disabled: isCurrent },
+    { label: "获取最新", action: () => handleFetchLatest(branch), disabled: !branch.upstream || branch.behind === 0 },
     { label: "从当前分支新建…", action: handleNewBranch },
     { label: "重命名…", action: () => handleRename(branch), disabled: isCurrent || isRemote },
     { label: "删除…", action: () => handleDelete(branch), disabled: isCurrent || isRemote, danger: true },
@@ -230,6 +237,10 @@ function menuItems(branch: BranchInfo) {
           >
             <span class="node-dot" :class="{ current: b.is_current }" />
             <span class="node-label">{{ b.name }}</span>
+            <!-- 落后上游徽章：可拉取数量 -->
+            <span v-if="b.behind > 0" class="branch-behind" :title="`落后上游 ${b.behind} 个提交，可获取最新`">
+              ↓{{ b.behind }}
+            </span>
           </div>
           <div v-if="localBranches.length === 0" class="empty-hint">暂无分支</div>
         </div>
@@ -431,6 +442,21 @@ function menuItems(branch: BranchInfo) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 落后上游徽章（可拉取数量） */
+.branch-behind {
+  flex-shrink: 0;
+  padding: 0 6px;
+  background: var(--warning);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: 8px;
+}
+
+.tree-node.browsing .branch-behind {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .empty-hint {

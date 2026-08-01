@@ -17,7 +17,7 @@
     - 2026-07-29: Updated. 工作区模式提交框（7.2）、修复中右拖拽反向。
 -->
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, onUnmounted } from "vue";
 import TopBar from "@/components/layout/TopBar.vue";
 import Sidebar from "@/components/layout/Sidebar.vue";
 import CommitList from "@/components/layout/CommitList.vue";
@@ -29,6 +29,7 @@ import { useResizable } from "@/composables/useResizable";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
@@ -36,6 +37,9 @@ const selectionStore = useSelectionStore();
 const { start: startWatcher } = useRepoWatcher(() => {
   repoStore.refreshActive();
 });
+
+// 后台定时 fetch 完成事件的取消函数
+let unlistenFetched: Promise<UnlistenFn> | null = null;
 
 // 侧栏宽度（左右拖拽，面板在左）
 const { size: sidebarWidth, onMouseDown: onSidebarResize } = useResizable({
@@ -64,6 +68,14 @@ const { size: fileListHeight, onMouseDown: onFileListResize } = useResizable({
 
 onMounted(() => {
   startWatcher();
+  // 后台定时 fetch 完成后刷新分支落后数（Rust 侧每 10 分钟 emit "repo-fetched"）
+  unlistenFetched = listen("repo-fetched", () => {
+    repoStore.refreshActive();
+  });
+});
+
+onUnmounted(() => {
+  unlistenFetched?.then((fn) => fn());
 });
 </script>
 
