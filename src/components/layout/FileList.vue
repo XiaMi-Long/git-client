@@ -19,9 +19,9 @@ import type { FileChangeType, FileDiff } from "@/types/git";
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
 
-const staged = computed(() => repoStore.activeRepo?.status.staged ?? []);
-const unstaged = computed(() => repoStore.activeRepo?.status.unstaged ?? []);
-const untracked = computed(() => repoStore.activeRepo?.status.untracked ?? []);
+const staged = computed(() => repoStore.activeRepo?.status?.staged ?? []);
+const unstaged = computed(() => repoStore.activeRepo?.status?.unstaged ?? []);
+const untracked = computed(() => repoStore.activeRepo?.status?.untracked ?? []);
 const isWorking = computed(() => selectionStore.isWorkingMode);
 const isConflicted = computed(() => selectionStore.isConflicted);
 const commitFiles = computed(() => selectionStore.commitFileDiffs);

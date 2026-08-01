@@ -39,7 +39,7 @@ const fileName = computed(() => {
 const isStagedFile = computed(() => {
   const file = selectionStore.selectedFile;
   if (!file) return false;
-  return !!repoStore.activeRepo?.status.staged.find((s) => s.path === file);
+  return !!repoStore.activeRepo?.status?.staged.find((s) => s.path === file);
 });
 
 // 8.4 懒加载：选中文件 / 模式 / 提交变化时加载
