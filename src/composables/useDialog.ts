@@ -26,7 +26,7 @@ export function useDialog() {
   /** 消息提示对话框（仅确定按钮） */
   function showMessage(title: string, msg: string): Promise<void> {
     return new Promise((resolve) => {
-      dialogState.value = { title, message: msg, hideCancel: true, resolve: () => resolve(true) };
+      dialogState.value = { title, message: msg, hideCancel: true, resolve: () => resolve() };
     });
   }
 

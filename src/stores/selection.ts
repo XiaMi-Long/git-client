@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "./repo";
 import { useCommitStore } from "./commit";
 import { useToast } from "@/composables/useToast";
-import type { FileDiff, BranchOperationResult, CompareResult, RemoteResult, OperationState } from "@/types/git";
+import type { FileDiff, BranchOperationResult, CompareResult, RemoteResult, OperationState, BranchInfo } from "@/types/git";
 
 export const useSelectionStore = defineStore("selection", () => {
   const repoStore = useRepoStore();

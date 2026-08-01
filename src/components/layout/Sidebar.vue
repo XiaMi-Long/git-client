@@ -94,7 +94,7 @@ function showConfirm(title: string, msg: string, danger = false): Promise<boolea
 
 function showMessage(title: string, msg: string): Promise<void> {
   return new Promise((resolve) => {
-    dialogState.value = { title, message: msg, hideCancel: true, resolve: () => resolve(true) };
+    dialogState.value = { title, message: msg, hideCancel: true, resolve: () => resolve() };
   });
 }
 
