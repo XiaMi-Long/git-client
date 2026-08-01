@@ -93,64 +93,70 @@ async function detectGit() {
 
             <!-- 常规 -->
             <div v-if="activeCategory === 'general'" class="settings-group">
-              <div class="setting-row">
-                <label>主题</label>
-                <div class="theme-options">
-                  <button :class="{ active: themeStore.isDark }" @click="themeStore.setTheme('dark')">
-                    暗色
-                  </button>
-                  <button :class="{ active: !themeStore.isDark }" @click="themeStore.setTheme('light')">
-                    亮色
-                  </button>
+              <div class="setting-card">
+                <div class="card-title">界面</div>
+                <div class="setting-row">
+                  <label>主题</label>
+                  <div class="theme-options">
+                    <button :class="{ active: themeStore.isDark }" @click="themeStore.setTheme('dark')">
+                      暗色
+                    </button>
+                    <button :class="{ active: !themeStore.isDark }" @click="themeStore.setTheme('light')">
+                      亮色
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="setting-row">
-                <label>等宽字体大小</label>
-                <div class="font-size-control">
-                  <input
-                    type="range"
-                    min="12"
-                    max="16"
-                    :value="settingsStore.fontSize"
-                    @input="settingsStore.setFontSize(Number(($event.target as HTMLInputElement).value))"
-                  />
-                  <span class="font-size-value">{{ settingsStore.fontSize }}px</span>
+                <div class="setting-row">
+                  <label>等宽字体大小</label>
+                  <div class="font-size-control">
+                    <input
+                      type="range"
+                      min="12"
+                      max="16"
+                      :value="settingsStore.fontSize"
+                      @input="settingsStore.setFontSize(Number(($event.target as HTMLInputElement).value))"
+                    />
+                    <span class="font-size-value">{{ settingsStore.fontSize }}px</span>
+                  </div>
                 </div>
+                <div class="hint">影响 diff / 代码 / 哈希等区域的等宽字体</div>
               </div>
-              <div class="hint">影响 diff / 代码 / 哈希等区域的等宽字体</div>
             </div>
 
             <!-- Git -->
             <div v-else-if="activeCategory === 'git'" class="settings-group">
-              <div class="setting-row">
-                <label>git 可执行文件路径</label>
-                <input
-                  type="text"
-                  :value="settingsStore.gitPath"
-                  placeholder="留空使用系统 PATH"
-                  @change="settingsStore.setGitPath(($event.target as HTMLInputElement).value)"
-                />
-              </div>
-              <div class="setting-row">
-                <label>git 版本</label>
-                <button class="detect-btn" :disabled="detecting" @click="detectGit">
-                  {{ detecting ? "检测中…" : "检测版本" }}
-                </button>
-                <span v-if="gitVersion" class="git-version">{{ gitVersion }}</span>
-              </div>
-              <div class="setting-row">
-                <label>默认打开目录</label>
-                <input
-                  type="text"
-                  :value="settingsStore.defaultOpenDir"
-                  placeholder="留空使用上次目录"
-                  @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
-                />
+              <div class="setting-card">
+                <div class="card-title">Git 环境</div>
+                <div class="setting-row">
+                  <label>git 可执行文件路径</label>
+                  <input
+                    type="text"
+                    :value="settingsStore.gitPath"
+                    placeholder="留空使用系统 PATH"
+                    @change="settingsStore.setGitPath(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="setting-row">
+                  <label>git 版本</label>
+                  <button class="detect-btn" :disabled="detecting" @click="detectGit">
+                    {{ detecting ? "检测中…" : "检测版本" }}
+                  </button>
+                  <span v-if="gitVersion" class="git-version">{{ gitVersion }}</span>
+                </div>
+                <div class="setting-row">
+                  <label>默认打开目录</label>
+                  <input
+                    type="text"
+                    :value="settingsStore.defaultOpenDir"
+                    placeholder="留空使用上次目录"
+                    @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
               </div>
 
               <!-- 远程分支操作保护 -->
-              <div class="setting-row column">
-                <label>远程分支操作保护</label>
+              <div class="setting-card">
+                <div class="card-title">远程分支操作保护</div>
                 <div class="switch-row">
                   <span class="switch-label">总开关（一键全保护）</span>
                   <button
@@ -162,17 +168,6 @@ async function detectGit() {
                   </button>
                 </div>
                 <div class="hint">开启后远程分支右键禁止重命名 / 删除，防止误操作</div>
-                <div class="switch-row sub">
-                  <span class="switch-label">禁止重命名远程分支</span>
-                  <button
-                    class="switch"
-                    :class="{ on: settingsStore.protectRemoteRename, disabled: settingsStore.protectRemote }"
-                    :disabled="settingsStore.protectRemote"
-                    @click="settingsStore.setProtectRemoteRename(!settingsStore.protectRemoteRename)"
-                  >
-                    <span class="switch-thumb" />
-                  </button>
-                </div>
                 <div class="switch-row sub">
                   <span class="switch-label">禁止删除远程分支</span>
                   <button
@@ -189,15 +184,21 @@ async function detectGit() {
 
             <!-- AI 功能 -->
             <div v-else-if="activeCategory === 'ai'" class="settings-group">
-              <div class="empty-hint">敬请期待</div>
+              <div class="setting-card">
+                <div class="card-title">AI 功能</div>
+                <div class="empty-hint">敬请期待</div>
+              </div>
             </div>
 
             <!-- 关于 -->
             <div v-else-if="activeCategory === 'about'" class="settings-group">
-              <div class="about-row"><label>应用</label><span>Git 客户端</span></div>
-              <div class="about-row"><label>版本</label><span>0.1.0</span></div>
-              <div class="about-row"><label>仓库</label><span>github.com/XiaMi-Long/git-client</span></div>
-              <div class="about-row"><label>技术栈</label><span>Tauri 2 + Vue 3</span></div>
+              <div class="setting-card">
+                <div class="card-title">关于</div>
+                <div class="about-row"><label>应用</label><span>Git 客户端</span></div>
+                <div class="about-row"><label>版本</label><span>0.1.0</span></div>
+                <div class="about-row"><label>仓库</label><span>github.com/XiaMi-Long/git-client</span></div>
+                <div class="about-row"><label>技术栈</label><span>Tauri 2 + Vue 3</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -308,15 +309,33 @@ async function detectGit() {
 
 .settings-group {
   flex: 1;
-  padding: 20px 16px;
+  padding: 16px;
   overflow-y: auto;
+}
+
+/* 设置区块卡片：按逻辑分组，视觉区分 */
+.setting-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 16px 16px 8px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
 }
 
 .setting-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .setting-row label {
@@ -411,30 +430,26 @@ async function detectGit() {
 
 .hint {
   margin-left: 130px;
-  margin-top: -12px;
+  margin-top: -8px;
   font-size: 12px;
   color: var(--fg-tertiary);
 }
 
-/* 远程分支保护开关 */
-.setting-row.column {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 0;
-}
-
-.setting-row.column .hint {
+/* 开关行后面的提示：无 label 对齐，直接左对齐 */
+.switch-row + .hint {
   margin-left: 0;
-  margin-top: -4px;
+  margin-top: 4px;
+  margin-bottom: 12px;
 }
 
+/* 远程分支保护开关 */
 .switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
   gap: 12px;
+  margin-bottom: 10px;
 }
 
 .switch-row.sub {
@@ -488,7 +503,7 @@ async function detectGit() {
   color: var(--fg-tertiary);
   font-size: 13px;
   text-align: center;
-  padding: 60px 0;
+  padding: 40px 0;
 }
 
 .about-row {
@@ -496,6 +511,10 @@ async function detectGit() {
   padding: 10px 0;
   border-bottom: 1px solid var(--border-default);
   font-size: 13px;
+}
+
+.about-row:last-child {
+  border-bottom: none;
 }
 
 .about-row label {
