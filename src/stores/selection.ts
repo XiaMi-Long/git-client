@@ -172,6 +172,24 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** 基于远程分支创建本地分支并切换（含 tracking） */
+  async function createBranchFromRemote(localName: string, remoteRef: string): Promise<BranchOperationResult | null> {
+    return withOp("创建本地分支中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      const result = await invoke<BranchOperationResult>("git_create_branch_from_remote", {
+        path,
+        localName,
+        remoteRef,
+      });
+      if (result.success) {
+        await repoStore.refreshActive();
+        await commitStore.loadCommits();
+      }
+      return result;
+    });
+  }
+
   async function deleteBranch(name: string, force: boolean): Promise<BranchOperationResult | null> {
     return withOp("删除分支中", async () => {
       const path = repoStore.activeRepo?.path;
@@ -397,6 +415,7 @@ export const useSelectionStore = defineStore("selection", () => {
     commit,
     createBranch,
     checkoutBranch,
+    createBranchFromRemote,
     deleteBranch,
     renameBranch,
     mergeBranch,

@@ -127,6 +127,18 @@ pub async fn git_checkout_branch(
         .map_err(|e| e.to_string())
 }
 
+/// 基于远程分支创建本地分支并切换（含 tracking）
+#[tauri::command]
+pub async fn git_create_branch_from_remote(
+    path: String,
+    local_name: String,
+    remote_ref: String,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::create_branch_from_remote(&to_path(&path), &local_name, &remote_ref)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 删除分支
 #[tauri::command]
 pub async fn git_delete_branch(
@@ -354,6 +366,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_get_current_branch",
         "git_create_branch",
         "git_checkout_branch",
+        "git_create_branch_from_remote",
         "git_delete_branch",
         "git_rename_branch",
         "git_merge_branch",

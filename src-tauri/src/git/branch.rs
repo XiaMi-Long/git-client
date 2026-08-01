@@ -265,6 +265,32 @@ impl GitExecutor {
         }
     }
 
+    /// 基于远程分支创建本地分支并切换（含 tracking）
+    /// * `local_name` - 本地分支名（可自定义）
+    /// * `remote_ref` - 远程 ref，如 origin/feature
+    /// 两步：git branch --track <local> <remote> 创建并设置上游，再 git checkout 切换
+    pub async fn create_branch_from_remote(
+        repo_path: &Path,
+        local_name: &str,
+        remote_ref: &str,
+    ) -> GitResult<BranchOperationResult> {
+        // 第一步：创建本地分支并自动设置 upstream（git branch --track）
+        Self::run_git(repo_path, &["branch", "--track", local_name, remote_ref]).await?;
+        // 第二步：切换到新分支
+        match Self::run_git(repo_path, &["checkout", local_name]).await {
+            Ok(_) => Ok(BranchOperationResult {
+                success: true,
+                message: format!("已创建本地分支 '{local_name}' 并切换（跟踪 {remote_ref}）"),
+                current_branch: Some(local_name.to_string()),
+            }),
+            Err(e) => Ok(BranchOperationResult {
+                success: false,
+                message: format!("本地分支 '{local_name}' 已创建，但切换失败: {e}"),
+                current_branch: None,
+            }),
+        }
+    }
+
     /// 检出分支
     pub async fn checkout_branch(
         repo_path: &Path,

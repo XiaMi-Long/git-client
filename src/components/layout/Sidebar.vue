@@ -121,6 +121,16 @@ async function handleCheckout(branch: BranchInfo) {
   if (result && !result.success) await showMessage("检出失败", result.message);
 }
 
+// 基于远程分支创建本地分支并切换（弹窗输入本地名，默认同名）
+async function handleCreateLocalFromRemote(branch: BranchInfo) {
+  // 默认本地名 = 去掉远程名前缀，如 origin/feature -> feature
+  const defaultName = branch.name.split("/").slice(1).join("/") || branch.name;
+  const localName = await showPrompt("从远程分支创建本地分支", defaultName);
+  if (!localName || !localName.trim()) return;
+  const result = await selectionStore.createBranchFromRemote(localName.trim(), branch.name);
+  if (result) await showMessage(result.success ? "创建本地分支" : "失败", result.message);
+}
+
 async function handleDelete(branch: BranchInfo) {
   const ok = await showConfirm("删除分支", `确定删除分支 "${branch.name}"？`, true);
   if (!ok) return;
@@ -159,6 +169,15 @@ async function handleCompare(branch: BranchInfo) {
 function menuItems(branch: BranchInfo) {
   const isCurrent = branch.name === currentBranchName.value;
   const isRemote = branch.is_remote;
+  // 远程分支：创建本地分支（避免误进 detached HEAD）；本地分支：切换/新建/重命名/删除
+  if (isRemote) {
+    return [
+      { label: "从远程分支创建本地分支…", action: () => handleCreateLocalFromRemote(branch) },
+      { label: "", action: () => {}, divider: true },
+      { label: "合并到当前分支", action: () => handleMerge(branch), disabled: isCurrent },
+      { label: "与当前分支对比", action: () => handleCompare(branch), disabled: isCurrent },
+    ];
+  }
   return [
     { label: "切换到该分支", action: () => handleCheckout(branch), disabled: isCurrent },
     { label: "从当前分支新建…", action: handleNewBranch },
