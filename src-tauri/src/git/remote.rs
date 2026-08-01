@@ -304,8 +304,8 @@ impl GitExecutor {
     /// 检查是否正在进行 rebase
     pub async fn is_rebasing(repo_path: &Path) -> GitResult<bool> {
         let _output = Self::run_git_raw(Some(repo_path), &["rev-parse", "--verify", "HEAD"]).await;
-        // 检查 .git 目录中是否有 rebase 相关文件
-        let git_dir = Self::run_git(repo_path, &["rev-parse", "--git-dir"]).await?;
+        // 检查 .git 目录中是否有 rebase 相关文件（用绝对路径避免检查错目录）
+        let git_dir = Self::run_git(repo_path, &["rev-parse", "--absolute-git-dir"]).await?;
         let git_dir = git_dir.trim();
 
         let rebase_apply = Path::new(git_dir).join("rebase-apply");
@@ -316,14 +316,16 @@ impl GitExecutor {
 
     /// 检查是否正在进行 merge
     pub async fn is_merging(repo_path: &Path) -> GitResult<bool> {
-        let git_dir = Self::run_git(repo_path, &["rev-parse", "--git-dir"]).await?;
+        // 用 --absolute-git-dir：--git-dir 返回相对路径，exists() 会检查错目录
+        let git_dir = Self::run_git(repo_path, &["rev-parse", "--absolute-git-dir"]).await?;
         let merge_head = Path::new(git_dir.trim()).join("MERGE_HEAD");
         Ok(merge_head.exists())
     }
 
     /// 检查是否正在进行 cherry-pick
     pub async fn is_cherry_picking(repo_path: &Path) -> GitResult<bool> {
-        let git_dir = Self::run_git(repo_path, &["rev-parse", "--git-dir"]).await?;
+        // 用 --absolute-git-dir：--git-dir 返回相对路径，exists() 会检查错目录
+        let git_dir = Self::run_git(repo_path, &["rev-parse", "--absolute-git-dir"]).await?;
         let cherry_head = Path::new(git_dir.trim()).join("CHERRY_PICK_HEAD");
         Ok(cherry_head.exists())
     }
