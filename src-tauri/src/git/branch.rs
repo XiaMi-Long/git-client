@@ -379,11 +379,24 @@ impl GitExecutor {
                     current_branch: Self::get_current_branch(repo_path).await.ok().flatten(),
                 })
             }
-            Err(e) => Ok(BranchOperationResult {
-                success: false,
-                message: e.to_string(),
-                current_branch: None,
-            }),
+            Err(e) => {
+                // git merge 冲突时退出码为 1，run_git 会走 Err 分支；
+                // 识别冲突标记，返回友好提示（而不是裸抛 git stderr）
+                let err_text = e.to_string();
+                let is_conflict = err_text.contains("CONFLICT")
+                    || err_text.contains("Automatic merge failed")
+                    || err_text.contains("fix conflicts");
+                let message = if is_conflict {
+                    "合并产生冲突：请在右侧冲突文件列表中查看并解决冲突文件，然后点击状态栏 [继续] 完成合并，或 [中止] 撤销合并".to_string()
+                } else {
+                    err_text
+                };
+                Ok(BranchOperationResult {
+                    success: false,
+                    message,
+                    current_branch: None,
+                })
+            }
         }
     }
 

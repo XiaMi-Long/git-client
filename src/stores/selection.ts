@@ -267,7 +267,9 @@ export const useSelectionStore = defineStore("selection", () => {
         await repoStore.refreshActive();
         await commitStore.loadCommits();
       } else {
+        // 合并失败（可能冲突）：刷新操作状态 + 仓库数据，进入冲突模式
         await loadOperationState();
+        await repoStore.refreshActive();
       }
       return result;
     });
