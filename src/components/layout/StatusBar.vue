@@ -85,8 +85,7 @@ const conflictText = computed(() => {
       <template v-else-if="isConflicted">
         <span class="separator">|</span>
         <span class="conflict-text">⚠ {{ conflictText }}</span>
-        <button class="op-btn" @click="selectionStore.continueOperation()">继续</button>
-        <button class="op-btn danger" @click="selectionStore.abortOperation()">中止</button>
+        <button class="op-btn danger" @click="selectionStore.abortOperation()">中止合并</button>
       </template>
 
       <!-- 领先 / 落后 -->

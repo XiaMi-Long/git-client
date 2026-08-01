@@ -11,7 +11,7 @@
     - 2026-07-29: Updated. 冲突模式冲突文件列表与标记已解决（12.2 / 12.3）。
 -->
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import type { FileChangeType, FileDiff } from "@/types/git";
@@ -25,6 +25,9 @@ const untracked = computed(() => repoStore.activeRepo?.status.untracked ?? []);
 const isWorking = computed(() => selectionStore.isWorkingMode);
 const isConflicted = computed(() => selectionStore.isConflicted);
 const commitFiles = computed(() => selectionStore.commitFileDiffs);
+// 冲突文件列表与展开状态
+const conflictFiles = computed(() => selectionStore.conflictedFiles);
+const conflictOpen = ref(true);
 
 function statusLetter(type: FileChangeType): string {
   const map: Record<string, string> = {
@@ -74,29 +77,30 @@ function diffPath(f: FileDiff): string {
 
 <template>
   <div class="file-list">
-    <!-- 冲突模式（12.2 / 12.3）优先 -->
-    <template v-if="isConflicted">
-      <div class="group-header conflict-header">
-        <span>⚠ 冲突文件 ({{ selectionStore.conflictedFiles.length }})</span>
+    <!-- 工作区模式（冲突时同样显示暂存区，冲突文件单独一组） -->
+    <template v-if="isWorking || isConflicted">
+      <!-- 冲突横幅（常驻，醒目） -->
+      <div v-if="isConflicted" class="conflict-banner">
+        <span class="conflict-banner-text">⚠ 合并冲突：{{ conflictFiles.length }} 个文件冲突</span>
+        <button class="conflict-abort" @click="selectionStore.abortOperation()">中止合并</button>
       </div>
-      <div
-        v-for="f in selectionStore.conflictedFiles"
-        :key="f"
-        class="file-item conflict"
-        :title="f"
-      >
-        <span class="file-status" style="color: var(--danger)">!</span>
-        <span class="file-path">{{ f }}</span>
-        <button class="file-action" @click="selectionStore.markResolved(f)">
-          标记已解决
-        </button>
-      </div>
-      <div v-if="selectionStore.conflictedFiles.length === 0" class="list-empty">
-        <p>无冲突文件</p>
-      </div>
-    </template>
 
-    <template v-else-if="isWorking">
+      <!-- 冲突文件列表（可展开 / 收起） -->
+      <div
+        v-if="isConflicted"
+        class="group-header conflict-header"
+        @click="conflictOpen = !conflictOpen"
+      >
+        <span>⚠ 冲突文件 ({{ conflictFiles.length }})</span>
+        <span class="caret">{{ conflictOpen ? "▾" : "▶" }}</span>
+      </div>
+      <template v-if="isConflicted && conflictOpen">
+        <div v-for="f in conflictFiles" :key="f" class="file-item conflict" :title="f">
+          <span class="file-status" style="color: var(--danger)">!</span>
+          <span class="file-path">{{ f }}</span>
+        </div>
+      </template>
+
       <div class="group-header">
         <span>已暂存 ({{ staged.length }})</span>
         <button v-if="staged.length > 0" class="group-action" @click="selectionStore.unstageAll()">
@@ -155,7 +159,7 @@ function diffPath(f: FileDiff): string {
       </div>
 
       <div
-        v-if="staged.length === 0 && unstaged.length === 0 && untracked.length === 0"
+        v-if="!isConflicted && staged.length === 0 && unstaged.length === 0 && untracked.length === 0"
         class="list-empty"
       >
         <p>工作区干净，无更改</p>
@@ -219,6 +223,48 @@ function diffPath(f: FileDiff): string {
 
 .conflict-header {
   color: var(--danger);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 冲突横幅（常驻醒目） */
+.conflict-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(214, 61, 61, 0.15);
+  border-bottom: 1px solid var(--danger);
+  flex-shrink: 0;
+}
+
+.conflict-banner-text {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.conflict-abort {
+  height: 20px;
+  padding: 0 10px;
+  background: var(--danger);
+  border: none;
+  border-radius: 2px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 150ms ease;
+}
+
+.conflict-abort:hover {
+  opacity: 0.85;
+}
+
+.caret {
+  font-size: 10px;
+  color: var(--fg-tertiary);
 }
 
 .group-action {

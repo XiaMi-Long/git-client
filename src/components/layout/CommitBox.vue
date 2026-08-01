@@ -15,9 +15,10 @@ async function onCommit() {
   await selectionStore.commit();
 }
 
-// Ctrl+Enter 快捷提交
+// Ctrl+Enter 快捷提交（冲突时禁用）
 function onKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if (selectionStore.isConflicted) return;
     e.preventDefault();
     onCommit();
   }
@@ -35,10 +36,10 @@ function onKeydown(e: KeyboardEvent) {
     />
     <button
       class="commit-btn"
-      :disabled="!selectionStore.commitMessage.trim()"
+      :disabled="!selectionStore.commitMessage.trim() || selectionStore.isConflicted"
       @click="onCommit"
     >
-      提交
+      {{ selectionStore.isConflicted ? "冲突中，无法提交" : "提交" }}
     </button>
   </div>
 </template>

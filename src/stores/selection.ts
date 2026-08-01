@@ -270,6 +270,10 @@ export const useSelectionStore = defineStore("selection", () => {
         // 合并失败（可能冲突）：刷新操作状态 + 仓库数据，进入冲突模式
         await loadOperationState();
         await repoStore.refreshActive();
+        // 冲突时切到工作区模式，右侧展示冲突文件与暂存区
+        if (operationState.value !== "normal") {
+          selectWorking();
+        }
       }
       return result;
     });
@@ -434,6 +438,15 @@ export const useSelectionStore = defineStore("selection", () => {
   watch(commitHash, () => {
     loadCommitDiffs();
   });
+
+  // 切换仓库时重新检测该仓库的冲突状态（按仓库隔离，避免串扰）
+  watch(
+    () => repoStore.activeRepo?.id,
+    () => {
+      loadOperationState();
+    },
+    { immediate: true }
+  );
 
   return {
     type,

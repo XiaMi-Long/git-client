@@ -273,7 +273,7 @@ impl GitExecutor {
         Ok(())
     }
 
-    /// 中止拉取操作（git merge --abort 或 git rebase --abort）
+    /// 中止操作（merge / rebase / cherry-pick）
     pub async fn abort_operation(repo_path: &Path) -> GitResult<()> {
         // 检查是否在 rebase 状态
         let is_rebasing = Self::run_git_raw(Some(repo_path), &["status"])
@@ -283,11 +283,20 @@ impl GitExecutor {
                 stdout.contains("rebase in progress")
             })
             .unwrap_or(false);
+        let is_cherry_picking = Self::is_cherry_picking(repo_path).await?;
+        let is_merging = Self::is_merging(repo_path).await?;
 
         if is_rebasing {
             Self::run_git(repo_path, &["rebase", "--abort"]).await?;
-        } else {
+        } else if is_cherry_picking {
+            Self::run_git(repo_path, &["cherry-pick", "--abort"]).await?;
+        } else if is_merging {
             Self::run_git(repo_path, &["merge", "--abort"]).await?;
+        } else {
+            return Err(super::types::GitError::CommandFailed {
+                stderr: "没有进行中的合并 / cherry-pick 操作".to_string(),
+                exit_code: None,
+            });
         }
         Ok(())
     }

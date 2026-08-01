@@ -167,10 +167,17 @@ async function handleRename(branch: BranchInfo) {
 
 async function handleMerge(branch: BranchInfo) {
   const result = await selectionStore.mergeBranch(branch.name, false);
-  // 冲突时界面已自动切入冲突模式（右侧冲突文件列表 + 状态栏 [继续]/[中止]），
-  // 不弹刺眼报错框遮挡；只有非冲突失败（如工作区不干净）才弹错误
-  if (result && !result.success && !selectionStore.isConflicted) {
-    await showMessage("合并失败", result.message);
+  if (result && !result.success) {
+    if (selectionStore.isConflicted) {
+      // 冲突：弹一次提示，界面已进入冲突模式（横幅 + 状态栏 [中止合并]）
+      await showMessage(
+        "合并冲突",
+        `有 ${selectionStore.conflictedFiles.length} 个文件冲突\n可点击 [中止合并] 撤销本次合并；或用外部编辑器解决冲突。`
+      );
+    } else {
+      // 非冲突失败（如工作区不干净）
+      await showMessage("合并失败", result.message);
+    }
   }
 }
 
