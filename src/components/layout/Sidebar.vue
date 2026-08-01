@@ -160,13 +160,13 @@ function menuItems(branch: BranchInfo) {
   const isCurrent = branch.name === currentBranchName.value;
   const isRemote = branch.is_remote;
   return [
-    { label: "检出", action: () => handleCheckout(branch), disabled: isCurrent },
-    { label: "新建分支…", action: handleNewBranch },
+    { label: "切换到该分支", action: () => handleCheckout(branch), disabled: isCurrent },
+    { label: "从当前分支新建…", action: handleNewBranch },
     { label: "重命名…", action: () => handleRename(branch), disabled: isCurrent || isRemote },
     { label: "删除…", action: () => handleDelete(branch), disabled: isCurrent || isRemote, danger: true },
     { label: "", action: () => {}, divider: true },
-    { label: "合并到当前", action: () => handleMerge(branch), disabled: isCurrent },
-    { label: "与当前对比", action: () => handleCompare(branch), disabled: isCurrent },
+    { label: "合并到当前分支", action: () => handleMerge(branch), disabled: isCurrent },
+    { label: "与当前分支对比", action: () => handleCompare(branch), disabled: isCurrent },
   ];
 }
 </script>
