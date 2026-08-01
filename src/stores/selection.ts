@@ -202,6 +202,25 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** 删除远程分支（git push origin --delete，危险操作） */
+  async function deleteRemoteBranch(remoteRef: string): Promise<BranchOperationResult | null> {
+    return withOp("删除远程分支中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return null;
+      try {
+        await invoke("git_push_delete_remote", { path, remoteRef });
+        await repoStore.refreshActive();
+        return { success: true, message: `远程分支 ${remoteRef} 已删除`, current_branch: null };
+      } catch (e) {
+        return {
+          success: false,
+          message: e instanceof Error ? e.message : String(e),
+          current_branch: null,
+        };
+      }
+    });
+  }
+
   async function renameBranch(oldName: string, newName: string): Promise<BranchOperationResult | null> {
     return withOp("重命名分支中", async () => {
       const path = repoStore.activeRepo?.path;
@@ -417,6 +436,7 @@ export const useSelectionStore = defineStore("selection", () => {
     checkoutBranch,
     createBranchFromRemote,
     deleteBranch,
+    deleteRemoteBranch,
     renameBranch,
     mergeBranch,
     compareBranches,

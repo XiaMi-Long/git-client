@@ -48,6 +48,7 @@ pub fn run() {
             commands::git_pull,
             commands::git_push,
             commands::git_push_upstream,
+            commands::git_push_delete_remote,
             commands::git_check_conflict,
             commands::git_list_conflicted_files,
             commands::git_mark_resolved,

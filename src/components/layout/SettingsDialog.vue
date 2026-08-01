@@ -147,6 +147,44 @@ async function detectGit() {
                   @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
                 />
               </div>
+
+              <!-- 远程分支操作保护 -->
+              <div class="setting-row column">
+                <label>远程分支操作保护</label>
+                <div class="switch-row">
+                  <span class="switch-label">总开关（一键全保护）</span>
+                  <button
+                    class="switch"
+                    :class="{ on: settingsStore.protectRemote }"
+                    @click="settingsStore.setProtectRemote(!settingsStore.protectRemote)"
+                  >
+                    <span class="switch-thumb" />
+                  </button>
+                </div>
+                <div class="hint">开启后远程分支右键禁止重命名 / 删除，防止误操作</div>
+                <div class="switch-row sub">
+                  <span class="switch-label">禁止重命名远程分支</span>
+                  <button
+                    class="switch"
+                    :class="{ on: settingsStore.protectRemoteRename, disabled: settingsStore.protectRemote }"
+                    :disabled="settingsStore.protectRemote"
+                    @click="settingsStore.setProtectRemoteRename(!settingsStore.protectRemoteRename)"
+                  >
+                    <span class="switch-thumb" />
+                  </button>
+                </div>
+                <div class="switch-row sub">
+                  <span class="switch-label">禁止删除远程分支</span>
+                  <button
+                    class="switch"
+                    :class="{ on: settingsStore.protectRemoteDelete, disabled: settingsStore.protectRemote }"
+                    :disabled="settingsStore.protectRemote"
+                    @click="settingsStore.setProtectRemoteDelete(!settingsStore.protectRemoteDelete)"
+                  >
+                    <span class="switch-thumb" />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- AI 功能 -->
@@ -376,6 +414,74 @@ async function detectGit() {
   margin-top: -12px;
   font-size: 12px;
   color: var(--fg-tertiary);
+}
+
+/* 远程分支保护开关 */
+.setting-row.column {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.setting-row.column .hint {
+  margin-left: 0;
+  margin-top: -4px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.switch-row.sub {
+  padding-left: 16px;
+}
+
+.switch-label {
+  font-size: 13px;
+  color: var(--fg-secondary);
+}
+
+.switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-input);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+  flex-shrink: 0;
+}
+
+.switch .switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fg-tertiary);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch.on .switch-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.switch.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .empty-hint {

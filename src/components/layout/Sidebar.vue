@@ -14,6 +14,7 @@ import { ref, computed } from "vue";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
+import { useSettingsStore } from "@/stores/settings";
 import type { BranchInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
 import PromptDialog from "./PromptDialog.vue";
@@ -22,6 +23,7 @@ import ConfirmDialog from "./ConfirmDialog.vue";
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
+const settingsStore = useSettingsStore();
 
 const hasRepo = computed(() => !!repoStore.activeRepo);
 const localBranches = computed(
@@ -138,6 +140,18 @@ async function handleDelete(branch: BranchInfo) {
   if (result) await showMessage(result.success ? "删除分支" : "失败", result.message);
 }
 
+// 删除远程分支（危险：删除远程仓库上的分支，红色确认）
+async function handleDeleteRemote(branch: BranchInfo) {
+  const ok = await showConfirm(
+    "删除远程分支",
+    `确定删除远程分支 "${branch.name}"？\n这将删除远程仓库上的该分支，不可恢复！`,
+    true
+  );
+  if (!ok) return;
+  const result = await selectionStore.deleteRemoteBranch(branch.name);
+  if (result) await showMessage(result.success ? "删除远程分支" : "失败", result.message);
+}
+
 async function handleRename(branch: BranchInfo) {
   const newName = await showPrompt("重命名分支", branch.name);
   if (!newName || newName === branch.name) return;
@@ -169,10 +183,13 @@ async function handleCompare(branch: BranchInfo) {
 function menuItems(branch: BranchInfo) {
   const isCurrent = branch.name === currentBranchName.value;
   const isRemote = branch.is_remote;
-  // 远程分支：创建本地分支（避免误进 detached HEAD）；本地分支：切换/新建/重命名/删除
+  // 远程分支操作保护：总开关开启时强制保护；关闭后由子开关决定
+  const blockDelete = settingsStore.protectRemote || settingsStore.protectRemoteDelete;
   if (isRemote) {
     return [
       { label: "从远程分支创建本地分支…", action: () => handleCreateLocalFromRemote(branch) },
+      // 保护关闭时才显示删除（重命名远程分支需两步式，暂不支持）
+      ...(!blockDelete ? [{ label: "删除…", action: () => handleDeleteRemote(branch), danger: true }] : []),
       { label: "", action: () => {}, divider: true },
       { label: "合并到当前分支", action: () => handleMerge(branch), disabled: isCurrent },
       { label: "与当前分支对比", action: () => handleCompare(branch), disabled: isCurrent },

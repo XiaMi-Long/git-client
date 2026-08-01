@@ -242,6 +242,17 @@ pub async fn git_push_upstream(
         .map_err(|e| e.to_string())
 }
 
+/// 删除远程分支（git push origin --delete branch）
+#[tauri::command]
+pub async fn git_push_delete_remote(
+    path: String,
+    remote_ref: String,
+) -> Result<(), String> {
+    GitExecutor::delete_remote_branch(&to_path(&path), &remote_ref)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 检测冲突状态（2.9）
 #[tauri::command]
 pub async fn git_check_conflict(path: String) -> Result<bool, String> {
@@ -376,6 +387,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_pull",
         "git_push",
         "git_push_upstream",
+        "git_push_delete_remote",
         "git_check_conflict",
         "git_list_conflicted_files",
         "git_mark_resolved",

@@ -204,6 +204,19 @@ impl GitExecutor {
         }
     }
 
+    /// 删除远程分支（git push origin --delete branch）
+    /// * `remote_ref` - 形如 origin/feature，拆分为远程名与分支名
+    pub async fn delete_remote_branch(repo_path: &Path, remote_ref: &str) -> GitResult<()> {
+        let (remote, branch) = remote_ref
+            .split_once('/')
+            .ok_or_else(|| super::types::GitError::CommandFailed {
+                stderr: format!("无效的远程分支名: {remote_ref}"),
+                exit_code: None,
+            })?;
+        Self::run_git(repo_path, &["push", remote, "--delete", branch]).await?;
+        Ok(())
+    }
+
     // ===== 冲突检测（2.9） =====
 
     /// 检测当前是否处于冲突状态
