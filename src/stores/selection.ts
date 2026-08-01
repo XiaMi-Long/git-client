@@ -9,11 +9,13 @@ import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "./repo";
 import { useCommitStore } from "./commit";
+import { useToast } from "@/composables/useToast";
 import type { FileDiff, BranchOperationResult, CompareResult, RemoteResult, OperationState } from "@/types/git";
 
 export const useSelectionStore = defineStore("selection", () => {
   const repoStore = useRepoStore();
   const commitStore = useCommitStore();
+  const { info: toastInfo } = useToast();
 
   // 选中类型：null 未选中 / working 工作区 / commit 提交
   const type = ref<"working" | "commit" | null>(null);
@@ -40,6 +42,8 @@ export const useSelectionStore = defineStore("selection", () => {
    */
   async function withOp<T>(op: string, fn: () => Promise<T>): Promise<T> {
     currentOp.value = op;
+    // 操作开始时给 toast 瞬时反馈（顶部进度条由 currentOp 驱动）
+    toastInfo(op);
     try {
       return await fn();
     } finally {

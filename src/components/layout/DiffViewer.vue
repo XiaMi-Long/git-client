@@ -360,7 +360,7 @@ async function handleStageHunk(hunk: DiffHunk) {
   justify-content: center;
   color: var(--fg-tertiary);
   font-size: 13px;
-  font-family: var(--ui-font-family);
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
 }
 
 .hunk-header {

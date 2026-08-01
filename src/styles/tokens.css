@@ -40,8 +40,6 @@
   --diff-word-bg: #5a5a2e;
   /* 等宽字体大小（设置可调，默认 13px） */
   --mono-font-size: 13px;
-  /* 界面字体族（设置可调，默认系统字体栈） */
-  --ui-font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
 }
 
 /* ===== 亮色主题 ===== */
