@@ -273,7 +273,7 @@ impl GitExecutor {
         Ok(())
     }
 
-    /// 中止操作（merge / rebase / cherry-pick）
+    /// 中止操作（merge / rebase / cherry-pick / 中间态 unmerged）
     pub async fn abort_operation(repo_path: &Path) -> GitResult<()> {
         // 检查是否在 rebase 状态
         let is_rebasing = Self::run_git_raw(Some(repo_path), &["status"])
@@ -293,10 +293,25 @@ impl GitExecutor {
         } else if is_merging {
             Self::run_git(repo_path, &["merge", "--abort"]).await?;
         } else {
-            return Err(super::types::GitError::CommandFailed {
-                stderr: "没有进行中的合并 / cherry-pick 操作".to_string(),
-                exit_code: None,
-            });
+            // 无操作标记文件，但可能存在 unmerged 残留（如外部合并后标记被清理的中间态）：
+            // 逐个将未合并文件恢复到 HEAD 版本，清除 index 冲突标记
+            let unmerged_output = Self::run_git(repo_path, &["diff", "--name-only", "--diff-filter=U"])
+                .await
+                .unwrap_or_default();
+            let unmerged: Vec<&str> = unmerged_output
+                .lines()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if unmerged.is_empty() {
+                return Err(super::types::GitError::CommandFailed {
+                    stderr: "没有进行中的合并 / cherry-pick 操作".to_string(),
+                    exit_code: None,
+                });
+            }
+            for file in unmerged {
+                Self::run_git(repo_path, &["checkout", "HEAD", "--", file]).await?;
+            }
         }
         Ok(())
     }

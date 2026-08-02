@@ -429,13 +429,25 @@ pub async fn git_discard_file(path: String, file: String) -> Result<(), String> 
     }
 }
 
-/// 放弃全部未暂存改动（含未跟踪文件）
+/// 放弃全部未暂存改动（含未跟踪文件；unmerged 文件恢复到 HEAD）
 #[tauri::command]
 pub async fn git_discard_all(path: String) -> Result<(), String> {
     let repo = to_path(&path);
+    // 1. 先处理 unmerged 文件（checkout -- . 遇到 unmerged 会报错）：恢复到 HEAD 并清除冲突标记
+    let unmerged_output = GitExecutor::run_git(&repo, &["diff", "--name-only", "--diff-filter=U"])
+        .await
+        .unwrap_or_default();
+    for file in unmerged_output.lines() {
+        let f = file.trim();
+        if !f.is_empty() {
+            let _ = GitExecutor::run_git(&repo, &["checkout", "HEAD", "--", f]).await;
+        }
+    }
+    // 2. 放弃其余已跟踪文件的未暂存改动
     GitExecutor::run_git(&repo, &["checkout", "--", "."])
         .await
         .map_err(|e| e.to_string())?;
+    // 3. 删除未跟踪文件
     GitExecutor::run_git(&repo, &["clean", "-fd"])
         .await
         .map(|_| ())
