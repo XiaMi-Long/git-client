@@ -109,6 +109,7 @@ watch(showRemoteHint, (v) => {
   if (!v) {
     remotePullsOpen.value = false;
     remotePulls.value = [];
+    remotePullsLoaded = false;
   } else if (settingsStore.remoteHintExpandMode === "auto" && !remotePullsLoaded) {
     remotePullsOpen.value = true;
     remotePullsLoaded = true;
@@ -452,7 +453,7 @@ function commitMenuItems(c: CommitInfo) {
     </div>
 
     <!-- 远程待拉取提交列表（点击提示行后展开） -->
-    <div v-if="remotePullsOpen" class="remote-pulls-panel">
+    <div v-if="remotePullsOpen && showRemoteHint" class="remote-pulls-panel">
       <div class="remote-pulls-header">
         <span>远程待拉取提交（{{ remotePulls.length }}）</span>
         <button class="rp-close" @click="remotePullsOpen = false">收起</button>
@@ -781,7 +782,8 @@ function commitMenuItems(c: CommitInfo) {
 .remote-pulls-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  position: relative;
   padding: 5px 10px;
   font-size: 12px;
   color: var(--info);
@@ -790,6 +792,8 @@ function commitMenuItems(c: CommitInfo) {
 }
 
 .rp-close {
+  position: absolute;
+  right: 10px;
   background: transparent;
   border: none;
   color: var(--fg-tertiary);

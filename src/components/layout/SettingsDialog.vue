@@ -175,7 +175,7 @@ async function detectGit() {
                   <button
                     class="switch"
                     :class="{ on: settingsStore.enableRemoteHint }"
-                    @click="settingsStore.setEnableRemoteHint(!settingsStore.enableRemoteHint)"
+                    @click.stop.prevent="settingsStore.setEnableRemoteHint(!settingsStore.enableRemoteHint)"
                   >
                     <span class="switch-thumb" />
                   </button>

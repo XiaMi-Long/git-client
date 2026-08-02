@@ -20,9 +20,17 @@ impl GitExecutor {
         let output = Self::run_git_raw(Some(repo_path), args).await?;
 
         if !output.status.success() {
+            // git 部分错误会输出到 stdout（如 unmerged 时 "xx needs merge"），
+            // stderr 为空时回退用 stdout，避免错误信息为空
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let msg = if stderr.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                stderr
+            };
             return Err(GitError::CommandFailed {
-                stderr,
+                stderr: msg,
                 exit_code: output.status.code(),
             });
         }
