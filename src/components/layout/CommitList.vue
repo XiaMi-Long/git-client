@@ -443,8 +443,15 @@ function commitMenuItems(c: CommitInfo) {
       <span class="working-count" :class="{ 'has-changes': workingCount > 0 }">{{ workingCount }}</span>
     </div>
 
-    <!-- 远程更新提示行（当前分支落后上游时显示） -->
-    <div v-if="showRemoteHint" class="remote-hint-row">
+    <!-- 远程更新提示行（仅点击展开模式且未展开时显示；直接显示模式只显示列表） -->
+    <div
+      v-if="
+        showRemoteHint &&
+        settingsStore.remoteHintExpandMode === 'click' &&
+        !remotePullsOpen
+      "
+      class="remote-hint-row"
+    >
       <button class="remote-hint" :class="{ open: remotePullsOpen }" @click="toggleRemotePulls">
         <span class="remote-hint-dot" />
         当前分支有 {{ currentBehind }} 条新提交可查看

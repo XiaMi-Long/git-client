@@ -82,6 +82,18 @@ async function handleStashApply(s: StashInfo, pop: boolean) {
         await invoke("git_discard_file", { path, file: f }).catch(() => {});
       }
       await applyStashInner(s, pop, path);
+    } else if (msg.includes("CONFLICT") || msg.includes("Unmerged paths") || msg.includes("needs merge")) {
+      // 存储应用冲突（git 部分应用 + 冲突文件进 unmerged）：
+      // 检测冲突状态进入右侧冲突模式，友好提示
+      await selectionStore.loadOperationState();
+      await repoStore.refreshActive();
+      await showMessage(
+        "应用存储冲突",
+        `存储与当前分支产生冲突（${selectionStore.conflictedFiles.length} 个文件）\n` +
+          `右侧已显示冲突文件列表。\n` +
+          `· 放弃本次应用：点状态栏 [中止合并]（将恢复到应用前状态）\n` +
+          `· 或自行解决冲突后提交`
+      );
     } else {
       await showMessage("应用失败", msg);
     }

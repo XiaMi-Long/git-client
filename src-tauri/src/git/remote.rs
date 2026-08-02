@@ -293,8 +293,8 @@ impl GitExecutor {
         } else if is_merging {
             Self::run_git(repo_path, &["merge", "--abort"]).await?;
         } else {
-            // 无操作标记文件，但可能存在 unmerged 残留（如外部合并后标记被清理的中间态）：
-            // 逐个将未合并文件恢复到 HEAD 版本，清除 index 冲突标记
+            // 无操作标记文件，但可能存在 unmerged 残留（如 stash 应用冲突 / 外部合并后标记被清理）：
+            // 完全放弃本次应用：恢复 unmerged 到 HEAD + 取消暂存 + 删除未跟踪文件（回到应用前状态）
             let unmerged_output = Self::run_git(repo_path, &["diff", "--name-only", "--diff-filter=U"])
                 .await
                 .unwrap_or_default();
@@ -309,9 +309,14 @@ impl GitExecutor {
                     exit_code: None,
                 });
             }
-            for file in unmerged {
+            // 1. 恢复冲突文件到 HEAD（清除 unmerged 标记）
+            for file in &unmerged {
                 Self::run_git(repo_path, &["checkout", "HEAD", "--", file]).await?;
             }
+            // 2. 取消所有暂存（stash 部分应用的内容退回未跟踪）
+            let _ = Self::run_git(repo_path, &["reset"]).await;
+            // 3. 删除未跟踪文件（含 stash 部分应用产生的文件，回到应用前状态）
+            let _ = Self::run_git(repo_path, &["clean", "-fd"]).await;
         }
         Ok(())
     }
