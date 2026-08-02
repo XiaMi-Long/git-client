@@ -387,7 +387,9 @@ function menuItems(branch: BranchInfo) {
             v-for="s in stashes"
             :key="s.index"
             class="tree-node"
+            :class="{ viewing: viewingStash?.index === s.index }"
             :title="`${s.message}（${s.branch}）`"
+            @click="viewingStash = s"
             @contextmenu="onStashContextmenu($event, s)"
           >
             <svg class="node-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -522,6 +524,10 @@ function menuItems(branch: BranchInfo) {
 
 .tree-node:hover {
   background: var(--bg-hover);
+}
+
+.tree-node.viewing {
+  background: var(--bg-selected, #2a3f5f);
 }
 
 .tree-node.current {

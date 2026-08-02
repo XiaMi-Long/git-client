@@ -62,6 +62,8 @@ const currentRemoteRef = computed(() => currentBranch.value?.upstream ?? null);
 const remotePulls = ref<CommitInfo[]>([]);
 const remotePullsLoading = ref(false);
 const remotePullsOpen = ref(false);
+// 已加载过远程列表的标记（避免 auto 模式重复请求）
+let remotePullsLoaded = false;
 
 // 设置联动：开启且落后才显示提示行
 const showRemoteHint = computed(
@@ -98,24 +100,41 @@ async function toggleRemotePulls() {
     return;
   }
   remotePullsOpen.value = true;
+  remotePullsLoaded.value = true;
   await loadRemotePulls();
 }
 
-// 设置展开方式为 auto 时自动展开；切仓库/落后清零时重置
+// 设置展开方式为 auto 时自动展开；落后清零时重置
 watch(showRemoteHint, (v) => {
   if (!v) {
     remotePullsOpen.value = false;
     remotePulls.value = [];
-  } else if (settingsStore.remoteHintExpandMode === "auto") {
+  } else if (settingsStore.remoteHintExpandMode === "auto" && !remotePullsLoaded) {
     remotePullsOpen.value = true;
+    remotePullsLoaded = true;
     loadRemotePulls();
   }
 });
+// 切换分支时重置（当前分支变化 → 只显示提示文字，除非设置直接显示列表）
+watch(
+  () => currentBranch.value?.name,
+  () => {
+    remotePullsOpen.value = false;
+    remotePulls.value = [];
+    remotePullsLoaded = false;
+    if (settingsStore.remoteHintExpandMode === "auto" && currentBehind.value > 0) {
+      remotePullsOpen.value = true;
+      remotePullsLoaded = true;
+      loadRemotePulls();
+    }
+  }
+);
 watch(
   () => repoStore.activeRepo?.id,
   () => {
     remotePullsOpen.value = false;
     remotePulls.value = [];
+    remotePullsLoaded = false;
   }
 );
 
