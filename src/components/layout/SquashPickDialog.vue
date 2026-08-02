@@ -19,6 +19,7 @@ import { useSelectionStore } from "@/stores/selection";
 import { useDialog } from "@/composables/useDialog";
 import type { CommitInfo } from "@/types/git";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import CommitDetailViewer from "./CommitDetailViewer.vue";
 
 const emit = defineEmits<{ close: [] }>();
 const repoStore = useRepoStore();
@@ -49,6 +50,9 @@ const selectedHashes = ref<Set<string>>(new Set());
 const commitMessage = ref("");
 const loading = ref(false);
 const executing = ref(false);
+
+// 右侧详情：当前查看的提交（默认第一个）
+const viewingCommit = ref<string | null>(null);
 
 const isLocal = computed(() => sourceBranch.value === currentBranch.value);
 const selectedList = computed(() => Array.from(selectedHashes.value));
@@ -86,6 +90,13 @@ watch(
   },
   { immediate: true }
 );
+
+// 提交加载完成后默认查看第一个
+watch(commits, (list) => {
+  if (list.length > 0 && !viewingCommit.value) {
+    viewingCommit.value = list[0].hash;
+  }
+});
 
 function toggleHash(hash: string) {
   const s = new Set(selectedHashes.value);
@@ -160,42 +171,62 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           </div>
 
           <div class="dialog-body">
-            <!-- 当前分支提示（固定） -->
-            <div class="current-branch-hint">当前分支：<strong>{{ currentBranch }}</strong></div>
+            <!-- 左侧：选择与配置 -->
+            <div class="left-panel">
+              <!-- 当前分支提示（固定） -->
+              <div class="current-branch-hint">当前分支：<strong>{{ currentBranch }}</strong></div>
 
-            <!-- 源分支选择 -->
-            <div class="form-row">
-              <label>源分支</label>
-              <select v-model="sourceBranch">
-                <option v-for="b in branchOptions" :key="b" :value="b">{{ b }}</option>
-              </select>
-            </div>
-            <div class="hint">
-              {{ isLocal ? "本分支压缩：选择最近的连续提交（从 HEAD 起）" : `跨分支：从 ${sourceBranch} 挑选提交压缩合并到 ${currentBranch}` }}
-            </div>
+              <!-- 源分支选择 -->
+              <div class="form-row">
+                <label>源分支</label>
+                <select v-model="sourceBranch">
+                  <option v-for="b in branchOptions" :key="b" :value="b">{{ b }}</option>
+                </select>
+              </div>
+              <div class="hint">
+                {{ isLocal ? "本分支压缩：选择最近的连续提交（从 HEAD 起）" : `跨分支：从 ${sourceBranch} 挑选提交压缩合并到 ${currentBranch}` }}
+              </div>
 
-            <!-- 提交列表 -->
-            <div class="commit-list">
-              <div v-if="loading" class="load-hint">加载中…</div>
-              <div v-else-if="commits.length === 0" class="load-hint">暂无提交</div>
-              <div
-                v-for="c in commits"
-                :key="c.hash"
-                class="commit-item"
-                :class="{ selected: selectedHashes.has(c.hash) }"
-                @click="toggleHash(c.hash)"
-              >
-                <span class="checkbox">{{ selectedHashes.has(c.hash) ? "☑" : "☐" }}</span>
-                <span class="hash">{{ c.short_hash }}</span>
-                <span class="subject">{{ c.subject }}</span>
-                <span class="author">{{ c.author_name }}</span>
+              <!-- 提交列表 -->
+              <div class="commit-list">
+                <div v-if="loading" class="load-hint">加载中…</div>
+                <div v-else-if="commits.length === 0" class="load-hint">暂无提交</div>
+                <div
+                  v-for="c in commits"
+                  :key="c.hash"
+                  class="commit-item"
+                  :class="{ selected: selectedHashes.has(c.hash) }"
+                  @click="toggleHash(c.hash)"
+                >
+                  <span class="checkbox">{{ selectedHashes.has(c.hash) ? "☑" : "☐" }}</span>
+                  <span class="hash">{{ c.short_hash }}</span>
+                  <span class="subject">{{ c.subject }}</span>
+                  <span class="author">{{ c.author_name }}</span>
+                  <button
+                    class="view-btn"
+                    :class="{ active: viewingCommit === c.hash }"
+                    title="查看该提交的更改"
+                    @click.stop="viewingCommit = c.hash"
+                  >
+                    查看
+                  </button>
+                </div>
+              </div>
+
+              <!-- 新 commit 文本 -->
+              <div class="form-row">
+                <label>新提交信息</label>
+                <input v-model="commitMessage" type="text" placeholder="压缩后的提交信息" />
               </div>
             </div>
 
-            <!-- 新 commit 文本 -->
-            <div class="form-row">
-              <label>新提交信息</label>
-              <input v-model="commitMessage" type="text" placeholder="压缩后的提交信息" />
+            <!-- 右侧：提交详情查看器（模块化） -->
+            <div class="right-panel">
+              <div class="right-title">提交详情</div>
+              <CommitDetailViewer
+                :path="repoStore.activeRepo?.path ?? ''"
+                :commit-hash="viewingCommit"
+              />
             </div>
           </div>
 
@@ -238,10 +269,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 }
 
 .squash-dialog {
-  width: 840px;
-  height: 600px;
-  max-width: 90vw;
-  max-height: 90vh;
+  width: 1020px;
+  height: 620px;
+  max-width: 92vw;
+  max-height: 92vh;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: 6px;
@@ -284,8 +315,37 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   flex: 1;
   padding: 16px;
   display: flex;
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* 左侧面板：选择与配置 */
+.left-panel {
+  width: 46%;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 右侧面板：提交详情 */
+.right-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+.right-title {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--fg-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
 }
 
 .current-branch-hint {
@@ -416,6 +476,42 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 .commit-item.selected .author {
   color: rgba(255, 255, 255, 0.7);
+}
+
+/* 查看提交详情按钮 */
+.view-btn {
+  height: 20px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 120ms ease;
+}
+
+.view-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.view-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.commit-item.selected .view-btn {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.commit-item.selected .view-btn.active {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: transparent;
+  color: var(--accent);
 }
 
 .dialog-footer {
