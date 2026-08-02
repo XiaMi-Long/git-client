@@ -100,7 +100,7 @@ async function toggleRemotePulls() {
     return;
   }
   remotePullsOpen.value = true;
-  remotePullsLoaded.value = true;
+  remotePullsLoaded = true;
   await loadRemotePulls();
 }
 
