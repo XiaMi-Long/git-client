@@ -14,10 +14,13 @@
 import { ref, computed } from "vue";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
+import { useDialog } from "@/composables/useDialog";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import type { FileChangeType, FileDiff } from "@/types/git";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
+const { dialogState, showConfirm, onConfirm, onCancel } = useDialog();
 
 const staged = computed(() => repoStore.activeRepo?.status?.staged ?? []);
 const unstaged = computed(() => repoStore.activeRepo?.status?.unstaged ?? []);
@@ -73,6 +76,28 @@ function diffStatusColor(f: FileDiff): string {
 function diffPath(f: FileDiff): string {
   return f.is_renamed ? `${f.old_path} -> ${f.new_path}` : f.new_path;
 }
+
+// 放弃单个文件改动（未暂存 → 恢复；未跟踪 → 删除文件）
+async function handleDiscardFile(filePath: string) {
+  const ok = await showConfirm(
+    "放弃改动",
+    `确定放弃 "${filePath}" 的改动？\n未跟踪文件将被删除，不可恢复！`,
+    true
+  );
+  if (!ok) return;
+  await selectionStore.discardFile(filePath);
+}
+
+// 放弃全部未暂存改动（含未跟踪）
+async function handleDiscardAll() {
+  const ok = await showConfirm(
+    "全部放弃",
+    `将放弃所有未暂存 / 未跟踪的改动（共 ${unstaged.value.length + untracked.value.length} 个文件）\n未跟踪文件将被删除，不可恢复！`,
+    true
+  );
+  if (!ok) return;
+  await selectionStore.discardAll();
+}
 </script>
 
 <template>
@@ -123,13 +148,22 @@ function diffPath(f: FileDiff): string {
 
       <div class="group-header">
         <span>未暂存 ({{ unstaged.length + untracked.length }})</span>
-        <button
-          v-if="unstaged.length + untracked.length > 0"
-          class="group-action"
-          @click="selectionStore.stageAll()"
-        >
-          全部暂存
-        </button>
+        <div class="group-actions">
+          <button
+            v-if="unstaged.length + untracked.length > 0"
+            class="group-action"
+            @click="selectionStore.stageAll()"
+          >
+            全部暂存
+          </button>
+          <button
+            v-if="unstaged.length + untracked.length > 0"
+            class="group-action danger"
+            @click="handleDiscardAll"
+          >
+            全部放弃
+          </button>
+        </div>
       </div>
       <div
         v-for="f in unstaged"
@@ -143,6 +177,9 @@ function diffPath(f: FileDiff): string {
         </span>
         <span class="file-path">{{ f.path }}</span>
         <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
+        <button class="file-action discard" title="放弃该文件的改动" @click.stop="handleDiscardFile(f.path)">
+          放弃
+        </button>
       </div>
       <div
         v-for="f in untracked"
@@ -156,6 +193,9 @@ function diffPath(f: FileDiff): string {
         </span>
         <span class="file-path">{{ f.path }}</span>
         <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
+        <button class="file-action discard" title="删除该未跟踪文件" @click.stop="handleDiscardFile(f.path)">
+          删除
+        </button>
       </div>
 
       <div
@@ -195,6 +235,16 @@ function diffPath(f: FileDiff): string {
       <div class="panel-header"><span>更改文件</span></div>
       <div class="list-empty"><p>选中提交或工作区后展示文件列表</p></div>
     </template>
+    <!-- 确认/消息对话框 -->
+    <ConfirmDialog
+      v-if="dialogState"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :hide-cancel="dialogState.hideCancel"
+      :danger="dialogState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
+    />
   </div>
 </template>
 
@@ -276,6 +326,23 @@ function diffPath(f: FileDiff): string {
   color: var(--fg-tertiary);
   font-size: 11px;
   cursor: pointer;
+}
+
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.group-action.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.group-action.danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }
 
 .group-action:hover {
@@ -363,6 +430,17 @@ function diffPath(f: FileDiff): string {
 .file-action:hover {
   color: var(--fg-primary);
   border-color: var(--border-strong);
+}
+
+.file-action.discard {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.file-action.discard:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }
 
 .panel-header {

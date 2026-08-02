@@ -78,6 +78,8 @@ pub fn run() {
             commands::git_unstage,
             commands::git_add_all,
             commands::git_unstage_all,
+            commands::git_discard_file,
+            commands::git_discard_all,
             commands::git_commit,
             commands::git_apply_hunk,
             commands::git_cherry_pick_no_commit,

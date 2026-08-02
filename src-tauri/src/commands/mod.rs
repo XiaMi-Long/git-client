@@ -408,6 +408,40 @@ pub async fn git_unstage_all(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 放弃单个文件改动（tracked 用 checkout --，untracked 用 clean -f）
+#[tauri::command]
+pub async fn git_discard_file(path: String, file: String) -> Result<(), String> {
+    let repo = to_path(&path);
+    // 判断文件是否被跟踪
+    let tracked = GitExecutor::run_git(&repo, &["ls-files", "--error-unmatch", &file])
+        .await
+        .is_ok();
+    if tracked {
+        GitExecutor::run_git(&repo, &["checkout", "--", &file])
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    } else {
+        GitExecutor::run_git(&repo, &["clean", "-f", "--", &file])
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// 放弃全部未暂存改动（含未跟踪文件）
+#[tauri::command]
+pub async fn git_discard_all(path: String) -> Result<(), String> {
+    let repo = to_path(&path);
+    GitExecutor::run_git(&repo, &["checkout", "--", "."])
+        .await
+        .map_err(|e| e.to_string())?;
+    GitExecutor::run_git(&repo, &["clean", "-fd"])
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// 提交
 #[tauri::command]
 pub async fn git_commit(path: String, message: String) -> Result<String, String> {
@@ -485,6 +519,8 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_unstage",
         "git_add_all",
         "git_unstage_all",
+        "git_discard_file",
+        "git_discard_all",
         "git_commit",
     ]
 }

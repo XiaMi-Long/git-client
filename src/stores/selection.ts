@@ -126,6 +126,26 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
+  /** 放弃单个文件改动（未暂存 → 恢复；未跟踪 → 删除文件） */
+  async function discardFile(filePath: string) {
+    return withOp("放弃改动中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return;
+      await invoke("git_discard_file", { path, file: filePath });
+      await repoStore.refreshActive();
+    });
+  }
+
+  /** 放弃全部未暂存改动（含未跟踪文件） */
+  async function discardAll() {
+    return withOp("全部放弃中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return;
+      await invoke("git_discard_all", { path });
+      await repoStore.refreshActive();
+    });
+  }
+
   /** hunk 级暂存（7.5）：应用单个 hunk patch 到暂存区 */
   async function stageHunk(patch: string) {
     return withOp("暂存 hunk 中", async () => {
@@ -186,6 +206,8 @@ export const useSelectionStore = defineStore("selection", () => {
       if (result.success) {
         await repoStore.refreshActive();
         await commitStore.loadCommits();
+        // 切换分支后默认展示新分支的工作区（无需用户手动点击）
+        selectWorking();
       }
       return result;
     });
@@ -497,6 +519,8 @@ export const useSelectionStore = defineStore("selection", () => {
     stageFile,
     unstageFile,
     stageAll,
+    discardFile,
+    discardAll,
     stageHunk,
     unstageAll,
     commit,
