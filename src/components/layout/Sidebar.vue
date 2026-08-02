@@ -119,6 +119,26 @@ async function handleNewBranch() {
 }
 
 async function handleCheckout(branch: BranchInfo) {
+  // 工作区有未提交改动时，git 会拒绝切换（或覆盖改动），提示用户先暂存
+  const status = repoStore.activeRepo?.status;
+  const dirty =
+    !!status &&
+    (status.staged.length > 0 || status.unstaged.length > 0 || status.untracked.length > 0 || status.conflicted.length > 0);
+  if (dirty) {
+    const ok = await showConfirm(
+      "工作区有未提交改动",
+      `切换到 "${branch.name}" 前需处理以下改动：\n` +
+        `· 已暂存 ${status!.staged.length} 个\n` +
+        `· 未暂存 ${status!.unstaged.length} 个\n` +
+        `· 未跟踪 ${status!.untracked.length} 个\n\n` +
+        `是否将这些改动暂存（git stash）后切换？\n暂存后可用命令行 git stash pop 恢复。`,
+      true
+    );
+    if (!ok) return;
+    const result = await selectionStore.checkoutBranch(branch.name, true);
+    if (result && !result.success) await showMessage("切换失败", result.message);
+    return;
+  }
   const result = await selectionStore.checkoutBranch(branch.name);
   if (result && !result.success) await showMessage("检出失败", result.message);
 }
@@ -214,7 +234,7 @@ function menuItems(branch: BranchInfo) {
   }
   return [
     { label: "切换到该分支", action: () => handleCheckout(branch), disabled: isCurrent },
-    { label: "获取最新", action: () => handleFetchLatest(branch), disabled: !branch.upstream || branch.behind === 0 },
+    { label: "获取最新", action: () => handleFetchLatest(branch), disabled: !branch.upstream },
     { label: "从当前分支新建…", action: handleNewBranch },
     { label: "重命名…", action: () => handleRename(branch), disabled: isCurrent || isRemote },
     { label: "删除…", action: () => handleDelete(branch), disabled: isCurrent || isRemote, danger: true },

@@ -163,10 +163,25 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
-  async function checkoutBranch(name: string): Promise<BranchOperationResult | null> {
+  async function checkoutBranch(name: string, stash = false): Promise<BranchOperationResult | null> {
     return withOp("切换分支中", async () => {
       const path = repoStore.activeRepo?.path;
       if (!path) return null;
+      // 工作区有未提交改动时先 stash（用户已在确认框同意）
+      if (stash) {
+        try {
+          await invoke("git_stash_changes", {
+            path,
+            message: `git-client: 切换分支 ${name} 前自动暂存`,
+          });
+        } catch (e) {
+          return {
+            success: false,
+            message: `暂存改动失败: ${e}`,
+            current_branch: null,
+          };
+        }
+      }
       const result = await invoke<BranchOperationResult>("git_checkout_branch", { path, name });
       if (result.success) {
         await repoStore.refreshActive();

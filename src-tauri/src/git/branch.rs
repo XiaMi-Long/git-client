@@ -291,6 +291,13 @@ impl GitExecutor {
         }
     }
 
+    /// 暂存工作区改动（git stash push，检出前防止 git 拒绝切换）
+    /// * `message` - stash 备注，便于用户识别
+    pub async fn stash_changes(repo_path: &Path, message: &str) -> GitResult<()> {
+        Self::run_git(repo_path, &["stash", "push", "-m", message]).await?;
+        Ok(())
+    }
+
     /// 检出分支
     pub async fn checkout_branch(
         repo_path: &Path,

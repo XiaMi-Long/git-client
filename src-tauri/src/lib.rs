@@ -48,6 +48,7 @@ pub fn run() {
             commands::git_get_current_branch,
             commands::git_create_branch,
             commands::git_checkout_branch,
+            commands::git_stash_changes,
             commands::git_create_branch_from_remote,
             commands::git_delete_branch,
             commands::git_rename_branch,

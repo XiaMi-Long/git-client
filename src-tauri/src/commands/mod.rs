@@ -127,6 +127,14 @@ pub async fn git_checkout_branch(
         .map_err(|e| e.to_string())
 }
 
+/// 暂存工作区改动（检出前自动 stash）
+#[tauri::command]
+pub async fn git_stash_changes(path: String, message: String) -> Result<(), String> {
+    GitExecutor::stash_changes(&to_path(&path), &message)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 基于远程分支创建本地分支并切换（含 tracking）
 #[tauri::command]
 pub async fn git_create_branch_from_remote(
@@ -408,6 +416,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_get_current_branch",
         "git_create_branch",
         "git_checkout_branch",
+        "git_stash_changes",
         "git_create_branch_from_remote",
         "git_delete_branch",
         "git_rename_branch",
