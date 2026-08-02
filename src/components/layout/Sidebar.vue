@@ -64,12 +64,45 @@ async function handleStashApply(s: StashInfo, pop: boolean) {
   const path = repoStore.activeRepo?.path;
   if (!path) return;
   try {
-    await invoke("git_apply_stash", { path, index: s.index, pop });
-    await showMessage("存储", pop ? `已应用并删除 ${s.index}` : `已应用 ${s.index}`);
-    await repoStore.refreshActive();
+    await applyStashInner(s, pop, path);
   } catch (e) {
-    await showMessage("应用失败", e instanceof Error ? e.message : String(e));
+    const msg = e instanceof Error ? e.message : String(e);
+    // 检测未跟踪文件冲突："untracked-test.js already exists, no checkout"
+    const conflictFiles = extractUntrackedConflicts(msg);
+    if (conflictFiles.length > 0) {
+      const ok = await showConfirm(
+        "未跟踪文件冲突",
+        `应用存储时发现目标工作区存在同名未跟踪文件：\n${conflictFiles
+          .map((f) => `· ${f}`)
+          .join("\n")}\n\n是否删除这些文件后重新应用？`,
+        true
+      );
+      if (!ok) return;
+      for (const f of conflictFiles) {
+        await invoke("git_discard_file", { path, file: f }).catch(() => {});
+      }
+      await applyStashInner(s, pop, path);
+    } else {
+      await showMessage("应用失败", msg);
+    }
   }
+}
+
+async function applyStashInner(s: StashInfo, pop: boolean, path: string) {
+  await invoke("git_apply_stash", { path, index: s.index, pop });
+  await showMessage("存储", pop ? `已应用并删除 ${s.index}` : `已应用 ${s.index}`);
+  await repoStore.refreshActive();
+}
+
+/** 从 git 错误信息中提取 "xxx already exists, no checkout" 中的文件名 */
+function extractUntrackedConflicts(msg: string): string[] {
+  const files: string[] = [];
+  const re = /([^\s`'"]+)\s+already exists,\s*no checkout/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(msg))) {
+    files.push(m[1]);
+  }
+  return files;
 }
 
 // 删除存储
