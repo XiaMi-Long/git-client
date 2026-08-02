@@ -157,13 +157,14 @@ impl GitExecutor {
             let is_merge = parents.len() > 1;
 
             // 解析 refs，格式如 " (HEAD -> main, origin/main)"
+            // 注意：trim() 会去掉 %d 输出的前缀空格，因此直接 strip 左右括号即可
             let refs: Vec<String> = if refs_str.is_empty() {
                 Vec::new()
             } else {
                 let trimmed = refs_str.trim();
                 let inner = trimmed
-                    .strip_prefix(" (")
-                    .and_then(|s| s.strip_suffix(")"))
+                    .strip_prefix('(')
+                    .and_then(|s| s.strip_suffix(')'))
                     .unwrap_or(trimmed);
                 inner.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
             };
