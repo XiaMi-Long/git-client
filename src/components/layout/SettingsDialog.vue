@@ -167,6 +167,42 @@ async function detectGit() {
                 </div>
               </div>
 
+              <!-- 远程更新提示 -->
+              <div class="setting-card">
+                <div class="card-title">远程更新提示</div>
+                <div class="switch-row">
+                  <span class="switch-label">当前分支远程有新提交时显示提示行</span>
+                  <button
+                    class="switch"
+                    :class="{ on: settingsStore.enableRemoteHint }"
+                    @click="settingsStore.setEnableRemoteHint(!settingsStore.enableRemoteHint)"
+                  >
+                    <span class="switch-thumb" />
+                  </button>
+                </div>
+                <div class="hint">提交列表上方显示「当前分支有 N 条新提交可查看」</div>
+                <div class="switch-row sub">
+                  <span class="switch-label">展开方式</span>
+                  <div class="mode-options">
+                    <button
+                      class="mode-btn"
+                      :class="{ active: settingsStore.remoteHintExpandMode === 'click' }"
+                      @click="settingsStore.setRemoteHintExpandMode('click')"
+                    >
+                      点击展开
+                    </button>
+                    <button
+                      class="mode-btn"
+                      :class="{ active: settingsStore.remoteHintExpandMode === 'auto' }"
+                      @click="settingsStore.setRemoteHintExpandMode('auto')"
+                    >
+                      直接显示列表
+                    </button>
+                  </div>
+                </div>
+                <div class="hint">点击展开：显示提示文字，点击后才列出待拉取提交；直接显示：打开即列出</div>
+              </div>
+
               <!-- 远程分支操作保护 -->
               <div class="setting-card">
                 <div class="card-title">远程分支操作保护</div>
@@ -467,6 +503,35 @@ async function detectGit() {
 
 .switch-row.sub {
   padding-left: 16px;
+}
+
+/* 展开方式选择按钮 */
+.mode-options {
+  display: flex;
+  gap: 6px;
+}
+
+.mode-btn {
+  height: 24px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  color: var(--fg-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.mode-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .switch-label {

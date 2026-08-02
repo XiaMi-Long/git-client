@@ -16,6 +16,8 @@ interface SettingsData {
   protectRemoteRename: boolean;
   protectRemoteDelete: boolean;
   stashNameTemplate: string;
+  enableRemoteHint: boolean;
+  remoteHintExpandMode: "click" | "auto";
 }
 
 /** 存储名模板支持的占位符说明 */
@@ -38,6 +40,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const protectRemoteDelete = ref(true);
   // 存储（stash）名模板，默认时间格式 yyyy-mm-dd-时-分
   const stashNameTemplate = ref("${yyyy}-${mm}-${dd}-${HH}-${MM}");
+  // 远程更新提示：当前分支远程有最新提交时，提交列表上方显示提示行（默认开）
+  const enableRemoteHint = ref(true);
+  // 展开方式：click 点击提示行才展开列表 / auto 直接显示列表
+  const remoteHintExpandMode = ref<"click" | "auto">("click");
 
   /** 从 localStorage 加载并应用 */
   function load() {
@@ -52,6 +58,8 @@ export const useSettingsStore = defineStore("settings", () => {
         protectRemoteRename.value = data.protectRemoteRename ?? true;
         protectRemoteDelete.value = data.protectRemoteDelete ?? true;
         stashNameTemplate.value = data.stashNameTemplate ?? "${yyyy}-${mm}-${dd}-${HH}-${MM}";
+        enableRemoteHint.value = data.enableRemoteHint ?? true;
+        remoteHintExpandMode.value = data.remoteHintExpandMode ?? "click";
       } catch {
         // 忽略损坏数据
       }
@@ -70,6 +78,8 @@ export const useSettingsStore = defineStore("settings", () => {
         protectRemoteRename: protectRemoteRename.value,
         protectRemoteDelete: protectRemoteDelete.value,
         stashNameTemplate: stashNameTemplate.value,
+        enableRemoteHint: enableRemoteHint.value,
+        remoteHintExpandMode: remoteHintExpandMode.value,
       })
     );
   }
@@ -117,6 +127,18 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
+  /** 远程更新提示开关 */
+  function setEnableRemoteHint(v: boolean) {
+    enableRemoteHint.value = v;
+    persist();
+  }
+
+  /** 展开方式：click / auto */
+  function setRemoteHintExpandMode(mode: "click" | "auto") {
+    remoteHintExpandMode.value = mode;
+    persist();
+  }
+
   /** 按模板渲染存储名（替换 ${yyyy} ${mm} ${dd} ${HH} ${MM} ${ss} 占位符） */
   function renderStashName(template?: string): string {
     const tpl = template ?? stashNameTemplate.value;
@@ -141,6 +163,8 @@ export const useSettingsStore = defineStore("settings", () => {
     protectRemoteRename,
     protectRemoteDelete,
     stashNameTemplate,
+    enableRemoteHint,
+    remoteHintExpandMode,
     load,
     applyFontSize,
     setFontSize,
@@ -150,6 +174,8 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemoteRename,
     setProtectRemoteDelete,
     setStashNameTemplate,
+    setEnableRemoteHint,
+    setRemoteHintExpandMode,
     renderStashName,
   };
 });

@@ -15,9 +15,11 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
+import { useSettingsStore } from "@/stores/settings";
 import { useDialog } from "@/composables/useDialog";
 import type { CommitInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
@@ -28,6 +30,7 @@ import StashCreateDialog from "./StashCreateDialog.vue";
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
 const selectionStore = useSelectionStore();
+const settingsStore = useSettingsStore();
 const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 
 // 拉取 / 推送 / 压缩挑拣（从顶栏移入）
@@ -47,6 +50,74 @@ const stashScopes: { key: "unstaged" | "staged" | "all"; label: string }[] = [
 function onStashCreated() {
   repoStore.refreshActive();
 }
+
+// ===== 远程更新提示（Step3） =====
+// 当前分支落后上游时显示提示行，点击展开远程待拉取提交列表
+const currentBranch = computed(
+  () => repoStore.activeRepo?.branches.find((b) => b.is_current) ?? null
+);
+const currentBehind = computed(() => currentBranch.value?.behind ?? 0);
+const currentRemoteRef = computed(() => currentBranch.value?.upstream ?? null);
+
+const remotePulls = ref<CommitInfo[]>([]);
+const remotePullsLoading = ref(false);
+const remotePullsOpen = ref(false);
+
+// 设置联动：开启且落后才显示提示行
+const showRemoteHint = computed(
+  () => settingsStore.enableRemoteHint && !!currentBranch.value && currentBehind.value > 0 && !!currentRemoteRef.value
+);
+
+async function loadRemotePulls() {
+  const path = repoStore.activeRepo?.path;
+  const branch = currentBranch.value;
+  if (!path || !branch || !currentRemoteRef.value) return;
+  remotePullsLoading.value = true;
+  try {
+    remotePulls.value = await invoke<CommitInfo[]>("git_get_log", {
+      path,
+      query: {
+        skip: 0,
+        limit: 50,
+        branch: `${branch.name}..${currentRemoteRef.value}`,
+        search: null,
+        all_branches: false,
+      },
+    });
+  } catch {
+    remotePulls.value = [];
+  } finally {
+    remotePullsLoading.value = false;
+  }
+}
+
+// 展开 / 收起
+async function toggleRemotePulls() {
+  if (remotePullsOpen.value) {
+    remotePullsOpen.value = false;
+    return;
+  }
+  remotePullsOpen.value = true;
+  await loadRemotePulls();
+}
+
+// 设置展开方式为 auto 时自动展开；切仓库/落后清零时重置
+watch(showRemoteHint, (v) => {
+  if (!v) {
+    remotePullsOpen.value = false;
+    remotePulls.value = [];
+  } else if (settingsStore.remoteHintExpandMode === "auto") {
+    remotePullsOpen.value = true;
+    loadRemotePulls();
+  }
+});
+watch(
+  () => repoStore.activeRepo?.id,
+  () => {
+    remotePullsOpen.value = false;
+    remotePulls.value = [];
+  }
+);
 
 async function handlePull() {
   if (pulling.value || !repoStore.activeRepo) return;
@@ -352,6 +423,40 @@ function commitMenuItems(c: CommitInfo) {
       <span class="working-count" :class="{ 'has-changes': workingCount > 0 }">{{ workingCount }}</span>
     </div>
 
+    <!-- 远程更新提示行（当前分支落后上游时显示） -->
+    <div v-if="showRemoteHint" class="remote-hint-row">
+      <button class="remote-hint" :class="{ open: remotePullsOpen }" @click="toggleRemotePulls">
+        <span class="remote-hint-dot" />
+        当前分支有 {{ currentBehind }} 条新提交可查看
+        <span class="remote-hint-caret">{{ remotePullsOpen ? "▾" : "▸" }}</span>
+      </button>
+    </div>
+
+    <!-- 远程待拉取提交列表（点击提示行后展开） -->
+    <div v-if="remotePullsOpen" class="remote-pulls-panel">
+      <div class="remote-pulls-header">
+        <span>远程待拉取提交（{{ remotePulls.length }}）</span>
+        <button class="rp-close" @click="remotePullsOpen = false">收起</button>
+      </div>
+      <div v-if="remotePullsLoading" class="load-hint">加载中…</div>
+      <div v-else-if="remotePulls.length === 0" class="load-hint">没有待拉取提交</div>
+      <div v-else class="remote-pulls-list">
+        <div
+          v-for="c in remotePulls"
+          :key="c.hash"
+          class="remote-pull-item"
+          :class="{ active: selectionStore.commitHash === c.hash }"
+          :title="c.subject"
+          @click="selectionStore.selectCommit(c.hash)"
+        >
+          <span class="rp-hash">{{ c.short_hash }}</span>
+          <span class="rp-subject">{{ c.subject }}</span>
+          <span class="rp-author">{{ c.author_name }}</span>
+          <span class="rp-date">{{ c.relative_date }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 提交列表（虚拟滚动） -->
     <div ref="listEl" class="commit-scroll" @scroll="onScroll">
       <div class="virtual-spacer" :style="{ height: totalHeight + 'px' }">
@@ -601,6 +706,128 @@ function commitMenuItems(c: CommitInfo) {
 
 .working-node.active .working-count {
   color: #fff;
+}
+
+/* 远程更新提示行：居中，系统蓝（暗色用亮蓝保证可读） */
+.remote-hint-row {
+  padding: 5px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-default);
+  background: rgba(59, 130, 246, 0.1);
+  flex-shrink: 0;
+}
+
+.remote-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--info);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 2px 8px;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.remote-hint:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.remote-hint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--info);
+  flex-shrink: 0;
+}
+
+.remote-hint-caret {
+  font-size: 10px;
+  color: var(--fg-tertiary);
+}
+
+/* 远程待拉取提交列表 */
+.remote-pulls-panel {
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-pulls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--info);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.rp-close {
+  background: transparent;
+  border: none;
+  color: var(--fg-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rp-close:hover {
+  color: var(--fg-primary);
+}
+
+.remote-pulls-list {
+  overflow-y: auto;
+}
+
+.remote-pull-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.remote-pull-item:hover {
+  background: var(--bg-hover);
+}
+
+.remote-pull-item.active {
+  background: var(--bg-selected, #2a3f5f);
+}
+
+.rp-hash {
+  color: var(--info);
+  font-family: var(--mono-font-family, ui-monospace, monospace);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.rp-subject {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-author {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.rp-date {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .commit-scroll {
