@@ -15,7 +15,7 @@
         "title": "Git 客户端",
         "width": 1200,
         "height": 800,
-        "minWidth": 1200,
+        "minWidth": 1300,
         "minHeight": 640,
         "decorations": true,
         "resizable": true

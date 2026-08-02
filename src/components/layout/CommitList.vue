@@ -60,6 +60,17 @@ function formatTime(c: CommitInfo): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 分支标签显示：所有分支视图显示全部 refs；浏览/当前分支视图只显示与当前视图分支相关的标签
+function visibleRefs(c: CommitInfo): string[] {
+  if (commitStore.scope === "all") return c.refs;
+  const target = commitStore.browseBranch ?? currentBranch.value?.name;
+  if (!target) return c.refs;
+  return c.refs.filter((r) => {
+    const clean = r.replace(/[()]/g, "").replace(/^origin\//, "");
+    return clean === target;
+  });
+}
+
 // ===== 远程更新提示（Step3） =====
 // 当前分支落后上游时显示提示行，点击展开远程待拉取提交列表
 const currentBranch = computed(
@@ -539,7 +550,7 @@ function commitMenuItems(c: CommitInfo) {
             <span class="commit-subject">{{ c.subject }}</span>
             <span class="commit-refs">
               <span
-                v-for="r in c.refs"
+                v-for="r in visibleRefs(c)"
                 :key="r"
                 class="ref-badge"
                 :style="{ background: branchColor(r) }"
@@ -978,7 +989,7 @@ function commitMenuItems(c: CommitInfo) {
 }
 
 .commit-date {
-  width: 90px;
+  width: 120px;
   font-size: 12px;
   color: var(--fg-tertiary);
   text-align: right;
