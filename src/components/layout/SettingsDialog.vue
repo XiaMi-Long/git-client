@@ -119,7 +119,26 @@ async function detectGit() {
                     <span class="font-size-value">{{ settingsStore.fontSize }}px</span>
                   </div>
                 </div>
-                <div class="hint">影响 diff / 代码 / 哈希等区域的等宽字体</div>
+                <div class="setting-row">
+                  <label>提交时间显示</label>
+                  <div class="mode-options">
+                    <button
+                      class="mode-btn"
+                      :class="{ active: settingsStore.timeFormat === 'relative' }"
+                      @click="settingsStore.setTimeFormat('relative')"
+                    >
+                      相对时间（2 小时前）
+                    </button>
+                    <button
+                      class="mode-btn"
+                      :class="{ active: settingsStore.timeFormat === 'absolute' }"
+                      @click="settingsStore.setTimeFormat('absolute')"
+                    >
+                      绝对时间（2026-08-01 14:30）
+                    </button>
+                  </div>
+                </div>
+                <div class="hint">影响提交记录列表中的时间展示</div>
               </div>
             </div>
 
@@ -162,7 +181,7 @@ async function detectGit() {
                   />
                 </div>
                 <div class="hint">
-                  创建存储时的默认名称，支持占位符：${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}，
+                  创建存储时的默认名称，支持占位符：${'${branch}'} ${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}，
                   如 weiwenyu-${'${yyyy}'}-${'${mm}'}
                 </div>
               </div>

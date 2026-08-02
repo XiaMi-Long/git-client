@@ -51,6 +51,15 @@ function onStashCreated() {
   repoStore.refreshActive();
 }
 
+// 提交时间展示：按设置（相对 / 绝对时间）
+function formatTime(c: CommitInfo): string {
+  if (settingsStore.timeFormat !== "absolute") return c.relative_date;
+  const d = new Date(c.author_date);
+  if (isNaN(d.getTime())) return c.relative_date;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // ===== 远程更新提示（Step3） =====
 // 当前分支落后上游时显示提示行，点击展开远程待拉取提交列表
 const currentBranch = computed(
@@ -410,6 +419,10 @@ function commitMenuItems(c: CommitInfo) {
             </button>
           </div>
         </div>
+        <!-- 浏览提示：紧跟按钮区域，方便用户看到当前浏览的分支 -->
+        <span v-if="commitStore.browseBranch" class="browse-hint">
+          浏览: {{ commitStore.browseBranch }}
+        </span>
       </div>
       <div class="toolbar-right">
         <button
@@ -426,9 +439,6 @@ function commitMenuItems(c: CommitInfo) {
         >
           所有分支
         </button>
-        <span v-if="commitStore.browseBranch" class="browse-hint">
-          浏览: {{ commitStore.browseBranch }}
-        </span>
       </div>
     </div>
 
@@ -439,7 +449,7 @@ function commitMenuItems(c: CommitInfo) {
       @click="selectionStore.selectWorking()"
     >
       <span class="graph-col">◎</span>
-      <span class="working-label">工作区</span>
+      <span class="working-label">工作区（分支：{{ currentBranch?.name ?? "-" }}）</span>
       <span class="working-count" :class="{ 'has-changes': workingCount > 0 }">{{ workingCount }}</span>
     </div>
 
@@ -479,7 +489,7 @@ function commitMenuItems(c: CommitInfo) {
           <span class="rp-hash">{{ c.short_hash }}</span>
           <span class="rp-subject">{{ c.subject }}</span>
           <span class="rp-author">{{ c.author_name }}</span>
-          <span class="rp-date">{{ c.relative_date }}</span>
+          <span class="rp-date">{{ formatTime(c) }}</span>
         </div>
       </div>
     </div>
@@ -536,7 +546,7 @@ function commitMenuItems(c: CommitInfo) {
               >{{ r }}</span>
             </span>
             <span class="commit-author">{{ c.author_name }}</span>
-            <span class="commit-date">{{ c.relative_date }}</span>
+            <span class="commit-date">{{ formatTime(c) }}</span>
           </div>
         </div>
       </div>
@@ -683,6 +693,11 @@ function commitMenuItems(c: CommitInfo) {
   margin-left: 8px;
   color: var(--accent);
   font-size: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 3px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .working-node {

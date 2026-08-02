@@ -25,7 +25,9 @@ const repoStore = useRepoStore();
 const settingsStore = useSettingsStore();
 const toast = useToast();
 
-const name = ref(settingsStore.renderStashName());
+const name = ref(
+  settingsStore.renderStashName(undefined, repoStore.activeRepo?.branches.find((b) => b.is_current)?.name)
+);
 const saving = ref(false);
 const show = ref(false);
 
@@ -95,7 +97,7 @@ async function create() {
           </div>
           <div class="hint">
             默认名来自设置中的模板（当前渲染：{{ previewName }}）<br />
-            支持占位符：${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}
+            支持占位符：${'${branch}'} ${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}
           </div>
         </div>
         <div class="dialog-footer">

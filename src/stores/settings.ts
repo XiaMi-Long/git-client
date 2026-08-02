@@ -18,6 +18,7 @@ interface SettingsData {
   stashNameTemplate: string;
   enableRemoteHint: boolean;
   remoteHintExpandMode: "click" | "auto";
+  timeFormat: "relative" | "absolute";
 }
 
 /** 存储名模板支持的占位符说明 */
@@ -38,12 +39,14 @@ export const useSettingsStore = defineStore("settings", () => {
   const protectRemoteRename = ref(true);
   // 禁止删除远程分支
   const protectRemoteDelete = ref(true);
-  // 存储（stash）名模板，默认时间格式 yyyy-mm-dd-时-分
-  const stashNameTemplate = ref("${yyyy}-${mm}-${dd}-${HH}-${MM}");
+  // 存储（stash）名模板，默认 分支名 + 时间 yyyy-mm-dd-时-分
+  const stashNameTemplate = ref("${branch}-${yyyy}-${mm}-${dd}-${HH}-${MM}");
   // 远程更新提示：当前分支远程有最新提交时，提交列表上方显示提示行（默认开）
   const enableRemoteHint = ref(true);
   // 展开方式：click 点击提示行才展开列表 / auto 直接显示列表
   const remoteHintExpandMode = ref<"click" | "auto">("click");
+  // 提交记录时间显示：relative 相对时间（如 "2 hours ago"）/ absolute 绝对时间
+  const timeFormat = ref<"relative" | "absolute">("relative");
 
   /** 从 localStorage 加载并应用 */
   function load() {
@@ -57,9 +60,10 @@ export const useSettingsStore = defineStore("settings", () => {
         protectRemote.value = data.protectRemote ?? true;
         protectRemoteRename.value = data.protectRemoteRename ?? true;
         protectRemoteDelete.value = data.protectRemoteDelete ?? true;
-        stashNameTemplate.value = data.stashNameTemplate ?? "${yyyy}-${mm}-${dd}-${HH}-${MM}";
+        stashNameTemplate.value = data.stashNameTemplate ?? "${branch}-${yyyy}-${mm}-${dd}-${HH}-${MM}";
         enableRemoteHint.value = data.enableRemoteHint ?? true;
         remoteHintExpandMode.value = data.remoteHintExpandMode ?? "click";
+        timeFormat.value = data.timeFormat ?? "relative";
       } catch {
         // 忽略损坏数据
       }
@@ -80,6 +84,7 @@ export const useSettingsStore = defineStore("settings", () => {
         stashNameTemplate: stashNameTemplate.value,
         enableRemoteHint: enableRemoteHint.value,
         remoteHintExpandMode: remoteHintExpandMode.value,
+        timeFormat: timeFormat.value,
       })
     );
   }
@@ -127,6 +132,12 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
+  /** 设置提交时间显示格式 */
+  function setTimeFormat(fmt: "relative" | "absolute") {
+    timeFormat.value = fmt;
+    persist();
+  }
+
   /** 远程更新提示开关 */
   function setEnableRemoteHint(v: boolean) {
     enableRemoteHint.value = v;
@@ -139,12 +150,13 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
-  /** 按模板渲染存储名（替换 ${yyyy} ${mm} ${dd} ${HH} ${MM} ${ss} 占位符） */
-  function renderStashName(template?: string): string {
+  /** 按模板渲染存储名（替换 ${branch} ${yyyy} ${mm} ${dd} ${HH} ${MM} ${ss} 占位符） */
+  function renderStashName(template?: string, branch?: string): string {
     const tpl = template ?? stashNameTemplate.value;
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const map: Record<string, string> = {
+      branch: branch ?? "",
       yyyy: String(d.getFullYear()),
       mm: pad(d.getMonth() + 1),
       dd: pad(d.getDate()),
@@ -165,6 +177,7 @@ export const useSettingsStore = defineStore("settings", () => {
     stashNameTemplate,
     enableRemoteHint,
     remoteHintExpandMode,
+    timeFormat,
     load,
     applyFontSize,
     setFontSize,
@@ -174,6 +187,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemoteRename,
     setProtectRemoteDelete,
     setStashNameTemplate,
+    setTimeFormat,
     setEnableRemoteHint,
     setRemoteHintExpandMode,
     renderStashName,

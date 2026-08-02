@@ -46,17 +46,17 @@ let unlistenFetched: Promise<UnlistenFn> | null = null;
 // 侧栏宽度（左右拖拽，面板在左）
 const { size: sidebarWidth, onMouseDown: onSidebarResize } = useResizable({
   orientation: "horizontal",
-  initial: 220,
-  min: 160,
-  max: 360,
+  initial: 260,
+  min: 180,
+  max: 400,
 });
 
 // 右侧面板宽度（中右拖拽，面板在右 -> reverse）
 const { size: rightWidth, onMouseDown: onRightResize } = useResizable({
   orientation: "horizontal",
-  initial: 440,
+  initial: 560,
   min: 320,
-  max: 800,
+  max: 900,
   reverse: true,
 });
 

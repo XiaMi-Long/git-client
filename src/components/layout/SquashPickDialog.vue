@@ -269,10 +269,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 }
 
 .squash-dialog {
-  width: 1020px;
-  height: 620px;
-  max-width: 92vw;
-  max-height: 92vh;
+  width: 70vw;
+  height: 70vh;
+  min-width: 900px;
+  min-height: 560px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: 6px;

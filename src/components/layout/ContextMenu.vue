@@ -21,7 +21,7 @@ interface MenuItem {
   divider?: boolean;
 }
 
-defineProps<{
+const props = defineProps<{
   x: number;
   y: number;
   items: MenuItem[];
@@ -30,6 +30,8 @@ defineProps<{
 const emit = defineEmits<{ close: [] }>();
 
 const rootEl = ref<HTMLElement | null>(null);
+// 实际渲染位置：超出可视区域时自动翻转/收敛
+const pos = ref({ x: props.x, y: props.y });
 
 // 点击菜单外部时关闭（mousedown 比 click 早，避免与打开事件冲突）
 function onDocMouseDown(e: MouseEvent) {
@@ -40,6 +42,21 @@ function onDocMouseDown(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener("mousedown", onDocMouseDown);
+  // 菜单渲染后测量尺寸，超出窗口可视区域时调整位置（右/下翻转）
+  const el = rootEl.value;
+  if (el) {
+    const rect = el.getBoundingClientRect();
+    let nx = props.x;
+    let ny = props.y;
+    const margin = 4;
+    if (nx + rect.width > window.innerWidth - margin) {
+      nx = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (ny + rect.height > window.innerHeight - margin) {
+      ny = Math.max(margin, window.innerHeight - rect.height - margin);
+    }
+    pos.value = { x: nx, y: ny };
+  }
 });
 
 onUnmounted(() => {
@@ -49,7 +66,12 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <div ref="rootEl" class="context-menu" :style="{ left: x + 'px', top: y + 'px' }" @contextmenu.prevent>
+    <div
+      ref="rootEl"
+      class="context-menu"
+      :style="{ left: pos.x + 'px', top: pos.y + 'px' }"
+      @contextmenu.prevent
+    >
       <template v-for="(item, i) in items" :key="i">
         <div v-if="item.divider" class="menu-divider" />
         <button
