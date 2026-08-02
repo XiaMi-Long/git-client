@@ -51,6 +51,18 @@ export interface BranchInfo {
   behind: number;
 }
 
+/** 存储（stash）条目 */
+export interface StashInfo {
+  /** stash 引用名，如 stash@{0} */
+  index: string;
+  /** 存储消息（已去掉 On branch: 前缀） */
+  message: string;
+  /** 来源分支 */
+  branch: string;
+  /** 提交哈希 */
+  hash: string;
+}
+
 /** 标签信息 */
 export interface TagInfo {
   name: string;

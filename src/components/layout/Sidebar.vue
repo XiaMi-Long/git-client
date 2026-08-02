@@ -15,10 +15,13 @@ import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSelectionStore } from "@/stores/selection";
 import { useSettingsStore } from "@/stores/settings";
-import type { BranchInfo } from "@/types/git";
+import { invoke } from "@tauri-apps/api/core";
+import { useDialog } from "@/composables/useDialog";
+import type { BranchInfo, StashInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
 import PromptDialog from "./PromptDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import StashViewDialog from "./StashViewDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -33,10 +36,60 @@ const remoteBranches = computed(
   () => repoStore.activeRepo?.branches.filter((b) => b.is_remote) ?? []
 );
 const tags = computed(() => repoStore.activeRepo?.tags ?? []);
+const stashes = computed(() => repoStore.activeRepo?.stashes ?? []);
+
+// 存储右键菜单状态
+const stashMenu = ref<{ x: number; y: number; stash: StashInfo } | null>(null);
+const stashMenuItems = computed(() => {
+  const s = stashMenu.value?.stash;
+  if (!s) return [];
+  return [
+    { label: "查看改动", action: () => (viewingStash.value = s) },
+    { label: "", action: () => {}, divider: true },
+    { label: "应用并删除", action: () => handleStashApply(s, true) },
+    { label: "仅应用", action: () => handleStashApply(s, false) },
+    { label: "删除", action: () => handleStashDrop(s), danger: true },
+  ];
+});
+// 查看存储改动弹窗
+const viewingStash = ref<StashInfo | null>(null);
+
+function onStashContextmenu(e: MouseEvent, s: StashInfo) {
+  e.preventDefault();
+  stashMenu.value = { x: e.clientX, y: e.clientY, stash: s };
+}
+
+// 应用存储（pop=应用并删除 / apply=仅应用）
+async function handleStashApply(s: StashInfo, pop: boolean) {
+  const path = repoStore.activeRepo?.path;
+  if (!path) return;
+  try {
+    await invoke("git_apply_stash", { path, index: s.index, pop });
+    await showMessage("存储", pop ? `已应用并删除 ${s.index}` : `已应用 ${s.index}`);
+    await repoStore.refreshActive();
+  } catch (e) {
+    await showMessage("应用失败", e instanceof Error ? e.message : String(e));
+  }
+}
+
+// 删除存储
+async function handleStashDrop(s: StashInfo) {
+  const ok = await showConfirm(`删除存储 ${s.index}？`, `将删除存储 "${s.message}"，不可恢复！`, true);
+  if (!ok) return;
+  const path = repoStore.activeRepo?.path;
+  if (!path) return;
+  try {
+    await invoke("git_drop_stash", { path, index: s.index });
+    await showMessage("删除存储", `已删除 ${s.index}`);
+    await repoStore.refreshActive();
+  } catch (e) {
+    await showMessage("删除失败", e instanceof Error ? e.message : String(e));
+  }
+}
 
 // 分组折叠状态
-const collapsed = ref({ branches: false, remotes: false, tags: false });
-function toggleGroup(g: "branches" | "remotes" | "tags") {
+const collapsed = ref({ branches: false, remotes: false, tags: false, stashes: false });
+function toggleGroup(g: "branches" | "remotes" | "tags" | "stashes") {
   collapsed.value[g] = !collapsed.value[g];
 }
 
@@ -322,6 +375,30 @@ function menuItems(branch: BranchInfo) {
           <div v-if="tags.length === 0" class="empty-hint">暂无标签</div>
         </div>
       </div>
+
+      <!-- 存储（stash） -->
+      <div class="group">
+        <div class="group-header" @click="toggleGroup('stashes')">
+          <span class="caret">{{ collapsed.stashes ? "▶" : "▾" }}</span>
+          <span class="group-title">存储</span>
+        </div>
+        <div v-show="!collapsed.stashes" class="group-body">
+          <div
+            v-for="s in stashes"
+            :key="s.index"
+            class="tree-node"
+            :title="`${s.message}（${s.branch}）`"
+            @contextmenu="onStashContextmenu($event, s)"
+          >
+            <svg class="node-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="6" width="18" height="14" rx="2" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span class="node-label">{{ s.message }}</span>
+          </div>
+          <div v-if="stashes.length === 0" class="empty-hint">暂无存储</div>
+        </div>
+      </div>
     </template>
 
     <!-- 未打开仓库 -->
@@ -337,6 +414,18 @@ function menuItems(branch: BranchInfo) {
       :items="menuItems(menu.branch)"
       @close="closeMenu"
     />
+
+    <!-- 存储右键菜单 -->
+    <ContextMenu
+      v-if="stashMenu"
+      :x="stashMenu.x"
+      :y="stashMenu.y"
+      :items="stashMenuItems"
+      @close="stashMenu = null"
+    />
+
+    <!-- 查看存储改动 -->
+    <StashViewDialog v-if="viewingStash" :stash="viewingStash" @close="viewingStash = null" />
 
     <!-- 输入对话框 -->
     <PromptDialog
@@ -475,19 +564,20 @@ function menuItems(branch: BranchInfo) {
   white-space: nowrap;
 }
 
-/* 落后上游徽章（可拉取数量） */
+/* 落后上游徽章（可拉取数量）：琥珀底深字，暗色下清晰 */
 .branch-behind {
   flex-shrink: 0;
   padding: 0 6px;
-  background: var(--warning);
-  color: #fff;
+  background: var(--badge-behind-bg);
+  color: var(--badge-behind-fg);
   font-size: 11px;
   line-height: 16px;
   border-radius: 8px;
 }
 
 .tree-node.browsing .branch-behind {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(230, 162, 60, 0.55);
+  color: #1e1e1e;
 }
 
 .empty-hint {

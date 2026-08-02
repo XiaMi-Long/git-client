@@ -23,6 +23,7 @@ import type { CommitInfo } from "@/types/git";
 import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import SquashPickDialog from "./SquashPickDialog.vue";
+import StashCreateDialog from "./StashCreateDialog.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -33,6 +34,19 @@ const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 const pulling = ref(false);
 const pushing = ref(false);
 const squashOpen = ref(false);
+
+// 储藏：下拉三选项 + 命名弹窗
+const stashScope = ref<"unstaged" | "staged" | "all" | null>(null);
+const stashDropdownOpen = ref(false);
+const stashScopes: { key: "unstaged" | "staged" | "all"; label: string }[] = [
+  { key: "unstaged", label: "储藏未暂存" },
+  { key: "staged", label: "储藏暂存" },
+  { key: "all", label: "储藏全部" },
+];
+
+function onStashCreated() {
+  repoStore.refreshActive();
+}
 
 async function handlePull() {
   if (pulling.value || !repoStore.activeRepo) return;
@@ -67,6 +81,15 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+
+// 点击外部关闭储藏下拉
+function onDocDown(e: MouseEvent) {
+  if (stashDropdownOpen.value && !(e.target as HTMLElement).closest(".stash-dropdown-wrap")) {
+    stashDropdownOpen.value = false;
+  }
+}
+onMounted(() => document.addEventListener("mousedown", onDocDown));
+onUnmounted(() => document.removeEventListener("mousedown", onDocDown));
 
 const listEl = ref<HTMLElement | null>(null);
 
@@ -276,6 +299,26 @@ function commitMenuItems(c: CommitInfo) {
         <button class="tool-btn" :disabled="!repoStore.activeRepo" @click="squashOpen = true">
           压缩挑拣
         </button>
+        <!-- 储藏：下拉三选项 -->
+        <div class="stash-dropdown-wrap">
+          <button
+            class="tool-btn"
+            :disabled="!repoStore.activeRepo"
+            @click="stashDropdownOpen = !stashDropdownOpen"
+          >
+            储藏 ▾
+          </button>
+          <div v-if="stashDropdownOpen" class="stash-dropdown">
+            <button
+              v-for="s in stashScopes"
+              :key="s.key"
+              class="stash-dropdown-item"
+              @click="stashDropdownOpen = false; stashScope = s.key"
+            >
+              {{ s.label }}
+            </button>
+          </div>
+        </div>
       </div>
       <div class="toolbar-right">
         <button
@@ -404,6 +447,12 @@ function commitMenuItems(c: CommitInfo) {
 
     <!-- 压缩挑拣弹窗 -->
     <SquashPickDialog v-if="squashOpen" @close="squashOpen = false" />
+    <StashCreateDialog
+      v-if="stashScope"
+      :scope="stashScope"
+      @close="stashScope = null"
+      @created="onStashCreated"
+    />
   </div>
 </template>
 
@@ -430,6 +479,43 @@ function commitMenuItems(c: CommitInfo) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 储藏下拉 */
+.stash-dropdown-wrap {
+  position: relative;
+}
+
+.stash-dropdown {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  min-width: 140px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  z-index: 500;
+}
+
+.stash-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: var(--fg-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.stash-dropdown-item:hover {
+  background: var(--bg-hover);
 }
 
 .tool-btn {

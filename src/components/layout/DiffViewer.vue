@@ -20,6 +20,13 @@ import type { FileDiff, DiffHunk, DiffLine } from "@/types/git";
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
 
+// 外部数据源模式：stash 查看等弹窗复用渲染逻辑时注入
+// externalDiffs 传入后优先使用，selectedFile 用 externalFile（否则回退 selectionStore）
+const props = defineProps<{
+  externalDiffs?: FileDiff[] | null;
+  externalFile?: string | null;
+}>();
+
 // 当前文件 diff
 const fileDiff = ref<FileDiff | null>(null);
 const loading = ref(false);
@@ -44,8 +51,27 @@ const isStagedFile = computed(() => {
 
 // 8.4 懒加载：选中文件 / 模式 / 提交变化时加载
 watch(
-  () => [selectionStore.selectedFile, selectionStore.type, selectionStore.commitHash],
+  () => [
+    selectionStore.selectedFile,
+    selectionStore.type,
+    selectionStore.commitHash,
+    props.externalDiffs,
+    props.externalFile,
+  ],
   async () => {
+    // 外部数据源模式（stash 查看等）：直接从注入的 diffs 取，不发请求
+    if (props.externalDiffs) {
+      const file = props.externalFile ?? selectionStore.selectedFile;
+      if (!file) {
+        fileDiff.value = null;
+        return;
+      }
+      fileDiff.value =
+        props.externalDiffs.find(
+          (f) => f.new_path === file || f.old_path === file || `${f.old_path} -> ${f.new_path}` === file
+        ) ?? null;
+      return;
+    }
     const path = repoStore.activeRepo?.path;
     const file = selectionStore.selectedFile;
     if (!path || !file) {

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::git::{
     BranchOperationResult, BranchInfo, CommitInfo, CompareResult, FileDiff, GitExecutor,
-    GitVersionInfo, LogQuery, OperationState, RemoteResult, TagInfo, WorkingAreaStatus,
+    GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
 
 /// 将路径字符串转为 PathBuf
@@ -131,6 +131,46 @@ pub async fn git_checkout_branch(
 #[tauri::command]
 pub async fn git_stash_changes(path: String, message: String) -> Result<(), String> {
     GitExecutor::stash_changes(&to_path(&path), &message)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 列出所有存储条目（git stash list）
+#[tauri::command]
+pub async fn git_list_stashes(path: String) -> Result<Vec<StashInfo>, String> {
+    GitExecutor::list_stashes(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 创建存储（scope: all / staged / unstaged）
+#[tauri::command]
+pub async fn git_create_stash(path: String, message: String, scope: String) -> Result<(), String> {
+    GitExecutor::create_stash(&to_path(&path), &message, &scope)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 应用存储（pop=true 应用并删除 / pop=false 仅应用）
+#[tauri::command]
+pub async fn git_apply_stash(path: String, index: String, pop: bool) -> Result<(), String> {
+    GitExecutor::apply_stash(&to_path(&path), &index, pop)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 删除存储
+#[tauri::command]
+pub async fn git_drop_stash(path: String, index: String) -> Result<(), String> {
+    GitExecutor::drop_stash(&to_path(&path), &index)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 查看存储的文件改动（git stash show -p）
+#[tauri::command]
+pub async fn git_show_stash(path: String, index: String) -> Result<Vec<FileDiff>, String> {
+    GitExecutor::show_stash(&to_path(&path), &index)
         .await
         .map_err(|e| e.to_string())
 }
@@ -417,6 +457,11 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_create_branch",
         "git_checkout_branch",
         "git_stash_changes",
+        "git_list_stashes",
+        "git_create_stash",
+        "git_apply_stash",
+        "git_drop_stash",
+        "git_show_stash",
         "git_create_branch_from_remote",
         "git_delete_branch",
         "git_rename_branch",

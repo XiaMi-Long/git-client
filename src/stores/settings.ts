@@ -1,6 +1,6 @@
 /**
  * 设置状态管理
- * 字体大小、git 路径、默认打开目录、远程分支操作保护等，持久化到 localStorage
+ * 字体大小、git 路径、默认打开目录、远程分支操作保护、存储名模板等，持久化到 localStorage
  * 主题复用 theme store，不在此重复
  */
 import { defineStore } from "pinia";
@@ -15,7 +15,12 @@ interface SettingsData {
   protectRemote: boolean;
   protectRemoteRename: boolean;
   protectRemoteDelete: boolean;
+  stashNameTemplate: string;
 }
+
+/** 存储名模板支持的占位符说明 */
+export const STASH_TEMPLATE_HINT =
+  "支持占位符：${yyyy} ${mm} ${dd} ${HH} ${MM} ${ss}，如 weiwenyu-${yyyy}-${mm}";
 
 export const useSettingsStore = defineStore("settings", () => {
   // 等宽字体大小（12-16，默认 13）
@@ -31,6 +36,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const protectRemoteRename = ref(true);
   // 禁止删除远程分支
   const protectRemoteDelete = ref(true);
+  // 存储（stash）名模板，默认时间格式 yyyy-mm-dd-时-分
+  const stashNameTemplate = ref("${yyyy}-${mm}-${dd}-${HH}-${MM}");
 
   /** 从 localStorage 加载并应用 */
   function load() {
@@ -44,6 +51,7 @@ export const useSettingsStore = defineStore("settings", () => {
         protectRemote.value = data.protectRemote ?? true;
         protectRemoteRename.value = data.protectRemoteRename ?? true;
         protectRemoteDelete.value = data.protectRemoteDelete ?? true;
+        stashNameTemplate.value = data.stashNameTemplate ?? "${yyyy}-${mm}-${dd}-${HH}-${MM}";
       } catch {
         // 忽略损坏数据
       }
@@ -61,6 +69,7 @@ export const useSettingsStore = defineStore("settings", () => {
         protectRemote: protectRemote.value,
         protectRemoteRename: protectRemoteRename.value,
         protectRemoteDelete: protectRemoteDelete.value,
+        stashNameTemplate: stashNameTemplate.value,
       })
     );
   }
@@ -102,6 +111,28 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
+  /** 设置存储名模板 */
+  function setStashNameTemplate(tpl: string) {
+    stashNameTemplate.value = tpl;
+    persist();
+  }
+
+  /** 按模板渲染存储名（替换 ${yyyy} ${mm} ${dd} ${HH} ${MM} ${ss} 占位符） */
+  function renderStashName(template?: string): string {
+    const tpl = template ?? stashNameTemplate.value;
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const map: Record<string, string> = {
+      yyyy: String(d.getFullYear()),
+      mm: pad(d.getMonth() + 1),
+      dd: pad(d.getDate()),
+      HH: pad(d.getHours()),
+      MM: pad(d.getMinutes()),
+      ss: pad(d.getSeconds()),
+    };
+    return tpl.replace(/\$\{(\w+)\}/g, (_, k: string) => map[k] ?? `\${${k}}`);
+  }
+
   return {
     fontSize,
     gitPath,
@@ -109,6 +140,7 @@ export const useSettingsStore = defineStore("settings", () => {
     protectRemote,
     protectRemoteRename,
     protectRemoteDelete,
+    stashNameTemplate,
     load,
     applyFontSize,
     setFontSize,
@@ -117,5 +149,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemote,
     setProtectRemoteRename,
     setProtectRemoteDelete,
+    setStashNameTemplate,
+    renderStashName,
   };
 });

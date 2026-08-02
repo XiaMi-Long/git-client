@@ -135,7 +135,7 @@ impl GitExecutor {
     }
 
     /// 解析统一格式 diff 输出
-    fn parse_diff(raw: &str) -> GitResult<Vec<FileDiff>> {
+    pub fn parse_diff(raw: &str) -> GitResult<Vec<FileDiff>> {
         let mut files: Vec<FileDiff> = Vec::new();
         let mut current_file: Option<FileDiff> = None;
         let mut current_hunk: Option<DiffHunk> = None;

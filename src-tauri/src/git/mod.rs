@@ -9,6 +9,7 @@ pub mod log;
 pub mod diff;
 pub mod branch;
 pub mod remote;
+pub mod stash;
 
 use std::path::PathBuf;
 
@@ -21,6 +22,7 @@ pub use log::{CommitInfo, LogQuery, PAGE_SIZE};
 pub use diff::{DiffHunk, DiffLine, DiffLineType, FileDiff};
 pub use branch::{BranchInfo, TagInfo, BranchOperationResult, CompareResult};
 pub use remote::{RemoteResult, OperationState};
+pub use stash::StashInfo;
 
 /// git 版本检测结果
 #[derive(Debug, Clone, Serialize)]

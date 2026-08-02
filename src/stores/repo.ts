@@ -7,7 +7,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { BranchInfo, TagInfo, WorkingAreaStatus } from "@/types/git";
+import type { BranchInfo, TagInfo, WorkingAreaStatus, StashInfo } from "@/types/git";
 
 /** 持久化已打开仓库路径的 localStorage key */
 const STORAGE_KEY = "git-client-recent-repos";
@@ -23,6 +23,8 @@ export interface RepoTab {
   branches: BranchInfo[];
   /** 标签列表 */
   tags: TagInfo[];
+  /** 存储（stash）列表 */
+  stashes: StashInfo[];
   /** 工作区状态 */
   status: WorkingAreaStatus | null;
   /** 是否加载中 */
@@ -105,6 +107,7 @@ export const useRepoStore = defineStore("repo", () => {
       path,
       branches: [],
       tags: [],
+      stashes: [],
       status: null,
       loading: true,
       error: null,
@@ -134,13 +137,15 @@ export const useRepoStore = defineStore("repo", () => {
   async function refreshRepo(id: string): Promise<void> {
     const tab = repos.value.find((r) => r.id === id);
     if (!tab) return;
-    const [branches, tags, status] = await Promise.all([
+    const [branches, tags, status, stashes] = await Promise.all([
       invoke<BranchInfo[]>("git_list_branches", { path: tab.path }).catch(() => [] as BranchInfo[]),
       invoke<TagInfo[]>("git_list_tags", { path: tab.path }).catch(() => [] as TagInfo[]),
       invoke<WorkingAreaStatus>("git_get_status", { path: tab.path }).catch(() => null),
+      invoke<StashInfo[]>("git_list_stashes", { path: tab.path }).catch(() => [] as StashInfo[]),
     ]);
     tab.branches = branches;
     tab.tags = tags;
+    tab.stashes = stashes;
     tab.status = status;
   }
 

@@ -152,6 +152,19 @@ async function detectGit() {
                     @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
                   />
                 </div>
+                <div class="setting-row">
+                  <label>存储名模板</label>
+                  <input
+                    type="text"
+                    :value="settingsStore.stashNameTemplate"
+                    placeholder="${yyyy}-${mm}-${dd}-${HH}-${MM}"
+                    @change="settingsStore.setStashNameTemplate(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="hint">
+                  创建存储时的默认名称，支持占位符：${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}，
+                  如 weiwenyu-${'${yyyy}'}-${'${mm}'}
+                </div>
               </div>
 
               <!-- 远程分支操作保护 -->

@@ -38,6 +38,9 @@
   --diff-del-fg: #f48771;
   --diff-hunk-bg: #2a2a3a;
   --diff-word-bg: #5a5a2e;
+  /* 落后徽章（琥珀警示：暗色下也清晰） */
+  --badge-behind-bg: #e6a23c;
+  --badge-behind-fg: #1e1e1e;
   /* 等宽字体大小（设置可调，默认 13px） */
   --mono-font-size: 13px;
 }
@@ -75,4 +78,8 @@
   --diff-del-fg: #c0392b;
   --diff-hunk-bg: #f0f0f8;
   --diff-word-bg: #fff3bf;
+
+  /* 落后徽章（琥珀警示：暗色下也清晰） */
+  --badge-behind-bg: #d97706;
+  --badge-behind-fg: #ffffff;
 }
