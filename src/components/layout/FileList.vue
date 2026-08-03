@@ -316,7 +316,7 @@ async function handleDiscardAll() {
   padding: 0 10px;
   background: transparent;
   border: 1px solid var(--danger);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--danger);
   font-size: 12px;
   cursor: pointer;
@@ -334,7 +334,7 @@ async function handleDiscardAll() {
   padding: 0 10px;
   background: var(--danger);
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: #fff;
   font-size: 12px;
   cursor: pointer;
@@ -356,7 +356,7 @@ async function handleDiscardAll() {
   padding: 0 6px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-tertiary);
   font-size: 11px;
   cursor: pointer;
@@ -454,7 +454,7 @@ async function handleDiscardAll() {
   padding: 0 8px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 11px;
   cursor: pointer;

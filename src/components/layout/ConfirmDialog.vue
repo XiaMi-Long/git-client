@@ -76,9 +76,9 @@ function onKeydown(e: KeyboardEvent) {
   max-width: 90vw;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 4px;
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
   outline: none;
 }
 
@@ -104,11 +104,11 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .btn {
-  height: 28px;
+  height: var(--ctrl-h);
   padding: 0 16px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--ctrl-radius);
   color: var(--fg-secondary);
   font-size: 13px;
   cursor: pointer;

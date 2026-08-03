@@ -661,7 +661,7 @@ function commitMenuItems(c: CommitInfo) {
   padding: 0 10px;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: 12px;
   cursor: pointer;
@@ -677,7 +677,7 @@ function commitMenuItems(c: CommitInfo) {
   padding: 0 10px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -971,7 +971,7 @@ function commitMenuItems(c: CommitInfo) {
   padding: 1px 6px;
   color: #fff;
   font-size: 11px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 

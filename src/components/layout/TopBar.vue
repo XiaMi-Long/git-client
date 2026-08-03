@@ -251,7 +251,7 @@ onMounted(() => nextTick(() => updateScrollState()));
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-tertiary);
   font-size: 14px;
   opacity: 0;
@@ -274,7 +274,7 @@ onMounted(() => nextTick(() => updateScrollState()));
   color: var(--fg-tertiary);
   font-size: 16px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
@@ -321,7 +321,7 @@ onMounted(() => nextTick(() => updateScrollState()));
   padding: 0 10px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-tertiary);
   transition: border-color 150ms ease;
 }
@@ -351,7 +351,7 @@ onMounted(() => nextTick(() => updateScrollState()));
   justify-content: center;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
   transition: all 150ms ease;

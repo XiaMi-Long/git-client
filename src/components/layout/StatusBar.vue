@@ -183,7 +183,7 @@ const conflictText = computed(() => {
   padding: 0 8px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 11px;
   cursor: pointer;

@@ -82,9 +82,9 @@ function onKeydown(e: KeyboardEvent) {
   width: 320px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 4px;
+  border-radius: var(--radius-lg);
   padding: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
 }
 
 .dialog-title {
@@ -99,12 +99,13 @@ function onKeydown(e: KeyboardEvent) {
   height: 28px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--ctrl-radius);
   color: var(--fg-primary);
   font-size: 13px;
-  padding: 0 8px;
+  padding: 0 12px;
   outline: none;
   font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .dialog-input:focus {
@@ -123,7 +124,7 @@ function onKeydown(e: KeyboardEvent) {
   padding: 0 16px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 13px;
   cursor: pointer;

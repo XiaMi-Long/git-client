@@ -548,7 +548,7 @@ function menuItems(branch: BranchInfo) {
   color: var(--fg-tertiary);
   font-size: 14px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .group-add:hover {

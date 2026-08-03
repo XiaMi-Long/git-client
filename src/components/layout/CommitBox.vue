@@ -59,7 +59,7 @@ function onKeydown(e: KeyboardEvent) {
   resize: none;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: 13px;
   padding: 6px 8px;
@@ -81,7 +81,7 @@ function onKeydown(e: KeyboardEvent) {
   padding: 0 16px;
   background: var(--accent);
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: #fff;
   font-size: 13px;
   cursor: pointer;

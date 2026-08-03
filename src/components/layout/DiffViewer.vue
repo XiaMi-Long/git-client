@@ -358,7 +358,7 @@ async function handleStageHunk(hunk: DiffHunk) {
   padding: 0 8px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -404,7 +404,7 @@ async function handleStageHunk(hunk: DiffHunk) {
   padding: 0 8px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -467,7 +467,7 @@ async function handleStageHunk(hunk: DiffHunk) {
 /* 词级高亮（8.2） */
 .word-changed {
   background: var(--diff-word-bg);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* 双栏 */

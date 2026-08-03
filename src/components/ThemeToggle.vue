@@ -65,7 +65,7 @@ const themeStore = useThemeStore();
   padding: 0 12px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 13px;
   cursor: pointer;

@@ -95,8 +95,8 @@ onUnmounted(() => {
   min-width: 160px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   padding: 4px;
 }
 
@@ -108,7 +108,7 @@ onUnmounted(() => {
   padding: 0 12px;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: 6px;
   color: var(--fg-primary);
   font-size: 13px;
   cursor: pointer;
