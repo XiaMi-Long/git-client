@@ -107,19 +107,6 @@ async function detectGit() {
                   </div>
                 </div>
                 <div class="setting-row">
-                  <label>等宽字体大小</label>
-                  <div class="font-size-control">
-                    <input
-                      type="range"
-                      min="12"
-                      max="16"
-                      :value="settingsStore.fontSize"
-                      @input="settingsStore.setFontSize(Number(($event.target as HTMLInputElement).value))"
-                    />
-                    <span class="font-size-value">{{ settingsStore.fontSize }}px</span>
-                  </div>
-                </div>
-                <div class="setting-row">
                   <label>提交时间显示</label>
                   <div class="mode-options">
                     <button
