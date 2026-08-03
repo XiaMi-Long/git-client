@@ -391,6 +391,7 @@ async function handleCherryPick(c: CommitInfo) {
 function commitMenuItems(c: CommitInfo) {
   return [
     { label: "cherry-pick", action: () => handleCherryPick(c) },
+    { label: "复制提交信息", action: () => navigator.clipboard?.writeText(c.body ? `${c.subject}\n\n${c.body}` : c.subject) },
     { label: "复制哈希", action: () => navigator.clipboard?.writeText(c.hash) },
   ];
 }

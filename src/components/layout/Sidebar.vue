@@ -370,6 +370,10 @@ function menuItems(branch: BranchInfo) {
             <span v-if="b.behind > 0" class="branch-behind" :title="`落后上游 ${b.behind} 个提交，可获取最新`">
               ↓{{ b.behind }}
             </span>
+            <!-- 领先上游徽章：待推送数量 -->
+            <span v-if="b.ahead > 0" class="branch-ahead" :title="`领先上游 ${b.ahead} 个提交，可推送`">
+              ↑{{ b.ahead }}
+            </span>
           </div>
           <div v-if="localBranches.length === 0" class="empty-hint">暂无分支</div>
         </div>
@@ -629,6 +633,22 @@ function menuItems(branch: BranchInfo) {
 .tree-node.browsing .branch-behind {
   background: rgba(230, 162, 60, 0.55);
   color: #1e1e1e;
+}
+
+/* 领先上游徽章（可推送数量）：绿色系 */
+.branch-ahead {
+  flex-shrink: 0;
+  padding: 0 6px;
+  background: var(--badge-ahead-bg, #2ea87a);
+  color: var(--badge-ahead-fg, #ffffff);
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: 8px;
+}
+
+.tree-node.browsing .branch-ahead {
+  background: rgba(46, 168, 122, 0.55);
+  color: #ffffff;
 }
 
 .empty-hint {

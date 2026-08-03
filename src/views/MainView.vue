@@ -35,9 +35,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
-// 文件变更时刷新当前仓库（后端 500ms 防抖后 emit "repo-changed"）
+// 文件变更时刷新当前仓库 + 重新检测冲突状态（后端 500ms 防抖后 emit "repo-changed"）
 const { start: startWatcher } = useRepoWatcher(() => {
   repoStore.refreshActive();
+  // 外部编辑器解决冲突后，重新检测操作状态（watcher 排除 .git，git add 不触发，但文件编辑会触发）
+  selectionStore.loadOperationState();
 });
 
 // 后台定时 fetch 完成事件的取消函数

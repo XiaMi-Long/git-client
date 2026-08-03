@@ -206,6 +206,8 @@ export const useSelectionStore = defineStore("selection", () => {
       if (result.success) {
         await repoStore.refreshActive();
         await commitStore.loadCommits();
+        // 切换分支后重新检测冲突状态（避免上一分支的冲突残留）
+        await loadOperationState();
         // 切换分支后默认展示新分支的工作区（无需用户手动点击）
         selectWorking();
       }
