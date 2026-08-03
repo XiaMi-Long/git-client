@@ -33,15 +33,26 @@ function showError(msg: string) {
   }, 3000);
 }
 
-// 搜索（300ms 防抖）
+// 搜索（300ms 防抖 + 回车立即搜索）
 const localSearch = ref("");
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+function doSearch(val: string) {
+  commitStore.setSearch(val);
+}
 watch(localSearch, (val) => {
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    commitStore.setSearch(val);
+    doSearch(val);
   }, 300);
 });
+// 回车立即搜索（跳过防抖）
+function onSearchEnter() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+  doSearch(localSearch.value);
+}
 
 async function handleOpenRepo() {
   const selected = await open({ directory: true, multiple: false });
@@ -145,6 +156,7 @@ onMounted(() => nextTick(() => updateScrollState()));
           v-model="localSearch"
           type="text"
           placeholder="搜索提交信息 / 作者 / 哈希"
+          @keydown.enter="onSearchEnter"
         />
       </div>
       <ThemeToggle />
