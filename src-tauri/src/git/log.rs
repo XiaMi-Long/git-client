@@ -84,6 +84,22 @@ const FIELD_SEP: &str = "\x1f";
 impl GitExecutor {
     /// 分页查询提交日志（2.3）
     pub async fn get_log(repo_path: &Path, query: &LogQuery) -> GitResult<Vec<CommitInfo>> {
+        // 搜索模式：提交信息 / 作者 / 哈希 任一匹配（OR），合并去重
+        if let Some(search) = &query.search {
+            let s = search.trim();
+            if !s.is_empty() {
+                return Self::get_log_search(repo_path, query, s).await;
+            }
+        }
+
+        let args = Self::build_log_args(query, None);
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let output = Self::run_git(repo_path, &arg_refs).await?;
+        Self::parse_log(&output)
+    }
+
+    /// 构建 git log 基础参数（不含搜索过滤）
+    fn build_log_args(query: &LogQuery, search: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = vec![
             "log".to_string(),
             format!("--format={LOG_FORMAT}"),
@@ -99,20 +115,85 @@ impl GitExecutor {
             args.push(branch.clone());
         }
 
-        // 搜索过滤：grepp 匹配提交信息或作者
-        if let Some(search) = &query.search {
-            if !search.is_empty() {
-                args.push(format!("--grep={search}"));
-                args.push("--author={search}".to_string());
-                args.push("--regexp-ignore-case".to_string());
-                // 同时匹配哈希前缀
+        if search.is_some() {
+            args.push("--regexp-ignore-case".to_string());
+        }
+
+        args
+    }
+
+    /// 搜索模式：提交信息 / 作者 / 哈希 任一匹配（OR），合并去重后返回前 100 条
+    /// 说明：git log 的 --grep 与 --author 是 AND 关系，无法一条命令实现 OR，
+    /// 因此分三次查询（message / author / hash）合并去重。
+    async fn get_log_search(repo_path: &Path, query: &LogQuery, search: &str) -> GitResult<Vec<CommitInfo>> {
+        const SEARCH_CAP: usize = 100;
+        let mut merged: Vec<CommitInfo> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // 搜索查询不应用分页（合并后统一截断）
+        let base = LogQuery {
+            skip: 0,
+            limit: SEARCH_CAP,
+            ..query.clone()
+        };
+
+        // 1. 提交信息搜索
+        let mut args = Self::build_log_args(&base, Some(search));
+        args.push(format!("--grep={search}"));
+        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        if let Ok(out) = Self::run_git(repo_path, &refs).await {
+            if let Ok(commits) = Self::parse_log(&out) {
+                for c in commits {
+                    if seen.insert(c.hash.clone()) {
+                        merged.push(c);
+                    }
+                }
             }
         }
 
-        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output = Self::run_git(repo_path, &arg_refs).await?;
+        // 2. 作者搜索
+        if merged.len() < SEARCH_CAP {
+            let mut args = Self::build_log_args(&base, Some(search));
+            args.push(format!("--author={search}"));
+            let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            if let Ok(out) = Self::run_git(repo_path, &refs).await {
+                if let Ok(commits) = Self::parse_log(&out) {
+                    for c in commits {
+                        if seen.insert(c.hash.clone()) {
+                            merged.push(c);
+                        }
+                    }
+                }
+            }
+        }
 
-        Self::parse_log(&output)
+        // 3. 哈希前缀搜索（git rev-parse 验证后显示该提交本身）
+        if merged.len() < SEARCH_CAP
+            && Self::run_git(repo_path, &["rev-parse", "--verify", "--quiet", search])
+                .await
+                .is_ok()
+        {
+            let args = vec![
+                "log".to_string(),
+                format!("--format={LOG_FORMAT}"),
+                "-z".to_string(),
+                "-n1".to_string(),
+                search.to_string(),
+            ];
+            let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            if let Ok(out) = Self::run_git(repo_path, &refs).await {
+                if let Ok(commits) = Self::parse_log(&out) {
+                    for c in commits {
+                        if seen.insert(c.hash.clone()) {
+                            merged.push(c);
+                        }
+                    }
+                }
+            }
+        }
+
+        merged.truncate(SEARCH_CAP);
+        Ok(merged)
     }
 
     /// 解析 git log --format 输出

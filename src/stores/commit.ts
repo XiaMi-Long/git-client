@@ -54,7 +54,8 @@ export const useCommitStore = defineStore("commit", () => {
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
       commits.value = result;
-      hasMore.value = result.length >= PAGE_SIZE;
+      // 搜索模式返回合并结果（固定上限），不触发分页加载
+      hasMore.value = !search.value.trim() && result.length >= PAGE_SIZE;
     } catch {
       commits.value = [];
       hasMore.value = false;
@@ -78,7 +79,7 @@ export const useCommitStore = defineStore("commit", () => {
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
       commits.value.push(...result);
-      hasMore.value = result.length >= PAGE_SIZE;
+      hasMore.value = !search.value.trim() && result.length >= PAGE_SIZE;
     } catch {
       // 忽略分页错误
     } finally {
