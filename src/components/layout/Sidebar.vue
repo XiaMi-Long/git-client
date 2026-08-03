@@ -518,7 +518,9 @@ function menuItems(branch: BranchInfo) {
   align-items: center;
   gap: 4px;
   height: 26px;
+  margin: 0 6px;
   padding: 0 8px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 13px;
   font-weight: 500;
@@ -565,7 +567,9 @@ function menuItems(branch: BranchInfo) {
   align-items: center;
   gap: 8px;
   height: 26px;
+  margin: 1px 6px;
   padding: 0 8px 0 12px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 13px;
   cursor: pointer;
@@ -622,12 +626,12 @@ function menuItems(branch: BranchInfo) {
 /* 落后上游徽章（可拉取数量）：琥珀底深字，暗色下清晰 */
 .branch-behind {
   flex-shrink: 0;
-  padding: 0 6px;
+  padding: 0 7px;
   background: var(--badge-behind-bg);
   color: var(--badge-behind-fg);
   font-size: 11px;
   line-height: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
 }
 
 .tree-node.browsing .branch-behind {
@@ -638,12 +642,12 @@ function menuItems(branch: BranchInfo) {
 /* 领先上游徽章（可推送数量）：绿色系 */
 .branch-ahead {
   flex-shrink: 0;
-  padding: 0 6px;
+  padding: 0 7px;
   background: var(--badge-ahead-bg, #2ea87a);
   color: var(--badge-ahead-fg, #ffffff);
   font-size: 11px;
   line-height: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
 }
 
 .tree-node.browsing .branch-ahead {

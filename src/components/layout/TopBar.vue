@@ -228,14 +228,22 @@ onMounted(() => nextTick(() => updateScrollState()));
   gap: 6px;
   font-size: 13px;
   color: var(--fg-secondary);
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.repo-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 .repo-tab.active {
   color: var(--fg-primary);
-  border-bottom-color: var(--accent);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-default);
 }
 
 .repo-tab-name {
@@ -328,6 +336,7 @@ onMounted(() => nextTick(() => updateScrollState()));
 
 .search-box:focus-within {
   border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .search-box input {
