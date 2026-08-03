@@ -10,6 +10,19 @@ use tokio::process::Command;
 
 use super::types::{GitError, GitResult};
 
+// Windows 下 GUI 进程创建控制台子进程（git.exe）时默认分配新控制台窗口，
+// 需加 CREATE_NO_WINDOW 标志禁止弹窗（打包后的 release 主进程为 windows 子系统）
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// 为命令添加 Windows 无窗口标志（非 Windows 平台为空操作）
+fn no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(not(windows))]
+    let _ = cmd;
+}
+
 /// git 命令执行器，所有 git 操作的底层入口
 pub struct GitExecutor;
 
@@ -46,6 +59,8 @@ impl GitExecutor {
     ) -> GitResult<Output> {
         let mut cmd = Command::new("git");
         cmd.args(args);
+        // 禁止弹出控制台窗口（打包后的 GUI 主进程调用 git 时）
+        no_window(&mut cmd);
 
         if let Some(path) = repo_path {
             cmd.current_dir(path);
@@ -69,6 +84,8 @@ impl GitExecutor {
     pub async fn apply_hunk(repo_path: &Path, patch: &str) -> GitResult<()> {
         let mut cmd = Command::new("git");
         cmd.args(&["apply", "--cached"]);
+        // 禁止弹出控制台窗口
+        no_window(&mut cmd);
         cmd.current_dir(repo_path);
         // 强制英文输出，避免 locale 导致解析问题
         cmd.env("LC_ALL", "C");
