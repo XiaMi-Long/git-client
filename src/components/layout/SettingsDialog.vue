@@ -1,15 +1,12 @@
 <!--
   @component SettingsDialog
   @description
-    设置弹窗，居中模态。左侧分类导航（分支图谱风格）+ 右侧设置项。
+    设置弹窗，居中模态。左侧分类导航（分支图谱风格）+ 右侧设置项（现代化扁平化控件）。
     分类：常规 / Git / AI 功能（占位）/ 关于。
     打开/关闭带淡入 + 缩放动画。
-  @workflow
-    1. 父组件 v-if 挂载本组件 -> onMounted show=true 触发 enter 动画。
-    2. 关闭（× / Esc / 点遮罩）-> show=false 触发 leave 动画 -> 150ms 后 emit close，父卸载。
   @changeLog
     - 2026-07-30: Created. 设置弹窗（左右布局 + 动画）。
-    - 2026-08-02: Redesigned. UI 改版：左侧分支图谱导航 + 卡片 diff-hunk 竖条 + 控件统一。
+    - 2026-08-02: Redesigned. UI 改版：分支图谱导航 + 现代扁平控件（Segmented / 选项卡片 / 现代开关）。
 -->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
@@ -107,37 +104,72 @@ async function detectGit() {
               <div v-if="activeCategory === 'general'">
                 <div class="setting-card">
                   <div class="card-title">界面</div>
+
                   <div class="setting-row">
                     <label>主题</label>
-                    <div class="theme-options">
-                      <button :class="{ active: themeStore.isDark }" @click="themeStore.setTheme('dark')">
+                    <div class="segmented">
+                      <button
+                        class="seg"
+                        :class="{ active: themeStore.isDark }"
+                        @click="themeStore.setTheme('dark')"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                        </svg>
                         暗色
                       </button>
-                      <button :class="{ active: !themeStore.isDark }" @click="themeStore.setTheme('light')">
+                      <button
+                        class="seg"
+                        :class="{ active: !themeStore.isDark }"
+                        @click="themeStore.setTheme('light')"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="4" />
+                          <line x1="12" y1="1" x2="12" y2="3" />
+                          <line x1="12" y1="21" x2="12" y2="23" />
+                          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                          <line x1="1" y1="12" x2="3" y2="12" />
+                          <line x1="21" y1="12" x2="23" y2="12" />
+                          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                        </svg>
                         亮色
                       </button>
                     </div>
                   </div>
+
                   <div class="setting-row">
-                    <label>提交时间显示</label>
-                    <div class="mode-options">
+                    <label>时间显示</label>
+                    <div class="segmented">
                       <button
-                        class="mode-btn"
+                        class="seg"
                         :class="{ active: settingsStore.timeFormat === 'relative' }"
                         @click="settingsStore.setTimeFormat('relative')"
                       >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
                         相对时间
                       </button>
                       <button
-                        class="mode-btn"
+                        class="seg"
                         :class="{ active: settingsStore.timeFormat === 'absolute' }"
                         @click="settingsStore.setTimeFormat('absolute')"
                       >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
                         绝对时间
                       </button>
                     </div>
                   </div>
-                  <div class="hint">控制提交记录列表中的时间展示，如「2 小时前」或「2026-08-01 14:30」</div>
+
+                  <div class="hint">提交记录列表中的时间展示：相对「2 小时前」或绝对「2026-08-01 14:30」</div>
                 </div>
               </div>
 
@@ -145,8 +177,9 @@ async function detectGit() {
               <div v-else-if="activeCategory === 'git'">
                 <div class="setting-card">
                   <div class="card-title">Git 环境</div>
+
                   <div class="setting-row">
-                    <label>git 可执行文件路径</label>
+                    <label>git 路径</label>
                     <input
                       type="text"
                       :value="settingsStore.gitPath"
@@ -154,6 +187,7 @@ async function detectGit() {
                       @change="settingsStore.setGitPath(($event.target as HTMLInputElement).value)"
                     />
                   </div>
+
                   <div class="setting-row">
                     <label>git 版本</label>
                     <button class="detect-btn" :disabled="detecting" @click="detectGit">
@@ -161,6 +195,7 @@ async function detectGit() {
                     </button>
                     <span v-if="gitVersion" class="git-version">{{ gitVersion }}</span>
                   </div>
+
                   <div class="setting-row">
                     <label>默认打开目录</label>
                     <input
@@ -170,6 +205,7 @@ async function detectGit() {
                       @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
                     />
                   </div>
+
                   <div class="setting-row">
                     <label>存储名模板</label>
                     <input
@@ -184,6 +220,7 @@ async function detectGit() {
 
                 <div class="setting-card">
                   <div class="card-title">远程更新提示</div>
+
                   <div class="switch-row">
                     <span class="switch-label">显示提示行</span>
                     <button
@@ -195,30 +232,60 @@ async function detectGit() {
                     </button>
                   </div>
                   <div class="hint">当前分支远程有新提交时，提交列表上方显示「有 N 条新提交可查看」</div>
-                  <div class="switch-row sub">
-                    <span class="switch-label">展开方式</span>
-                    <div class="mode-options">
-                      <button
-                        class="mode-btn"
-                        :class="{ active: settingsStore.remoteHintExpandMode === 'click' }"
-                        @click="settingsStore.setRemoteHintExpandMode('click')"
-                      >
-                        点击展开
-                      </button>
-                      <button
-                        class="mode-btn"
-                        :class="{ active: settingsStore.remoteHintExpandMode === 'auto' }"
-                        @click="settingsStore.setRemoteHintExpandMode('auto')"
-                      >
-                        直接显示列表
-                      </button>
-                    </div>
+
+                  <div class="sub-label">展开方式</div>
+                  <div class="radio-cards">
+                    <button
+                      class="radio-card"
+                      :class="{ active: settingsStore.remoteHintExpandMode === 'click' }"
+                      @click="settingsStore.setRemoteHintExpandMode('click')"
+                    >
+                      <span class="rc-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </span>
+                      <span class="rc-body">
+                        <span class="rc-title">点击展开</span>
+                        <span class="rc-desc">先显示提示文字，点击后展开列表</span>
+                      </span>
+                      <span class="rc-check">
+                        <svg v-if="settingsStore.remoteHintExpandMode === 'click'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
+                    </button>
+                    <button
+                      class="radio-card"
+                      :class="{ active: settingsStore.remoteHintExpandMode === 'auto' }"
+                      @click="settingsStore.setRemoteHintExpandMode('auto')"
+                    >
+                      <span class="rc-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="8" y1="6" x2="21" y2="6" />
+                          <line x1="8" y1="12" x2="21" y2="12" />
+                          <line x1="8" y1="18" x2="21" y2="18" />
+                          <line x1="3" y1="6" x2="3.01" y2="6" />
+                          <line x1="3" y1="12" x2="3.01" y2="12" />
+                          <line x1="3" y1="18" x2="3.01" y2="18" />
+                        </svg>
+                      </span>
+                      <span class="rc-body">
+                        <span class="rc-title">直接显示列表</span>
+                        <span class="rc-desc">打开即列出待拉取提交，无提示行</span>
+                      </span>
+                      <span class="rc-check">
+                        <svg v-if="settingsStore.remoteHintExpandMode === 'auto'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
+                    </button>
                   </div>
-                  <div class="hint">点击展开：先显示提示文字，点击后列出待拉取提交；直接显示：打开即列出</div>
                 </div>
 
                 <div class="setting-card">
                   <div class="card-title">远程分支操作保护</div>
+
                   <div class="switch-row">
                     <span class="switch-label">总开关（一键全保护）</span>
                     <button
@@ -230,6 +297,7 @@ async function detectGit() {
                     </button>
                   </div>
                   <div class="hint">开启后远程分支右键禁止重命名 / 删除，防止误操作</div>
+
                   <div class="switch-row sub">
                     <span class="switch-label">禁止删除远程分支</span>
                     <button
@@ -286,21 +354,21 @@ async function detectGit() {
 }
 
 .settings-dialog {
-  width: 840px;
-  height: 600px;
+  width: 860px;
+  height: 620px;
   max-width: 90vw;
   max-height: 90vh;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   display: flex;
   overflow: hidden;
 }
 
 /* ===== 左侧分类：分支图谱风格 ===== */
 .settings-sidebar {
-  width: 180px;
+  width: 176px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-default);
   display: flex;
@@ -309,7 +377,7 @@ async function detectGit() {
 }
 
 .settings-title {
-  padding: 16px 16px 14px;
+  padding: 18px 16px 14px;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -411,8 +479,8 @@ async function detectGit() {
 }
 
 .content-header {
-  height: 46px;
-  padding: 0 16px;
+  height: 48px;
+  padding: 0 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -438,14 +506,14 @@ async function detectGit() {
 }
 
 .close-btn {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: none;
   color: var(--fg-tertiary);
   font-size: 13px;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 6px;
   transition: all 120ms ease;
 }
 
@@ -456,16 +524,16 @@ async function detectGit() {
 
 .settings-group {
   flex: 1;
-  padding: 16px;
+  padding: 16px 18px;
   overflow-y: auto;
 }
 
-/* ===== 卡片：diff-hunk 竖条标题 ===== */
+/* ===== 卡片 ===== */
 .setting-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
-  border-radius: 4px;
-  padding: 14px 16px 6px;
+  border-radius: 10px;
+  padding: 16px 18px 8px;
   margin-bottom: 14px;
 }
 
@@ -474,12 +542,12 @@ async function detectGit() {
   padding-left: 12px;
   margin-bottom: 14px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--fg-tertiary);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.5px;
 }
 
-/* 标题左侧 accent 竖条（diff hunk 标记的隐喻） */
+/* 标题左侧 accent 竖条 */
 .card-title::before {
   content: "";
   position: absolute;
@@ -488,7 +556,7 @@ async function detectGit() {
   transform: translateY(-50%);
   width: 3px;
   height: 13px;
-  border-radius: 1px;
+  border-radius: 2px;
   background: var(--accent);
   opacity: 0.85;
 }
@@ -501,64 +569,95 @@ async function detectGit() {
 }
 
 .setting-row label {
-  width: 128px;
+  width: 96px;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--fg-secondary);
   flex-shrink: 0;
 }
 
+/* ===== 现代化输入框 ===== */
 .setting-row input[type="text"] {
   flex: 1;
-  height: 28px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 3px;
+  border-radius: 8px;
   color: var(--fg-primary);
   font-size: 13px;
   outline: none;
-  transition: border-color 120ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.setting-row input[type="text"]:hover {
+  border-color: var(--border-strong);
 }
 
 .setting-row input[type="text"]:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
 }
 
-/* 统一按钮控件 */
-.theme-options,
-.mode-options {
+/* ===== Segmented Control（分段控制） ===== */
+.segmented {
   display: flex;
-  gap: 6px;
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
 }
 
-.theme-options button,
-.detect-btn,
-.mode-btn {
-  height: 26px;
-  padding: 0 12px;
+.seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--fg-tertiary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.seg svg {
+  opacity: 0.8;
+}
+
+.seg:hover:not(.active) {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.seg.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+}
+
+/* ===== 检测按钮 ===== */
+.detect-btn {
+  height: 30px;
+  padding: 0 14px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 3px;
+  border-radius: 8px;
   color: var(--fg-secondary);
   font-size: 12.5px;
   cursor: pointer;
-  transition: all 130ms ease;
+  transition: all 150ms ease;
 }
 
-.theme-options button:hover:not(.active),
-.detect-btn:hover:not(:disabled),
-.mode-btn:hover:not(.active) {
+.detect-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg-primary);
   border-color: var(--border-strong);
-}
-
-.theme-options button.active,
-.mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 .detect-btn:disabled {
@@ -572,11 +671,11 @@ async function detectGit() {
   color: var(--success);
 }
 
-/* 提示文案：↳ 引导 */
+/* ===== 提示文案 ===== */
 .hint {
   position: relative;
   padding-left: 14px;
-  margin-left: 140px;
+  margin-left: 108px;
   margin-top: -6px;
   margin-bottom: 10px;
   font-size: 11.5px;
@@ -592,19 +691,18 @@ async function detectGit() {
   opacity: 0.6;
 }
 
-/* 开关行：无 label 对齐时 */
 .switch-row + .hint {
   margin-left: 0;
 }
 
-/* 开关行 */
+/* ===== 开关（现代化） ===== */
 .switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .switch-row.sub {
@@ -616,15 +714,23 @@ async function detectGit() {
   color: var(--fg-primary);
 }
 
+.sub-label {
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--fg-tertiary);
+}
+
 .switch {
   position: relative;
-  width: 36px;
-  height: 20px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  width: 40px;
+  height: 22px;
+  border: none;
+  border-radius: 11px;
   background: var(--bg-input);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: background 200ms ease;
   flex-shrink: 0;
 }
 
@@ -632,21 +738,20 @@ async function detectGit() {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: var(--fg-tertiary);
-  transition: transform 150ms ease, background 150ms ease;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 200ms cubic-bezier(0.4, 1.4, 0.6, 1);
 }
 
 .switch.on {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--success);
 }
 
 .switch.on .switch-thumb {
-  transform: translateX(16px);
-  background: #fff;
+  transform: translateX(18px);
 }
 
 .switch.disabled {
@@ -654,7 +759,90 @@ async function detectGit() {
   cursor: not-allowed;
 }
 
-/* 空态 */
+/* ===== 选项卡片（Radio Cards） ===== */
+.radio-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.radio-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.radio-card.active {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+.rc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+  transition: all 160ms ease;
+}
+
+.radio-card.active .rc-icon {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.rc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rc-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+
+.rc-desc {
+  font-size: 11px;
+  color: var(--fg-tertiary);
+  line-height: 1.4;
+}
+
+.rc-check {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ===== 空态 ===== */
 .empty-hint {
   color: var(--fg-tertiary);
   text-align: center;
@@ -676,7 +864,7 @@ async function detectGit() {
   opacity: 0.7;
 }
 
-/* 关于：代码风格键值对 */
+/* ===== 关于：代码风格键值对 ===== */
 .about-row {
   display: flex;
   align-items: baseline;
@@ -701,7 +889,7 @@ async function detectGit() {
   color: var(--fg-primary);
 }
 
-/* 动画：遮罩淡入 + 弹窗缩放淡入 */
+/* ===== 动画 ===== */
 .settings-enter-active,
 .settings-leave-active {
   transition: opacity 150ms ease;
