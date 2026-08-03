@@ -423,9 +423,9 @@ export const useSelectionStore = defineStore("selection", () => {
 
   // ===== 冲突处理（12.x） =====
 
-  async function loadOperationState() {
+  async function loadOperationState(): Promise<boolean> {
     const path = repoStore.activeRepo?.path;
-    if (!path) return;
+    if (!path) return false;
     try {
       operationState.value = await invoke<OperationState>("git_get_operation_state", { path });
       if (operationState.value !== "normal") {
@@ -433,18 +433,31 @@ export const useSelectionStore = defineStore("selection", () => {
       } else {
         conflictedFiles.value = [];
       }
+      return true;
     } catch {
       // 忽略
+      return false;
     }
   }
 
   // 冲突状态下自动轮询：外部编辑器解决冲突（git add 修改 .git/index，watcher 感知不到）后自动恢复
+  // 失败保护：连续 5 次检测失败（git 不可用/仓库异常）自动停止，避免无限空转
   let conflictTimer: number | null = null;
+  let conflictPollFails = 0;
   watch(isConflicted, (v) => {
     if (v && !conflictTimer) {
-      // 进入冲突：每 3 秒重新检测一次，直到冲突解决自动停止
+      conflictPollFails = 0;
       conflictTimer = window.setInterval(async () => {
-        await loadOperationState();
+        const ok = await loadOperationState();
+        if (!ok) {
+          conflictPollFails++;
+          if (conflictPollFails >= 5 && conflictTimer) {
+            clearInterval(conflictTimer);
+            conflictTimer = null;
+          }
+          return;
+        }
+        conflictPollFails = 0;
         await repoStore.refreshActive();
       }, 3000);
     } else if (!v && conflictTimer) {
