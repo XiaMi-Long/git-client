@@ -112,8 +112,8 @@ function close() {
   height: 560px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   transform: scale(0.96);
@@ -147,7 +147,7 @@ function close() {
   color: var(--fg-tertiary);
   font-size: 13px;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--ctrl-radius);
 }
 .close-btn:hover {
   background: var(--bg-hover);

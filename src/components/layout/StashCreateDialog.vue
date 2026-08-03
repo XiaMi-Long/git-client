@@ -131,8 +131,8 @@ async function create() {
   width: 420px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   transform: scale(0.96);
   transition: transform 150ms ease;
 }
@@ -174,7 +174,7 @@ async function create() {
   padding: 0 10px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 3px;
+  border-radius: var(--ctrl-radius);
   color: var(--fg-primary);
   font-size: 13px;
   outline: none;
@@ -200,7 +200,7 @@ async function create() {
 .btn {
   height: 28px;
   padding: 0 16px;
-  border-radius: 3px;
+  border-radius: var(--ctrl-radius);
   font-size: 13px;
   cursor: pointer;
   border: 1px solid transparent;
