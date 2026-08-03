@@ -30,11 +30,13 @@ import GlobalProgress from "@/components/layout/GlobalProgress.vue";
 import { useResizable } from "@/composables/useResizable";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
+import { useCommitStore } from "@/stores/commit";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
+const commitStore = useCommitStore();
 // 文件变更时刷新当前仓库 + 重新检测冲突状态（后端 500ms 防抖后 emit "repo-changed"）
 const { start: startWatcher } = useRepoWatcher(() => {
   repoStore.refreshActive();
@@ -76,11 +78,25 @@ onMounted(() => {
   unlistenFetched = listen("repo-fetched", () => {
     repoStore.refreshActive();
   });
+  // 窗口聚焦时统一刷新：获取最新远程拉取数 + 提交列表 + 工作区/冲突状态
+  window.addEventListener("focus", onWindowFocus);
 });
 
 onUnmounted(() => {
   unlistenFetched?.then((fn) => fn());
+  window.removeEventListener("focus", onWindowFocus);
 });
+
+// 窗口显示且聚焦时刷新（替代轮询）：
+// 1. fetch 获取最新远程引用 → 落后/领先徽章更新（可拉取数量）
+// 2. 刷新提交列表
+// 3. 刷新右侧工作区状态 + 重新检测冲突（外部解决冲突后切回窗口自动恢复）
+function onWindowFocus() {
+  if (!repoStore.activeRepo) return;
+  repoStore.fetchAndRefresh();
+  commitStore.loadCommits();
+  selectionStore.loadOperationState();
+}
 </script>
 
 <template>

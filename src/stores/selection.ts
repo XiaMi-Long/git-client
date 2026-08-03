@@ -440,32 +440,6 @@ export const useSelectionStore = defineStore("selection", () => {
     }
   }
 
-  // 冲突状态下自动轮询：外部编辑器解决冲突（git add 修改 .git/index，watcher 感知不到）后自动恢复
-  // 失败保护：连续 5 次检测失败（git 不可用/仓库异常）自动停止，避免无限空转
-  let conflictTimer: number | null = null;
-  let conflictPollFails = 0;
-  watch(isConflicted, (v) => {
-    if (v && !conflictTimer) {
-      conflictPollFails = 0;
-      conflictTimer = window.setInterval(async () => {
-        const ok = await loadOperationState();
-        if (!ok) {
-          conflictPollFails++;
-          if (conflictPollFails >= 5 && conflictTimer) {
-            clearInterval(conflictTimer);
-            conflictTimer = null;
-          }
-          return;
-        }
-        conflictPollFails = 0;
-        await repoStore.refreshActive();
-      }, 3000);
-    } else if (!v && conflictTimer) {
-      clearInterval(conflictTimer);
-      conflictTimer = null;
-    }
-  });
-
   async function markResolved(filePath: string) {
     return withOp("标记已解决中", async () => {
       const path = repoStore.activeRepo?.path;
