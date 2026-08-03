@@ -438,6 +438,21 @@ export const useSelectionStore = defineStore("selection", () => {
     }
   }
 
+  // 冲突状态下自动轮询：外部编辑器解决冲突（git add 修改 .git/index，watcher 感知不到）后自动恢复
+  let conflictTimer: number | null = null;
+  watch(isConflicted, (v) => {
+    if (v && !conflictTimer) {
+      // 进入冲突：每 3 秒重新检测一次，直到冲突解决自动停止
+      conflictTimer = window.setInterval(async () => {
+        await loadOperationState();
+        await repoStore.refreshActive();
+      }, 3000);
+    } else if (!v && conflictTimer) {
+      clearInterval(conflictTimer);
+      conflictTimer = null;
+    }
+  });
+
   async function markResolved(filePath: string) {
     return withOp("标记已解决中", async () => {
       const path = repoStore.activeRepo?.path;

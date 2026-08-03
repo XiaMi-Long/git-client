@@ -77,6 +77,12 @@ function diffPath(f: FileDiff): string {
   return f.is_renamed ? `${f.old_path} -> ${f.new_path}` : f.new_path;
 }
 
+// 手动刷新冲突状态（外部解决冲突后点击）
+async function refreshConflictState() {
+  await selectionStore.loadOperationState();
+  await repoStore.refreshActive();
+}
+
 // 放弃单个文件改动（未暂存 → 恢复；未跟踪 → 删除文件）
 async function handleDiscardFile(filePath: string) {
   const ok = await showConfirm(
@@ -107,7 +113,10 @@ async function handleDiscardAll() {
       <!-- 冲突横幅（常驻，醒目） -->
       <div v-if="isConflicted" class="conflict-banner">
         <span class="conflict-banner-text">⚠ 合并冲突：{{ conflictFiles.length }} 个文件冲突</span>
-        <button class="conflict-abort" @click="selectionStore.abortOperation()">中止合并</button>
+        <div class="conflict-banner-actions">
+          <button class="conflict-refresh" @click="refreshConflictState">刷新状态</button>
+          <button class="conflict-abort" @click="selectionStore.abortOperation()">中止合并</button>
+        </div>
       </div>
 
       <!-- 冲突文件列表（可展开 / 收起） -->
@@ -293,6 +302,31 @@ async function handleDiscardAll() {
   color: var(--danger);
   font-size: 12px;
   font-weight: 500;
+}
+
+.conflict-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.conflict-refresh {
+  height: 20px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: 2px;
+  color: var(--danger);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.conflict-refresh:hover {
+  background: var(--danger);
+  color: #fff;
 }
 
 .conflict-abort {

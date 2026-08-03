@@ -56,7 +56,7 @@ const { size: sidebarWidth, onMouseDown: onSidebarResize } = useResizable({
 // 右侧面板宽度（中右拖拽，面板在右 -> reverse）
 const { size: rightWidth, onMouseDown: onRightResize } = useResizable({
   orientation: "horizontal",
-  initial: 650,
+  initial: 500,
   min: 320,
   max: 900,
   reverse: true,
