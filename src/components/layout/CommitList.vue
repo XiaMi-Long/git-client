@@ -717,11 +717,13 @@ function commitMenuItems(c: CommitInfo) {
   align-items: center;
   gap: 8px;
   height: 26px;
+  margin: 0 6px;
   padding: 0 8px;
-  border-bottom: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
   flex-shrink: 0;
+  transition: background 150ms ease;
 }
 
 .working-node:hover {
@@ -918,12 +920,14 @@ function commitMenuItems(c: CommitInfo) {
   align-items: center;
   gap: 8px;
   height: 26px;
+  margin: 1px 6px;
   padding: 0 8px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
-  border-bottom: 1px solid var(--border-default);
   position: relative;
   z-index: 1;
+  transition: background 120ms ease;
 }
 
 .commit-item:hover {
@@ -968,10 +972,10 @@ function commitMenuItems(c: CommitInfo) {
 }
 
 .ref-badge {
-  padding: 1px 6px;
+  padding: 1px 7px;
   color: #fff;
   font-size: 11px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 

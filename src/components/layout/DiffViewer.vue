@@ -349,26 +349,35 @@ async function handleStageHunk(hunk: DiffHunk) {
 
 .diff-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   flex-shrink: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ctrl-radius);
+  padding: 2px;
 }
 
 .mode-btn {
   height: 22px;
-  padding: 0 8px;
+  padding: 0 10px;
   background: transparent;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border: none;
+  border-radius: 6px;
   color: var(--fg-secondary);
   font-size: 12px;
   cursor: pointer;
   transition: all 150ms ease;
 }
 
-.mode-btn.active {
-  background: var(--bg-elevated);
+.mode-btn:hover:not(.active) {
   color: var(--fg-primary);
-  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
 }
 
 .diff-body {

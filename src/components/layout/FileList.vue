@@ -389,10 +389,12 @@ async function handleDiscardAll() {
   align-items: center;
   gap: 8px;
   height: 26px;
-  padding: 0 12px;
+  margin: 1px 6px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
-  border-bottom: 1px solid var(--border-default);
+  transition: background 120ms ease;
 }
 
 .file-item:hover {
