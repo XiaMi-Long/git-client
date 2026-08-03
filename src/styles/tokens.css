@@ -41,8 +41,25 @@
   /* 落后徽章（琥珀警示：暗色下也清晰） */
   --badge-behind-bg: #e6a23c;
   --badge-behind-fg: #1e1e1e;
-  /* 等宽字体大小（设置可调，默认 13px） */
+  /* 等宽字体大小 */
   --mono-font-size: 13px;
+
+  /* ===== 现代扁平设计系统（阶段 0） ===== */
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  /* 阴影（柔和层次） */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+  /* 控件尺寸 */
+  --ctrl-h: 30px;
+  --ctrl-radius: 8px;
+  /* focus 发光 */
+  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  --focus-ring-color: rgba(59, 130, 246, 0.16);
 }
 
 /* ===== 亮色主题 ===== */
@@ -82,4 +99,21 @@
   /* 落后徽章（琥珀警示：暗色下也清晰） */
   --badge-behind-bg: #d97706;
   --badge-behind-fg: #ffffff;
+
+  /* ===== 现代扁平设计系统（阶段 0） ===== */
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  /* 阴影（柔和层次） */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);
+  /* 控件尺寸 */
+  --ctrl-h: 30px;
+  --ctrl-radius: 8px;
+  /* focus 发光 */
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  --focus-ring-color: rgba(37, 99, 235, 0.14);
 }
