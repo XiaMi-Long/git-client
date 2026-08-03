@@ -1,7 +1,7 @@
 <!--
   @component SettingsDialog
   @description
-    设置弹窗，居中模态。左侧分类导航 + 右侧设置项。
+    设置弹窗，居中模态。左侧分类导航（分支图谱风格）+ 右侧设置项。
     分类：常规 / Git / AI 功能（占位）/ 关于。
     打开/关闭带淡入 + 缩放动画。
   @workflow
@@ -9,6 +9,7 @@
     2. 关闭（× / Esc / 点遮罩）-> show=false 触发 leave 动画 -> 150ms 后 emit close，父卸载。
   @changeLog
     - 2026-07-30: Created. 设置弹窗（左右布局 + 动画）。
+    - 2026-08-02: Redesigned. UI 改版：左侧分支图谱导航 + 卡片 diff-hunk 竖条 + 控件统一。
 -->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
@@ -21,12 +22,12 @@ const emit = defineEmits<{ close: [] }>();
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
 
-// 分类
+// 分类（含描述，右侧头部展示）
 const categories = [
-  { key: "general", label: "常规" },
-  { key: "git", label: "Git" },
-  { key: "ai", label: "AI 功能" },
-  { key: "about", label: "关于" },
+  { key: "general", label: "常规", desc: "界面外观与交互偏好" },
+  { key: "git", label: "Git", desc: "git 行为与环境配置" },
+  { key: "ai", label: "AI 功能", desc: "智能辅助（规划中）" },
+  { key: "about", label: "关于", desc: "版本与技术信息" },
 ];
 const activeCategory = ref("general");
 
@@ -70,189 +71,200 @@ async function detectGit() {
     <Transition name="settings">
       <div v-if="show" class="overlay" @click.self="close">
         <div class="settings-dialog">
-          <!-- 左侧分类 -->
+          <!-- 左侧分类：分支图谱风格导航 -->
           <div class="settings-sidebar">
             <div class="settings-title">设置</div>
-            <button
-              v-for="cat in categories"
-              :key="cat.key"
-              class="category-item"
-              :class="{ active: activeCategory === cat.key }"
-              @click="activeCategory = cat.key"
-            >
-              {{ cat.label }}
-            </button>
+            <nav class="category-nav">
+              <div
+                v-for="(cat, i) in categories"
+                :key="cat.key"
+                class="category-item"
+                :class="{ active: activeCategory === cat.key }"
+                @click="activeCategory = cat.key"
+              >
+                <span class="cat-node">
+                  <i class="node-dot" />
+                  <i v-if="i < categories.length - 1" class="node-line" />
+                </span>
+                <span class="cat-label">{{ cat.label }}</span>
+              </div>
+            </nav>
+            <div class="sidebar-foot">git-client</div>
           </div>
 
           <!-- 右侧设置项 -->
           <div class="settings-content">
             <div class="content-header">
-              <span>{{ categories.find((c) => c.key === activeCategory)?.label }}</span>
-              <button class="close-btn" title="关闭" @click="close">×</button>
+              <div class="header-title">
+                <span class="header-label">{{ categories.find((c) => c.key === activeCategory)?.label }}</span>
+                <span class="header-desc">{{ categories.find((c) => c.key === activeCategory)?.desc }}</span>
+              </div>
+              <button class="close-btn" title="关闭" @click="close">✕</button>
             </div>
 
-            <!-- 常规 -->
-            <div v-if="activeCategory === 'general'" class="settings-group">
-              <div class="setting-card">
-                <div class="card-title">界面</div>
-                <div class="setting-row">
-                  <label>主题</label>
-                  <div class="theme-options">
-                    <button :class="{ active: themeStore.isDark }" @click="themeStore.setTheme('dark')">
-                      暗色
+            <div class="settings-group">
+              <!-- 常规 -->
+              <div v-if="activeCategory === 'general'">
+                <div class="setting-card">
+                  <div class="card-title">界面</div>
+                  <div class="setting-row">
+                    <label>主题</label>
+                    <div class="theme-options">
+                      <button :class="{ active: themeStore.isDark }" @click="themeStore.setTheme('dark')">
+                        暗色
+                      </button>
+                      <button :class="{ active: !themeStore.isDark }" @click="themeStore.setTheme('light')">
+                        亮色
+                      </button>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <label>提交时间显示</label>
+                    <div class="mode-options">
+                      <button
+                        class="mode-btn"
+                        :class="{ active: settingsStore.timeFormat === 'relative' }"
+                        @click="settingsStore.setTimeFormat('relative')"
+                      >
+                        相对时间
+                      </button>
+                      <button
+                        class="mode-btn"
+                        :class="{ active: settingsStore.timeFormat === 'absolute' }"
+                        @click="settingsStore.setTimeFormat('absolute')"
+                      >
+                        绝对时间
+                      </button>
+                    </div>
+                  </div>
+                  <div class="hint">控制提交记录列表中的时间展示，如「2 小时前」或「2026-08-01 14:30」</div>
+                </div>
+              </div>
+
+              <!-- Git -->
+              <div v-else-if="activeCategory === 'git'">
+                <div class="setting-card">
+                  <div class="card-title">Git 环境</div>
+                  <div class="setting-row">
+                    <label>git 可执行文件路径</label>
+                    <input
+                      type="text"
+                      :value="settingsStore.gitPath"
+                      placeholder="留空使用系统 PATH"
+                      @change="settingsStore.setGitPath(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                  <div class="setting-row">
+                    <label>git 版本</label>
+                    <button class="detect-btn" :disabled="detecting" @click="detectGit">
+                      {{ detecting ? "检测中…" : "检测版本" }}
                     </button>
-                    <button :class="{ active: !themeStore.isDark }" @click="themeStore.setTheme('light')">
-                      亮色
+                    <span v-if="gitVersion" class="git-version">{{ gitVersion }}</span>
+                  </div>
+                  <div class="setting-row">
+                    <label>默认打开目录</label>
+                    <input
+                      type="text"
+                      :value="settingsStore.defaultOpenDir"
+                      placeholder="留空使用上次目录"
+                      @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                  <div class="setting-row">
+                    <label>存储名模板</label>
+                    <input
+                      type="text"
+                      :value="settingsStore.stashNameTemplate"
+                      placeholder="${branch}-${yyyy}-${mm}-${dd}-${HH}-${MM}"
+                      @change="settingsStore.setStashNameTemplate(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                  <div class="hint">创建存储的默认名称，支持 ${'${branch}'} ${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'} 占位符</div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="card-title">远程更新提示</div>
+                  <div class="switch-row">
+                    <span class="switch-label">显示提示行</span>
+                    <button
+                      class="switch"
+                      :class="{ on: settingsStore.enableRemoteHint }"
+                      @click.stop.prevent="settingsStore.setEnableRemoteHint(!settingsStore.enableRemoteHint)"
+                    >
+                      <span class="switch-thumb" />
+                    </button>
+                  </div>
+                  <div class="hint">当前分支远程有新提交时，提交列表上方显示「有 N 条新提交可查看」</div>
+                  <div class="switch-row sub">
+                    <span class="switch-label">展开方式</span>
+                    <div class="mode-options">
+                      <button
+                        class="mode-btn"
+                        :class="{ active: settingsStore.remoteHintExpandMode === 'click' }"
+                        @click="settingsStore.setRemoteHintExpandMode('click')"
+                      >
+                        点击展开
+                      </button>
+                      <button
+                        class="mode-btn"
+                        :class="{ active: settingsStore.remoteHintExpandMode === 'auto' }"
+                        @click="settingsStore.setRemoteHintExpandMode('auto')"
+                      >
+                        直接显示列表
+                      </button>
+                    </div>
+                  </div>
+                  <div class="hint">点击展开：先显示提示文字，点击后列出待拉取提交；直接显示：打开即列出</div>
+                </div>
+
+                <div class="setting-card">
+                  <div class="card-title">远程分支操作保护</div>
+                  <div class="switch-row">
+                    <span class="switch-label">总开关（一键全保护）</span>
+                    <button
+                      class="switch"
+                      :class="{ on: settingsStore.protectRemote }"
+                      @click="settingsStore.setProtectRemote(!settingsStore.protectRemote)"
+                    >
+                      <span class="switch-thumb" />
+                    </button>
+                  </div>
+                  <div class="hint">开启后远程分支右键禁止重命名 / 删除，防止误操作</div>
+                  <div class="switch-row sub">
+                    <span class="switch-label">禁止删除远程分支</span>
+                    <button
+                      class="switch"
+                      :class="{ on: settingsStore.protectRemoteDelete, disabled: settingsStore.protectRemote }"
+                      :disabled="settingsStore.protectRemote"
+                      @click="settingsStore.setProtectRemoteDelete(!settingsStore.protectRemoteDelete)"
+                    >
+                      <span class="switch-thumb" />
                     </button>
                   </div>
                 </div>
-                <div class="setting-row">
-                  <label>提交时间显示</label>
-                  <div class="mode-options">
-                    <button
-                      class="mode-btn"
-                      :class="{ active: settingsStore.timeFormat === 'relative' }"
-                      @click="settingsStore.setTimeFormat('relative')"
-                    >
-                      相对时间（2 小时前）
-                    </button>
-                    <button
-                      class="mode-btn"
-                      :class="{ active: settingsStore.timeFormat === 'absolute' }"
-                      @click="settingsStore.setTimeFormat('absolute')"
-                    >
-                      绝对时间（2026-08-01 14:30）
-                    </button>
+              </div>
+
+              <!-- AI 功能 -->
+              <div v-else-if="activeCategory === 'ai'">
+                <div class="setting-card">
+                  <div class="card-title">AI 功能</div>
+                  <div class="empty-hint">
+                    <span class="empty-icon">◌</span>
+                    <p>敬请期待</p>
+                    <p class="empty-sub">智能辅助功能正在规划中</p>
                   </div>
                 </div>
-                <div class="hint">影响提交记录列表中的时间展示</div>
-              </div>
-            </div>
-
-            <!-- Git -->
-            <div v-else-if="activeCategory === 'git'" class="settings-group">
-              <div class="setting-card">
-                <div class="card-title">Git 环境</div>
-                <div class="setting-row">
-                  <label>git 可执行文件路径</label>
-                  <input
-                    type="text"
-                    :value="settingsStore.gitPath"
-                    placeholder="留空使用系统 PATH"
-                    @change="settingsStore.setGitPath(($event.target as HTMLInputElement).value)"
-                  />
-                </div>
-                <div class="setting-row">
-                  <label>git 版本</label>
-                  <button class="detect-btn" :disabled="detecting" @click="detectGit">
-                    {{ detecting ? "检测中…" : "检测版本" }}
-                  </button>
-                  <span v-if="gitVersion" class="git-version">{{ gitVersion }}</span>
-                </div>
-                <div class="setting-row">
-                  <label>默认打开目录</label>
-                  <input
-                    type="text"
-                    :value="settingsStore.defaultOpenDir"
-                    placeholder="留空使用上次目录"
-                    @change="settingsStore.setDefaultOpenDir(($event.target as HTMLInputElement).value)"
-                  />
-                </div>
-                <div class="setting-row">
-                  <label>存储名模板</label>
-                  <input
-                    type="text"
-                    :value="settingsStore.stashNameTemplate"
-                    placeholder="${yyyy}-${mm}-${dd}-${HH}-${MM}"
-                    @change="settingsStore.setStashNameTemplate(($event.target as HTMLInputElement).value)"
-                  />
-                </div>
-                <div class="hint">
-                  创建存储时的默认名称，支持占位符：${'${branch}'} ${'${yyyy}'} ${'${mm}'} ${'${dd}'} ${'${HH}'} ${'${MM}'} ${'${ss}'}，
-                  如 weiwenyu-${'${yyyy}'}-${'${mm}'}
-                </div>
               </div>
 
-              <!-- 远程更新提示 -->
-              <div class="setting-card">
-                <div class="card-title">远程更新提示</div>
-                <div class="switch-row">
-                  <span class="switch-label">当前分支远程有新提交时显示提示行</span>
-                  <button
-                    class="switch"
-                    :class="{ on: settingsStore.enableRemoteHint }"
-                    @click.stop.prevent="settingsStore.setEnableRemoteHint(!settingsStore.enableRemoteHint)"
-                  >
-                    <span class="switch-thumb" />
-                  </button>
+              <!-- 关于 -->
+              <div v-else-if="activeCategory === 'about'">
+                <div class="setting-card">
+                  <div class="card-title">关于</div>
+                  <div class="about-row"><label>应用</label><span class="mono">Git 客户端</span></div>
+                  <div class="about-row"><label>版本</label><span class="mono">0.1.0</span></div>
+                  <div class="about-row"><label>仓库</label><span class="mono">XiaMi-Long/git-client</span></div>
+                  <div class="about-row"><label>技术栈</label><span class="mono">Tauri 2 · Vue 3 · Rust</span></div>
                 </div>
-                <div class="hint">提交列表上方显示「当前分支有 N 条新提交可查看」</div>
-                <div class="switch-row sub">
-                  <span class="switch-label">展开方式</span>
-                  <div class="mode-options">
-                    <button
-                      class="mode-btn"
-                      :class="{ active: settingsStore.remoteHintExpandMode === 'click' }"
-                      @click="settingsStore.setRemoteHintExpandMode('click')"
-                    >
-                      点击展开
-                    </button>
-                    <button
-                      class="mode-btn"
-                      :class="{ active: settingsStore.remoteHintExpandMode === 'auto' }"
-                      @click="settingsStore.setRemoteHintExpandMode('auto')"
-                    >
-                      直接显示列表
-                    </button>
-                  </div>
-                </div>
-                <div class="hint">点击展开：显示提示文字，点击后才列出待拉取提交；直接显示：打开即列出</div>
-              </div>
-
-              <!-- 远程分支操作保护 -->
-              <div class="setting-card">
-                <div class="card-title">远程分支操作保护</div>
-                <div class="switch-row">
-                  <span class="switch-label">总开关（一键全保护）</span>
-                  <button
-                    class="switch"
-                    :class="{ on: settingsStore.protectRemote }"
-                    @click="settingsStore.setProtectRemote(!settingsStore.protectRemote)"
-                  >
-                    <span class="switch-thumb" />
-                  </button>
-                </div>
-                <div class="hint">开启后远程分支右键禁止重命名 / 删除，防止误操作</div>
-                <div class="switch-row sub">
-                  <span class="switch-label">禁止删除远程分支</span>
-                  <button
-                    class="switch"
-                    :class="{ on: settingsStore.protectRemoteDelete, disabled: settingsStore.protectRemote }"
-                    :disabled="settingsStore.protectRemote"
-                    @click="settingsStore.setProtectRemoteDelete(!settingsStore.protectRemoteDelete)"
-                  >
-                    <span class="switch-thumb" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- AI 功能 -->
-            <div v-else-if="activeCategory === 'ai'" class="settings-group">
-              <div class="setting-card">
-                <div class="card-title">AI 功能</div>
-                <div class="empty-hint">敬请期待</div>
-              </div>
-            </div>
-
-            <!-- 关于 -->
-            <div v-else-if="activeCategory === 'about'" class="settings-group">
-              <div class="setting-card">
-                <div class="card-title">关于</div>
-                <div class="about-row"><label>应用</label><span>Git 客户端</span></div>
-                <div class="about-row"><label>版本</label><span>0.1.0</span></div>
-                <div class="about-row"><label>仓库</label><span>github.com/XiaMi-Long/git-client</span></div>
-                <div class="about-row"><label>技术栈</label><span>Tauri 2 + Vue 3</span></div>
               </div>
             </div>
           </div>
@@ -286,46 +298,111 @@ async function detectGit() {
   overflow: hidden;
 }
 
-/* 左侧分类 */
+/* ===== 左侧分类：分支图谱风格 ===== */
 .settings-sidebar {
   width: 180px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-default);
-  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 }
 
 .settings-title {
-  padding: 0 16px 12px;
+  padding: 16px 16px 14px;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.5px;
   color: var(--fg-primary);
 }
 
+.category-nav {
+  flex: 1;
+  padding: 4px 0;
+}
+
 .category-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: 13px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 16px;
   cursor: pointer;
-  border-left: 2px solid transparent;
+  transition: background 120ms ease;
 }
 
 .category-item:hover {
   background: var(--bg-hover);
 }
 
-.category-item.active {
-  background: var(--bg-elevated);
-  color: var(--accent);
-  border-left-color: var(--accent);
+/* 图谱节点 */
+.cat-node {
+  position: relative;
+  width: 10px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-/* 右侧内容 */
+.node-dot {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg-panel);
+  transition: all 150ms ease;
+}
+
+/* 节点连接竖线（除最后一项） */
+.node-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  bottom: -50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border-default);
+}
+
+.category-item:last-child .node-line {
+  display: none;
+}
+
+.category-item:hover .node-dot {
+  border-color: var(--fg-tertiary);
+}
+
+.category-item.active .node-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.cat-label {
+  font-size: 13px;
+  color: var(--fg-secondary);
+  transition: color 120ms ease;
+}
+
+.category-item.active .cat-label {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.sidebar-foot {
+  padding: 12px 16px;
+  font-size: 11px;
+  color: var(--fg-tertiary);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  opacity: 0.7;
+}
+
+/* ===== 右侧内容 ===== */
 .settings-content {
   flex: 1;
   display: flex;
@@ -334,27 +411,42 @@ async function detectGit() {
 }
 
 .content-header {
-  height: 40px;
+  height: 46px;
   padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-default);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg-primary);
   flex-shrink: 0;
 }
 
+.header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.header-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.header-desc {
+  font-size: 11.5px;
+  color: var(--fg-tertiary);
+}
+
 .close-btn {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   background: transparent;
   border: none;
   color: var(--fg-tertiary);
-  font-size: 18px;
+  font-size: 13px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 3px;
+  transition: all 120ms ease;
 }
 
 .close-btn:hover {
@@ -368,34 +460,50 @@ async function detectGit() {
   overflow-y: auto;
 }
 
-/* 设置区块卡片：按逻辑分组，视觉区分 */
+/* ===== 卡片：diff-hunk 竖条标题 ===== */
 .setting-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
   border-radius: 4px;
-  padding: 16px 16px 8px;
-  margin-bottom: 16px;
+  padding: 14px 16px 6px;
+  margin-bottom: 14px;
 }
 
 .card-title {
+  position: relative;
+  padding-left: 12px;
+  margin-bottom: 14px;
   font-size: 12px;
   font-weight: 500;
   color: var(--fg-tertiary);
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-default);
+  letter-spacing: 0.4px;
+}
+
+/* 标题左侧 accent 竖条（diff hunk 标记的隐喻） */
+.card-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 13px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0.85;
 }
 
 .setting-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .setting-row label {
-  width: 130px;
-  font-size: 13px;
+  width: 128px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--fg-secondary);
   flex-shrink: 0;
 }
@@ -403,73 +511,54 @@ async function detectGit() {
 .setting-row input[type="text"] {
   flex: 1;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: 3px;
   color: var(--fg-primary);
   font-size: 13px;
   outline: none;
+  transition: border-color 120ms ease;
 }
 
 .setting-row input[type="text"]:focus {
   border-color: var(--accent);
 }
 
-.font-size-control {
-  flex: 1;
+/* 统一按钮控件 */
+.theme-options,
+.mode-options {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
-.font-size-control input[type="range"] {
-  flex: 1;
-}
-
-.font-size-value {
-  width: 40px;
-  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  font-size: 13px;
-  color: var(--fg-primary);
-}
-
-.theme-options {
-  display: flex;
-  gap: 4px;
-}
-
-.theme-options button {
-  height: 28px;
-  padding: 0 16px;
-  background: transparent;
-  border: 1px solid var(--border-default);
-  border-radius: 2px;
-  color: var(--fg-secondary);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.theme-options button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.detect-btn {
-  height: 28px;
+.theme-options button,
+.detect-btn,
+.mode-btn {
+  height: 26px;
   padding: 0 12px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: 3px;
   color: var(--fg-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
+  transition: all 130ms ease;
 }
 
-.detect-btn:hover:not(:disabled) {
+.theme-options button:hover:not(.active),
+.detect-btn:hover:not(:disabled),
+.mode-btn:hover:not(.active) {
+  background: var(--bg-hover);
   color: var(--fg-primary);
   border-color: var(--border-strong);
+}
+
+.theme-options button.active,
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .detect-btn:disabled {
@@ -479,70 +568,52 @@ async function detectGit() {
 
 .git-version {
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--success);
 }
 
+/* 提示文案：↳ 引导 */
 .hint {
-  margin-left: 130px;
-  margin-top: -8px;
-  font-size: 12px;
+  position: relative;
+  padding-left: 14px;
+  margin-left: 140px;
+  margin-top: -6px;
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
   color: var(--fg-tertiary);
 }
 
-/* 开关行后面的提示：无 label 对齐，直接左对齐 */
-.switch-row + .hint {
-  margin-left: 0;
-  margin-top: 4px;
-  margin-bottom: 12px;
+.hint::before {
+  content: "↳";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  opacity: 0.6;
 }
 
-/* 远程分支保护开关 */
+/* 开关行：无 label 对齐时 */
+.switch-row + .hint {
+  margin-left: 0;
+}
+
+/* 开关行 */
 .switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .switch-row.sub {
   padding-left: 16px;
 }
 
-/* 展开方式选择按钮 */
-.mode-options {
-  display: flex;
-  gap: 6px;
-}
-
-.mode-btn {
-  height: 24px;
-  padding: 0 10px;
-  background: transparent;
-  border: 1px solid var(--border-default);
-  border-radius: 3px;
-  color: var(--fg-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.mode-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
-.mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
 .switch-label {
   font-size: 13px;
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
 }
 
 .switch {
@@ -583,17 +654,34 @@ async function detectGit() {
   cursor: not-allowed;
 }
 
+/* 空态 */
 .empty-hint {
   color: var(--fg-tertiary);
-  font-size: 13px;
   text-align: center;
-  padding: 40px 0;
+  padding: 32px 0;
 }
 
+.empty-icon {
+  font-size: 26px;
+  opacity: 0.5;
+}
+
+.empty-hint p {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.empty-sub {
+  font-size: 12px !important;
+  opacity: 0.7;
+}
+
+/* 关于：代码风格键值对 */
 .about-row {
   display: flex;
+  align-items: baseline;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px dashed var(--border-default);
   font-size: 13px;
 }
 
@@ -602,11 +690,14 @@ async function detectGit() {
 }
 
 .about-row label {
-  width: 100px;
+  width: 80px;
   color: var(--fg-tertiary);
+  font-size: 12px;
 }
 
-.about-row span {
+.about-row .mono {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 12.5px;
   color: var(--fg-primary);
 }
 
