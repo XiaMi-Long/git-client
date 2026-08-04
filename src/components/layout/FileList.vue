@@ -131,8 +131,8 @@ async function handleDiscardAll() {
       </div>
       <template v-if="isConflicted && conflictOpen">
         <div v-for="f in conflictFiles" :key="f" class="file-item conflict" :title="f">
-          <FileTypeIcon :path="f" />
           <span class="file-status" style="color: var(--danger)">!</span>
+          <FileTypeIcon :path="f" />
           <span class="file-path">{{ f }}</span>
         </div>
       </template>
@@ -150,10 +150,10 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
-        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
+        <FileTypeIcon :path="f.path" />
         <span class="file-path">{{ f.path }}</span>
         <button class="file-action" @click.stop="selectionStore.unstageFile(f.path)">取消暂存</button>
       </div>
@@ -184,10 +184,10 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
-        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
+        <FileTypeIcon :path="f.path" />
         <span class="file-path">{{ f.path }}</span>
         <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
         <button class="file-action discard" title="放弃该文件的改动" @click.stop="handleDiscardFile(f.path)">
@@ -201,10 +201,10 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
-        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
+        <FileTypeIcon :path="f.path" />
         <span class="file-path">{{ f.path }}</span>
         <button class="file-action" @click.stop="selectionStore.stageFile(f.path)">暂存</button>
         <button class="file-action discard" title="删除该未跟踪文件" @click.stop="handleDiscardFile(f.path)">
@@ -231,10 +231,10 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === diffPath(f) }"
         @click="selectionStore.selectedFile = diffPath(f)"
       >
-        <FileTypeIcon :path="diffPath(f)" />
         <span class="file-status" :style="{ color: diffStatusColor(f) }">
           {{ diffStatusLetter(f) }}
         </span>
+        <FileTypeIcon :path="diffPath(f)" />
         <span class="file-path">{{ diffPath(f) }}</span>
         <span class="file-stats">
           <span class="add">+{{ f.additions }}</span>
