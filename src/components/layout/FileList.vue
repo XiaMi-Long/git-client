@@ -16,6 +16,7 @@ import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import { useDialog } from "@/composables/useDialog";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import FileTypeIcon from "./FileTypeIcon.vue";
 import type { FileChangeType, FileDiff } from "@/types/git";
 
 const repoStore = useRepoStore();
@@ -130,6 +131,7 @@ async function handleDiscardAll() {
       </div>
       <template v-if="isConflicted && conflictOpen">
         <div v-for="f in conflictFiles" :key="f" class="file-item conflict" :title="f">
+          <FileTypeIcon :path="f" />
           <span class="file-status" style="color: var(--danger)">!</span>
           <span class="file-path">{{ f }}</span>
         </div>
@@ -148,6 +150,7 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
+        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
@@ -181,6 +184,7 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
+        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
@@ -197,6 +201,7 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === f.path }"
         @click="selectionStore.selectedFile = f.path"
       >
+        <FileTypeIcon :path="f.path" />
         <span class="file-status" :style="{ color: statusColor(f.change_type) }">
           {{ statusLetter(f.change_type) }}
         </span>
@@ -226,6 +231,7 @@ async function handleDiscardAll() {
         :class="{ active: selectionStore.selectedFile === diffPath(f) }"
         @click="selectionStore.selectedFile = diffPath(f)"
       >
+        <FileTypeIcon :path="diffPath(f)" />
         <span class="file-status" :style="{ color: diffStatusColor(f) }">
           {{ diffStatusLetter(f) }}
         </span>
