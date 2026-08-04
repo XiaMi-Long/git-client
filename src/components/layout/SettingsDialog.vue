@@ -13,11 +13,14 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useThemeStore } from "@/stores/theme";
 import { useSettingsStore } from "@/stores/settings";
+import { useDialog } from "@/composables/useDialog";
+import { checkForUpdate, relaunchApp } from "@/utils/updater";
 
 const emit = defineEmits<{ close: [] }>();
 
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
+const { dialogState, showMessage, showConfirm, onConfirm, onCancel } = useDialog();
 
 // 分类（含描述，右侧头部展示）
 const categories = [
@@ -59,6 +62,32 @@ async function detectGit() {
     gitVersion.value = "检测失败";
   } finally {
     detecting.value = false;
+  }
+}
+
+// 检查更新
+const updateState = ref<"idle" | "checking" | "done" | "error">("idle");
+const updateMsg = ref("");
+async function checkUpdate() {
+  if (updateState.value === "checking") return;
+  updateState.value = "checking";
+  updateMsg.value = "";
+  const r = await checkForUpdate();
+  if (r.status === "none") {
+    updateState.value = "idle";
+    await showMessage("检查更新", "当前已是最新版本");
+  } else if (r.status === "downloaded") {
+    updateState.value = "done";
+    const ok = await showConfirm(
+      "更新就绪",
+      `新版本 ${r.version} 已下载完成，重启应用以生效？`,
+      false
+    );
+    if (ok) await relaunchApp();
+  } else {
+    updateState.value = "error";
+    updateMsg.value = r.message;
+    await showMessage("检查更新失败", r.message);
   }
 }
 </script>
@@ -332,6 +361,16 @@ async function detectGit() {
                   <div class="about-row"><label>版本</label><span class="mono">0.1.0</span></div>
                   <div class="about-row"><label>仓库</label><span class="mono">XiaMi-Long/git-client</span></div>
                   <div class="about-row"><label>技术栈</label><span class="mono">Tauri 2 · Vue 3 · Rust</span></div>
+                  <div class="about-row">
+                    <label>更新</label>
+                    <div class="about-update">
+                      <button class="update-btn" :disabled="updateState === 'checking'" @click="checkUpdate">
+                        {{ updateState === "checking" ? "检查中…" : "检查更新" }}
+                      </button>
+                      <span v-if="updateState === 'error'" class="update-error" :title="updateMsg">更新检查失败</span>
+                      <span v-else-if="updateState === 'done'" class="update-done">已下载，重启生效</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -887,6 +926,44 @@ async function detectGit() {
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   font-size: 12.5px;
   color: var(--fg-primary);
+}
+
+/* 检查更新按钮 */
+.about-update {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-btn {
+  height: var(--ctrl-h);
+  padding: 0 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--ctrl-radius);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: filter 150ms ease, opacity 150ms ease;
+}
+
+.update-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.update-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.update-done {
+  font-size: 12px;
+  color: var(--success);
 }
 
 /* ===== 动画 ===== */

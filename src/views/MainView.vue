@@ -27,16 +27,21 @@ import CommitBox from "@/components/layout/CommitBox.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
 import ToastContainer from "@/components/layout/ToastContainer.vue";
 import GlobalProgress from "@/components/layout/GlobalProgress.vue";
+import ConfirmDialog from "@/components/layout/ConfirmDialog.vue";
 import { useResizable } from "@/composables/useResizable";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import { useCommitStore } from "@/stores/commit";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
+import { useDialog } from "@/composables/useDialog";
+import { checkForUpdate, relaunchApp } from "@/utils/updater";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
 const commitStore = useCommitStore();
+const { dialogState, showMessage, showConfirm, onConfirm, onCancel } = useDialog();
+let updateTimer: ReturnType<typeof setTimeout> | null = null;
 // 文件变更时刷新当前仓库 + 重新检测冲突状态（后端 500ms 防抖后 emit "repo-changed"）
 const { start: startWatcher } = useRepoWatcher(() => {
   repoStore.refreshActive();
@@ -80,9 +85,24 @@ onMounted(() => {
   });
   // 窗口聚焦时统一刷新：获取最新远程拉取数 + 提交列表 + 工作区/冲突状态
   window.addEventListener("focus", onWindowFocus);
+
+  // 启动 5 秒后静默检查更新（有新版本自动下载，下载完成才提示重启）
+  updateTimer = setTimeout(async () => {
+    const r = await checkForUpdate();
+    if (r.status === "downloaded") {
+      const ok = await showConfirm(
+        "发现新版本",
+        `新版本 ${r.version} 已下载完成，重启应用以生效？`,
+        false
+      );
+      if (ok) await relaunchApp();
+    }
+    // none / error 静默处理
+  }, 5000);
 });
 
 onUnmounted(() => {
+  if (updateTimer) clearTimeout(updateTimer);
   unlistenFetched?.then((fn) => fn());
   window.removeEventListener("focus", onWindowFocus);
 });
@@ -138,6 +158,17 @@ function onWindowFocus() {
 
     <!-- 状态栏 -->
     <StatusBar />
+
+    <!-- 更新提示确认框 -->
+    <ConfirmDialog
+      v-if="dialogState"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :hide-cancel="dialogState.hideCancel"
+      :danger="dialogState.danger"
+      @confirm="onConfirm"
+      @cancel="onCancel"
+    />
   </div>
 </template>
 
