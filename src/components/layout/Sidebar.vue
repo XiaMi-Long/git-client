@@ -247,6 +247,38 @@ async function handleFetchLatest(branch: BranchInfo) {
   if (result) await showMessage(result.success ? "获取最新" : "获取最新失败", result.message);
 }
 
+// 徽章点击拉取：当前分支直接 pull；其他分支等同于右键“获取最新”（快进更新，不切换）
+async function handleBadgePull(branch: BranchInfo) {
+  if (branch.is_current) {
+    const result = await selectionStore.pull();
+    if (result) await showMessage(result.success ? "拉取" : "拉取失败", result.message);
+    return;
+  }
+  await handleFetchLatest(branch);
+}
+
+// 徽章点击推送：当前分支直接 push；其他分支先切换到该分支再 push
+async function handleBadgePush(branch: BranchInfo) {
+  if (branch.is_current) {
+    const result = await selectionStore.push();
+    if (result) await showMessage(result.success ? "推送" : "推送失败", result.message);
+    return;
+  }
+  const ok = await showConfirm(
+    "切换并推送",
+    `推送需要先切换到分支 "${branch.name}"，是否继续？`,
+    false
+  );
+  if (!ok) return;
+  const checkout = await selectionStore.checkoutBranch(branch.name);
+  if (checkout && !checkout.success) {
+    await showMessage("切换失败", checkout.message);
+    return;
+  }
+  const result = await selectionStore.push();
+  if (result) await showMessage(result.success ? "推送" : "推送失败", result.message);
+}
+
 // 基于远程分支创建本地分支并切换（弹窗输入本地名，默认同名）
 async function handleCreateLocalFromRemote(branch: BranchInfo) {
   // 默认本地名 = 去掉远程名前缀，如 origin/feature -> feature
@@ -366,12 +398,24 @@ function menuItems(branch: BranchInfo) {
           >
             <span class="node-dot" :class="{ current: b.is_current }" />
             <span class="node-label">{{ b.name }}</span>
-            <!-- 落后上游徽章：可拉取数量 -->
-            <span v-if="b.behind > 0" class="branch-behind" :title="`落后上游 ${b.behind} 个提交，可获取最新`">
+            <!-- 落后上游徽章：可拉取数量（点击拉取） -->
+            <span
+              v-if="b.behind > 0"
+              class="branch-behind"
+              :class="{ clickable: true }"
+              :title="b.is_current ? `落后上游 ${b.behind} 个提交，点击拉取` : `落后上游 ${b.behind} 个提交，点击获取最新`"
+              @click.stop="handleBadgePull(b)"
+            >
               ↓{{ b.behind }}
             </span>
-            <!-- 领先上游徽章：待推送数量 -->
-            <span v-if="b.ahead > 0" class="branch-ahead" :title="`领先上游 ${b.ahead} 个提交，可推送`">
+            <!-- 领先上游徽章：待推送数量（点击推送） -->
+            <span
+              v-if="b.ahead > 0"
+              class="branch-ahead"
+              :class="{ clickable: true }"
+              :title="b.is_current ? `领先上游 ${b.ahead} 个提交，点击推送` : `领先上游 ${b.ahead} 个提交，点击切换并推送`"
+              @click.stop="handleBadgePush(b)"
+            >
               ↑{{ b.ahead }}
             </span>
           </div>
@@ -632,6 +676,16 @@ function menuItems(branch: BranchInfo) {
   font-size: 11px;
   line-height: 16px;
   border-radius: var(--radius-pill);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.branch-behind.clickable {
+  cursor: pointer;
+}
+
+.branch-behind.clickable:hover {
+  transform: scale(1.12);
+  filter: brightness(1.15);
 }
 
 .tree-node.browsing .branch-behind {
@@ -648,6 +702,16 @@ function menuItems(branch: BranchInfo) {
   font-size: 11px;
   line-height: 16px;
   border-radius: var(--radius-pill);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.branch-ahead.clickable {
+  cursor: pointer;
+}
+
+.branch-ahead.clickable:hover {
+  transform: scale(1.12);
+  filter: brightness(1.15);
 }
 
 .tree-node.browsing .branch-ahead {
