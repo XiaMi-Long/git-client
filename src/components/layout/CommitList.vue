@@ -90,58 +90,50 @@ const showRemoteHint = computed(
   () => settingsStore.enableRemoteHint && !!currentBranch.value && currentBehind.value > 0 && !!currentRemoteRef.value
 );
 
-// ===== 本地可推送提交提示（当前分支领先上游时显示） =====
+// ===== 未推送提交标识（当前分支领先上游的提交，在历史列表中加绿色「未推送」徽章） =====
 const currentAhead = computed(() => currentBranch.value?.ahead ?? 0);
-const localPushes = ref<CommitInfo[]>([]);
-const localPushesLoading = ref(false);
-const localPushesOpen = ref(false);
-let localPushesLoaded = false;
+// 未推送提交的 hash 集合
+const unpushedHashes = ref<Set<string>>(new Set());
+// 竞态保护：切换分支时丢弃过期响应
+let unpushedSeq = 0;
 
-const showLocalPushHint = computed(
-  () => !!currentBranch.value && currentAhead.value > 0 && !!currentBranch.value.upstream
-);
-
-async function loadLocalPushes() {
+async function loadUnpushed() {
   const path = repoStore.activeRepo?.path;
   const branch = currentBranch.value;
-  if (!path || !branch || !branch.upstream) return;
-  localPushesLoading.value = true;
+  const seq = ++unpushedSeq;
+  if (!path || !branch || !branch.upstream) {
+    unpushedHashes.value = new Set();
+    return;
+  }
   try {
-    localPushes.value = await invoke<CommitInfo[]>("git_get_log", {
+    const list = await invoke<CommitInfo[]>("git_get_log", {
       path,
       query: {
         skip: 0,
-        limit: 50,
+        limit: 100,
         branch: `${branch.upstream}..${branch.name}`,
         search: null,
         all_branches: false,
       },
     });
+    if (seq !== unpushedSeq) return; // 过期响应丢弃
+    unpushedHashes.value = new Set(list.map((c) => c.hash));
   } catch {
-    localPushes.value = [];
-  } finally {
-    localPushesLoading.value = false;
+    if (seq !== unpushedSeq) return;
+    unpushedHashes.value = new Set();
   }
 }
 
-// 展开 / 收起（点击提示行切换，无独立收起按钮）
-function toggleLocalPushes() {
-  if (localPushesOpen.value) {
-    localPushesOpen.value = false;
-    return;
-  }
-  localPushesOpen.value = true;
-  localPushesLoaded = true;
-  loadLocalPushes();
-}
-
-// 切换分支/仓库时重置本地推送提示
+// 分支或仓库变化时（重新）加载未推送集合；ahead 为 0 时直接清空
 watch(
-  () => [currentBranch.value?.name, repoStore.activeRepo?.id] as const,
+  () => [currentBranch.value?.name, currentAhead.value, repoStore.activeRepo?.id] as const,
   () => {
-    localPushesOpen.value = false;
-    localPushes.value = [];
-    localPushesLoaded = false;
+    if (currentAhead.value > 0) {
+      loadUnpushed();
+    } else {
+      unpushedSeq++;
+      unpushedHashes.value = new Set();
+    }
   }
 );
 
@@ -557,43 +549,6 @@ function commitMenuItems(c: CommitInfo) {
       </div>
     </div>
 
-    <!-- 本地可推送提交提示（当前分支领先上游时显示，点击展开/收起） -->
-    <div v-if="showLocalPushHint && !localPushesOpen" class="local-hint-row">
-      <button class="local-hint" @click="toggleLocalPushes">
-        <span class="local-hint-dot" />
-        本地有 {{ currentAhead }} 条提交可推送
-        <span class="local-hint-caret">▸</span>
-      </button>
-    </div>
-
-    <!-- 本地待推送提交列表 -->
-    <div v-if="showLocalPushHint && localPushesOpen" class="local-pushes-panel">
-      <div class="local-pushes-header">
-        <span class="lp-badge">本地推送</span>
-        <span>本地待推送提交（{{ localPushes.length }}）</span>
-        <button class="lp-push-btn" :disabled="pushing" @click="handlePush">
-          {{ pushing ? "推送中…" : "推送" }}
-        </button>
-      </div>
-      <div v-if="localPushesLoading" class="load-hint">加载中…</div>
-      <div v-else-if="localPushes.length === 0" class="load-hint">没有待推送提交</div>
-      <div v-else class="local-pushes-list">
-        <div
-          v-for="c in localPushes"
-          :key="c.hash"
-          class="local-push-item"
-          :class="{ active: selectionStore.commitHash === c.hash }"
-          :title="c.subject"
-          @click="selectionStore.selectCommit(c.hash)"
-        >
-          <span class="lp-hash">{{ c.short_hash }}</span>
-          <span class="lp-subject">{{ c.subject }}</span>
-          <span class="lp-author">{{ c.author_name }}</span>
-          <span class="lp-date">{{ formatTime(c) }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- 提交列表（虚拟滚动） -->
     <div ref="listEl" class="commit-scroll" @scroll="onScroll">
       <div class="virtual-spacer" :style="{ height: totalHeight + 'px' }">
@@ -644,6 +599,7 @@ function commitMenuItems(c: CommitInfo) {
                 class="ref-badge"
                 :style="{ background: branchColor(r) }"
               >{{ r }}</span>
+              <span v-if="unpushedHashes.has(c.hash)" class="unpushed-badge" title="本地提交，尚未推送到远程">未推送</span>
             </span>
             <span class="commit-author">{{ c.author_name }}</span>
             <span class="commit-date">{{ formatTime(c) }}</span>
@@ -927,156 +883,6 @@ function commitMenuItems(c: CommitInfo) {
   flex-shrink: 0;
 }
 
-/* 本地可推送提交提示行：绿色系（与远程可拉取蓝色区分） */
-.local-hint-row {
-  padding: 5px 8px;
-  text-align: center;
-  border-bottom: 1px solid var(--border-default);
-  background: rgba(78, 201, 176, 0.08);
-  flex-shrink: 0;
-}
-
-.local-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--success);
-  font-size: 12.5px;
-  cursor: pointer;
-  padding: 2px 8px;
-  transition: background 150ms ease, border-color 150ms ease;
-}
-
-.local-hint:hover {
-  background: rgba(78, 201, 176, 0.12);
-  border-color: rgba(78, 201, 176, 0.4);
-}
-
-.local-hint-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success);
-  flex-shrink: 0;
-}
-
-.local-hint-caret {
-  font-size: 10px;
-  color: var(--fg-tertiary);
-}
-
-/* 本地待推送提交列表 */
-.local-pushes-panel {
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-panel);
-  flex-shrink: 0;
-  max-height: 220px;
-  display: flex;
-  flex-direction: column;
-}
-
-.local-pushes-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-  position: relative;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--success);
-  border-bottom: 1px solid var(--border-default);
-  flex-shrink: 0;
-}
-
-.lp-badge {
-  padding: 0 8px;
-  background: var(--badge-ahead-bg, #2ea87a);
-  color: var(--badge-ahead-fg, #ffffff);
-  font-size: 11px;
-  line-height: 16px;
-  border-radius: var(--radius-pill);
-  flex-shrink: 0;
-}
-
-.lp-push-btn {
-  position: absolute;
-  right: 10px;
-  background: var(--badge-ahead-bg, #2ea87a);
-  border: none;
-  color: var(--badge-ahead-fg, #ffffff);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 1px 12px;
-  border-radius: var(--radius-sm);
-  line-height: 20px;
-  transition: filter 150ms ease;
-}
-
-.lp-push-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.lp-push-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.local-pushes-list {
-  overflow-y: auto;
-}
-
-.local-push-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-
-.local-push-item:hover {
-  background: var(--bg-hover);
-}
-
-.local-push-item.active {
-  background: var(--bg-selected, #2a3f5f);
-}
-
-.lp-hash {
-  color: var(--success);
-  font-family: var(--mono-font-family, ui-monospace, monospace);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.lp-subject {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lp-author {
-  color: var(--fg-tertiary);
-  width: 70px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.lp-date {
-  color: var(--fg-tertiary);
-  font-size: 11px;
-  width: 64px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
 .remote-pulls-list {
   overflow-y: auto;
 }
@@ -1205,6 +1011,20 @@ function commitMenuItems(c: CommitInfo) {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* 未推送提交徽章：绿色，表示本地领先上游的提交 */
+.unpushed-badge {
+  padding: 1px 7px;
+  background: var(--badge-ahead-bg, #2ea87a);
+  color: var(--badge-ahead-fg, #ffffff);
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.commit-item.active .unpushed-badge {
+  opacity: 0.85;
 }
 
 .ref-badge {
