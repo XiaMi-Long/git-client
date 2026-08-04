@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import { useDialog } from "@/composables/useDialog";
+import { useResizable } from "@/composables/useResizable";
 import type { CommitInfo } from "@/types/git";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import CommitDetailViewer from "./CommitDetailViewer.vue";
@@ -50,6 +51,26 @@ const selectedHashes = ref<Set<string>>(new Set());
 const commitMessage = ref("");
 const loading = ref(false);
 const executing = ref(false);
+// 提交列表搜索（前端过滤 message/作者/哈希）
+const searchText = ref("");
+const filteredCommits = computed(() => {
+  const kw = searchText.value.trim().toLowerCase();
+  if (!kw) return commits.value;
+  return commits.value.filter(
+    (c) =>
+      c.subject.toLowerCase().includes(kw) ||
+      c.author_name.toLowerCase().includes(kw) ||
+      c.hash.toLowerCase().includes(kw) ||
+      c.short_hash.toLowerCase().includes(kw)
+  );
+});
+// 左右面板拖拽分隔条（面板在左）
+const { size: leftWidth, dragging, onMouseDown: onLeftResize } = useResizable({
+  orientation: "horizontal",
+  initial: 440,
+  min: 320,
+  max: 720,
+});
 
 // 右侧详情：当前查看的提交（默认第一个）
 const viewingCommit = ref<string | null>(null);
@@ -172,7 +193,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
           <div class="dialog-body">
             <!-- 左侧：选择与配置 -->
-            <div class="left-panel">
+            <div class="left-panel" :style="{ width: leftWidth + 'px' }">
               <!-- 当前分支提示（固定） -->
               <div class="current-branch-hint">当前分支：<strong>{{ currentBranch }}</strong></div>
 
@@ -187,15 +208,25 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                 {{ isLocal ? "本分支压缩：选择最近的连续提交（从 HEAD 起）" : `跨分支：从 ${sourceBranch} 挑选提交压缩合并到 ${currentBranch}` }}
               </div>
 
-              <!-- 提交列表 -->
+              <!-- 提交列表（带搜索） -->
+              <div class="search-box">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input v-model="searchText" type="text" placeholder="搜索提交（信息/作者/哈希）…" />
+              </div>
               <div class="commit-list">
                 <div v-if="loading" class="load-hint">加载中…</div>
-                <div v-else-if="commits.length === 0" class="load-hint">暂无提交</div>
+                <div v-else-if="filteredCommits.length === 0" class="load-hint">
+                  {{ commits.length === 0 ? "暂无提交" : "没有匹配的提交" }}
+                </div>
                 <div
-                  v-for="c in commits"
+                  v-for="c in filteredCommits"
                   :key="c.hash"
                   class="commit-item"
                   :class="{ selected: selectedHashes.has(c.hash) }"
+                  :title="`${c.subject}\n${c.author_name} · ${c.author_date ?? ''}`"
                   @click="toggleHash(c.hash)"
                 >
                   <span class="checkbox">{{ selectedHashes.has(c.hash) ? "☑" : "☐" }}</span>
@@ -219,6 +250,9 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                 <input v-model="commitMessage" type="text" placeholder="压缩后的提交信息" />
               </div>
             </div>
+
+            <!-- 拖拽分隔条 -->
+            <div class="resizer resizer-v" :class="{ dragging }" @mousedown="onLeftResize" />
 
             <!-- 右侧：提交详情查看器（模块化） -->
             <div class="right-panel">
@@ -406,9 +440,45 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   flex: 1;
   overflow-y: auto;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   margin-bottom: 12px;
   background: var(--bg-base);
+  padding: 4px;
+}
+
+/* 提交列表搜索框 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  margin-bottom: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ctrl-radius);
+  color: var(--fg-tertiary);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.search-box input::placeholder {
+  color: var(--fg-tertiary);
 }
 
 .load-hint {
@@ -425,10 +495,12 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   align-items: center;
   gap: 8px;
   height: 28px;
-  padding: 0 12px;
+  margin: 1px 2px;
+  padding: 0 10px;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   font-size: 13px;
+  transition: background 120ms ease;
 }
 
 .commit-item:hover {
