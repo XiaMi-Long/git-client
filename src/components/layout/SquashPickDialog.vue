@@ -12,7 +12,7 @@
     - 2026-07-30: Created. 压缩挑拣弹窗。
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
@@ -64,12 +64,21 @@ const filteredCommits = computed(() => {
       c.short_hash.toLowerCase().includes(kw)
   );
 });
-// 左右面板拖拽分隔条（面板在左）
+// 左右面板拖拽分隔条（面板在左；默认 60%/40%，打开时按弹窗宽度计算）
+const dialogEl = ref<HTMLElement | null>(null);
 const { size: leftWidth, dragging, onMouseDown: onLeftResize } = useResizable({
   orientation: "horizontal",
-  initial: 440,
-  min: 320,
-  max: 720,
+  initial: 600,
+  min: 360,
+  max: 1000,
+});
+// 弹窗打开后按 60% 设置左侧默认宽度
+watch(show, async (v) => {
+  if (v) {
+    await nextTick();
+    const w = dialogEl.value?.offsetWidth;
+    if (w) leftWidth.value = Math.round(w * 0.6);
+  }
 });
 
 // 右侧详情：当前查看的提交（默认第一个）
@@ -185,7 +194,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   <Teleport to="body">
     <Transition name="settings">
       <div v-if="show" class="overlay" @click.self="close">
-        <div class="squash-dialog">
+        <div ref="dialogEl" class="squash-dialog">
           <div class="dialog-header">
             <span>压缩挑拣</span>
             <button class="close-btn" title="关闭" @click="close">×</button>
@@ -303,10 +312,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 }
 
 .squash-dialog {
-  width: 70vw;
-  height: 70vh;
-  min-width: 900px;
-  min-height: 560px;
+  width: 80vw;
+  height: 80vh;
+  min-width: 1000px;
+  min-height: 640px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -354,12 +363,30 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 }
 
 /* 左侧面板：选择与配置 */
+/* 左侧面板：选择与配置（宽度由拖拽分隔条控制，默认 60%） */
 .left-panel {
-  width: 46%;
+  flex-shrink: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 拖拽分隔条（左右分栏）：始终可见的细线，hover/拖拽高亮 */
+.resizer-v {
+  flex-shrink: 0;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-default);
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.resizer-v:hover,
+.resizer-v.dragging {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: var(--accent);
 }
 
 /* 右侧面板：提交详情 */
@@ -400,37 +427,41 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 .form-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .form-row label {
-  width: 90px;
   font-size: 13px;
   color: var(--fg-secondary);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .form-row select,
 .form-row input[type="text"] {
   flex: 1;
-  height: 28px;
-  padding: 0 8px;
+  min-width: 0;
+  height: var(--ctrl-h);
+  padding: 0 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: var(--ctrl-radius);
   color: var(--fg-primary);
   font-size: 13px;
   outline: none;
+  font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .form-row select:focus,
 .form-row input[type="text"]:focus {
   border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .hint {
-  margin-left: 102px;
+  margin-left: 4px;
   margin-bottom: 12px;
   font-size: 12px;
   color: var(--fg-tertiary);
