@@ -90,6 +90,61 @@ const showRemoteHint = computed(
   () => settingsStore.enableRemoteHint && !!currentBranch.value && currentBehind.value > 0 && !!currentRemoteRef.value
 );
 
+// ===== 本地可推送提交提示（当前分支领先上游时显示） =====
+const currentAhead = computed(() => currentBranch.value?.ahead ?? 0);
+const localPushes = ref<CommitInfo[]>([]);
+const localPushesLoading = ref(false);
+const localPushesOpen = ref(false);
+let localPushesLoaded = false;
+
+const showLocalPushHint = computed(
+  () => !!currentBranch.value && currentAhead.value > 0 && !!currentBranch.value.upstream
+);
+
+async function loadLocalPushes() {
+  const path = repoStore.activeRepo?.path;
+  const branch = currentBranch.value;
+  if (!path || !branch || !branch.upstream) return;
+  localPushesLoading.value = true;
+  try {
+    localPushes.value = await invoke<CommitInfo[]>("git_get_log", {
+      path,
+      query: {
+        skip: 0,
+        limit: 50,
+        branch: `${branch.upstream}..${branch.name}`,
+        search: null,
+        all_branches: false,
+      },
+    });
+  } catch {
+    localPushes.value = [];
+  } finally {
+    localPushesLoading.value = false;
+  }
+}
+
+// 展开 / 收起（点击提示行切换，无独立收起按钮）
+function toggleLocalPushes() {
+  if (localPushesOpen.value) {
+    localPushesOpen.value = false;
+    return;
+  }
+  localPushesOpen.value = true;
+  localPushesLoaded = true;
+  loadLocalPushes();
+}
+
+// 切换分支/仓库时重置本地推送提示
+watch(
+  () => [currentBranch.value?.name, repoStore.activeRepo?.id] as const,
+  () => {
+    localPushesOpen.value = false;
+    localPushes.value = [];
+    localPushesLoaded = false;
+  }
+);
+
 async function loadRemotePulls() {
   const path = repoStore.activeRepo?.path;
   const branch = currentBranch.value;
@@ -465,13 +520,9 @@ function commitMenuItems(c: CommitInfo) {
       <span class="working-count" :class="{ 'has-changes': workingCount > 0 }">{{ workingCount }}</span>
     </div>
 
-    <!-- 远程更新提示行（仅点击展开模式且未展开时显示；直接显示模式只显示列表） -->
+    <!-- 远程更新提示行（点击展开/收起；面板展开后提示行仍保留，无独立收起按钮） -->
     <div
-      v-if="
-        showRemoteHint &&
-        settingsStore.remoteHintExpandMode === 'click' &&
-        !remotePullsOpen
-      "
+      v-if="showRemoteHint && settingsStore.remoteHintExpandMode === 'click'"
       class="remote-hint-row"
     >
       <button class="remote-hint" :class="{ open: remotePullsOpen }" @click="toggleRemotePulls">
@@ -484,8 +535,8 @@ function commitMenuItems(c: CommitInfo) {
     <!-- 远程待拉取提交列表（点击提示行后展开） -->
     <div v-if="remotePullsOpen && showRemoteHint" class="remote-pulls-panel">
       <div class="remote-pulls-header">
+        <span class="rp-badge">远程拉取</span>
         <span>远程待拉取提交（{{ remotePulls.length }}）</span>
-        <button class="rp-close" @click="remotePullsOpen = false">收起</button>
       </div>
       <div v-if="remotePullsLoading" class="load-hint">加载中…</div>
       <div v-else-if="remotePulls.length === 0" class="load-hint">没有待拉取提交</div>
@@ -502,6 +553,43 @@ function commitMenuItems(c: CommitInfo) {
           <span class="rp-subject">{{ c.subject }}</span>
           <span class="rp-author">{{ c.author_name }}</span>
           <span class="rp-date">{{ formatTime(c) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 本地可推送提交提示（当前分支领先上游时显示，点击展开/收起） -->
+    <div v-if="showLocalPushHint && !localPushesOpen" class="local-hint-row">
+      <button class="local-hint" @click="toggleLocalPushes">
+        <span class="local-hint-dot" />
+        本地有 {{ currentAhead }} 条提交可推送
+        <span class="local-hint-caret">▸</span>
+      </button>
+    </div>
+
+    <!-- 本地待推送提交列表 -->
+    <div v-if="showLocalPushHint && localPushesOpen" class="local-pushes-panel">
+      <div class="local-pushes-header">
+        <span class="lp-badge">本地推送</span>
+        <span>本地待推送提交（{{ localPushes.length }}）</span>
+        <button class="lp-push-btn" :disabled="pushing" @click="handlePush">
+          {{ pushing ? "推送中…" : "推送" }}
+        </button>
+      </div>
+      <div v-if="localPushesLoading" class="load-hint">加载中…</div>
+      <div v-else-if="localPushes.length === 0" class="load-hint">没有待推送提交</div>
+      <div v-else class="local-pushes-list">
+        <div
+          v-for="c in localPushes"
+          :key="c.hash"
+          class="local-push-item"
+          :class="{ active: selectionStore.commitHash === c.hash }"
+          :title="c.subject"
+          @click="selectionStore.selectCommit(c.hash)"
+        >
+          <span class="lp-hash">{{ c.short_hash }}</span>
+          <span class="lp-subject">{{ c.subject }}</span>
+          <span class="lp-author">{{ c.author_name }}</span>
+          <span class="lp-date">{{ formatTime(c) }}</span>
         </div>
       </div>
     </div>
@@ -779,7 +867,7 @@ function commitMenuItems(c: CommitInfo) {
   gap: 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--info);
   font-size: 12.5px;
   cursor: pointer;
@@ -787,7 +875,8 @@ function commitMenuItems(c: CommitInfo) {
   transition: background 150ms ease, border-color 150ms ease;
 }
 
-.remote-hint:hover {
+.remote-hint:hover,
+.remote-hint.open {
   background: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.4);
 }
@@ -818,6 +907,7 @@ function commitMenuItems(c: CommitInfo) {
 .remote-pulls-header {
   display: flex;
   align-items: center;
+  gap: 8px;
   justify-content: center;
   position: relative;
   padding: 5px 10px;
@@ -827,18 +917,164 @@ function commitMenuItems(c: CommitInfo) {
   flex-shrink: 0;
 }
 
-.rp-close {
-  position: absolute;
-  right: 10px;
-  background: transparent;
-  border: none;
-  color: var(--fg-tertiary);
-  font-size: 12px;
-  cursor: pointer;
+.rp-badge {
+  padding: 0 8px;
+  background: var(--info);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
 }
 
-.rp-close:hover {
-  color: var(--fg-primary);
+/* 本地可推送提交提示行：绿色系（与远程可拉取蓝色区分） */
+.local-hint-row {
+  padding: 5px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-default);
+  background: rgba(78, 201, 176, 0.08);
+  flex-shrink: 0;
+}
+
+.local-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--success);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 2px 8px;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.local-hint:hover {
+  background: rgba(78, 201, 176, 0.12);
+  border-color: rgba(78, 201, 176, 0.4);
+}
+
+.local-hint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.local-hint-caret {
+  font-size: 10px;
+  color: var(--fg-tertiary);
+}
+
+/* 本地待推送提交列表 */
+.local-pushes-panel {
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.local-pushes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  position: relative;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--success);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.lp-badge {
+  padding: 0 8px;
+  background: var(--badge-ahead-bg, #2ea87a);
+  color: var(--badge-ahead-fg, #ffffff);
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+.lp-push-btn {
+  position: absolute;
+  right: 10px;
+  background: var(--badge-ahead-bg, #2ea87a);
+  border: none;
+  color: var(--badge-ahead-fg, #ffffff);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 1px 12px;
+  border-radius: var(--radius-sm);
+  line-height: 20px;
+  transition: filter 150ms ease;
+}
+
+.lp-push-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.lp-push-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.local-pushes-list {
+  overflow-y: auto;
+}
+
+.local-push-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.local-push-item:hover {
+  background: var(--bg-hover);
+}
+
+.local-push-item.active {
+  background: var(--bg-selected, #2a3f5f);
+}
+
+.lp-hash {
+  color: var(--success);
+  font-family: var(--mono-font-family, ui-monospace, monospace);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.lp-subject {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-author {
+  color: var(--fg-tertiary);
+  width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lp-date {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  width: 64px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .remote-pulls-list {
