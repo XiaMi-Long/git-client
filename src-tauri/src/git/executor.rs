@@ -133,4 +133,33 @@ impl GitExecutor {
         Self::run_git(repo_path, &["reset", "--soft", to_commit]).await?;
         Ok(())
     }
+
+    /// hard reset 到指定提交（压缩挑拣流程：全部回滚已挑拣的提交）
+    /// 危险操作：丢弃目标提交之后的全部提交与改动，仅限用户明确确认后调用
+    pub async fn reset_hard(repo_path: &Path, to_commit: &str) -> GitResult<()> {
+        Self::run_git(repo_path, &["reset", "--hard", to_commit]).await?;
+        Ok(())
+    }
+
+    /// 检查 HEAD 与工作区之间的改动是否残留冲突标记（git diff --check HEAD）
+    /// 返回含残留标记的文件路径列表（去重），用于外部解决冲突后的自动校验
+    pub async fn check_conflict_markers(repo_path: &Path) -> GitResult<Vec<String>> {
+        // core.quotepath=false 避免中文路径被转义为八进制引号形式
+        let output = Self::run_git_raw(
+            Some(repo_path),
+            &["-c", "core.quotepath=false", "diff", "--check", "HEAD"],
+        )
+        .await?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut files: Vec<String> = Vec::new();
+        for line in stdout.lines() {
+            // 输出形如 "path:line: leftover conflict marker: <<<<<<< ..."
+            if let Some((path, rest)) = line.split_once(':') {
+                if rest.contains("conflict marker") && !files.iter().any(|f| f == path) {
+                    files.push(path.to_string());
+                }
+            }
+        }
+        Ok(files)
+    }
 }

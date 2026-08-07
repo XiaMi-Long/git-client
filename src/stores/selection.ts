@@ -381,28 +381,119 @@ export const useSelectionStore = defineStore("selection", () => {
     });
   }
 
-  // ===== 压缩挑拣 =====
+  // ===== 压缩挑拣（逐个挑拣 + 末尾压缩的流程原语，由弹窗编排） =====
 
-  /** 场景1：跨分支压缩挑拣 -- cherry-pick --no-commit 多个 + commit */
-  async function squashPickFromBranch(hashes: string[], message: string): Promise<RemoteResult | null> {
-    return withOp("压缩挑拣中", async () => {
+  /** 挑拣单个提交（cherry-pick，单独落地提交），返回成功 / 冲突结果 */
+  async function pickOneCommit(hash: string): Promise<RemoteResult | null> {
+    return withOp("挑拣中", async () => {
       const path = repoStore.activeRepo?.path;
       if (!path) return null;
-      try {
-        await invoke("git_cherry_pick_no_commit", { path, hashes });
-        await invoke("git_commit", { path, message });
+      const result = await invoke<RemoteResult>("git_cherry_pick", { path, commitHash: hash });
+      if (result.success) {
         await repoStore.refreshActive();
         await commitStore.loadCommits();
-        return { success: true, message: "压缩挑拣成功", has_conflict: false, status: null };
-      } catch {
-        // 冲突 -> 转入冲突处理，用户解决后在工作区手动提交
+      } else if (result.has_conflict) {
         await loadOperationState();
+      }
+      return result;
+    });
+  }
+
+  /** 获取当前冲突文件列表 */
+  async function getConflictedFiles(): Promise<string[]> {
+    const path = repoStore.activeRepo?.path;
+    if (!path) return [];
+    try {
+      return await invoke<string[]>("git_list_conflicted_files", { path });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 「已解决，继续」：自动校验冲突标记 → 暂存冲突文件 → cherry-pick --continue
+   * 外部编辑器解决后不会自动暂存，此处代为暂存；残留标记则拦截
+   */
+  async function verifyAndContinue(): Promise<{ ok: boolean; message: string; markerFiles: string[] }> {
+    const path = repoStore.activeRepo?.path;
+    if (!path) return { ok: false, message: "仓库未打开", markerFiles: [] };
+    return withOp("校验冲突中", async () => {
+      let markers: string[] = [];
+      try {
+        markers = await invoke<string[]>("git_check_conflict_markers", { path });
+      } catch {
+        // 检查失败不阻断，交由 continue 暴露问题
+      }
+      if (markers.length > 0) {
         return {
-          success: false,
-          message: "压缩挑拣产生冲突，请解决冲突后在工作区提交",
-          has_conflict: true,
-          status: null,
+          ok: false,
+          message: "以下文件仍残留冲突标记，请完整解决后再继续",
+          markerFiles: markers,
         };
+      }
+      const conflicted = await invoke<string[]>("git_list_conflicted_files", { path }).catch(
+        () => [] as string[]
+      );
+      for (const f of conflicted) {
+        await invoke("git_mark_resolved", { path, filePath: f });
+      }
+      const result = await invoke<RemoteResult>("git_cherry_pick_continue", { path });
+      await loadOperationState();
+      if (result.success) {
+        await repoStore.refreshActive();
+        await commitStore.loadCommits();
+        return { ok: true, message: result.message, markerFiles: [] };
+      }
+      return { ok: false, message: result.message, markerFiles: [] };
+    });
+  }
+
+  /** 中止当前冲突中的这一次挑拣（已完成的挑拣保留） */
+  async function abortCurrentPick(): Promise<boolean> {
+    return withOp("中止中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return false;
+      try {
+        await invoke("git_abort_operation", { path });
+      } catch {
+        // 中止失败（可能已不在挑拣状态），继续检测真实状态
+      }
+      await loadOperationState();
+      await repoStore.refreshActive();
+      await commitStore.loadCommits();
+      return operationState.value === "normal";
+    });
+  }
+
+  /** 末尾压缩：将最近 count 个提交 reset --soft 后重新提交为一个 */
+  async function finalizeSquash(count: number, message: string): Promise<RemoteResult | null> {
+    return withOp("压缩中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path || count < 1) return null;
+      await invoke("git_reset_soft", { path, toCommit: `HEAD~${count}` });
+      await invoke("git_commit", { path, message });
+      await repoStore.refreshActive();
+      await commitStore.loadCommits();
+      return { success: true, message: "压缩完成", has_conflict: false, status: null };
+    });
+  }
+
+  /** 全部回滚：hard reset 到流程开始前的 HEAD（危险操作，用户已确认） */
+  async function rollbackAll(toCommit: string): Promise<boolean> {
+    return withOp("回滚中", async () => {
+      const path = repoStore.activeRepo?.path;
+      if (!path) return false;
+      try {
+        // 若处于冲突中（CHERRY_PICK_HEAD 残留），先中止当前挑拣，
+        // 否则 hard reset 不会清理挑拣状态，仓库会卡在「挑拣进行中」
+        await invoke("git_abort_operation", { path }).catch(() => {});
+        await invoke("git_reset_hard", { path, toCommit });
+        await loadOperationState();
+        await repoStore.refreshActive();
+        await commitStore.loadCommits();
+        return true;
+      } catch {
+        return false;
       }
     });
   }
@@ -540,7 +631,12 @@ export const useSelectionStore = defineStore("selection", () => {
     pull,
     push,
     cherryPick,
-    squashPickFromBranch,
+    pickOneCommit,
+    getConflictedFiles,
+    verifyAndContinue,
+    abortCurrentPick,
+    finalizeSquash,
+    rollbackAll,
     squashPickLocal,
     markResolved,
     continueOperation,

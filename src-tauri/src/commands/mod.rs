@@ -486,6 +486,23 @@ pub async fn git_reset_soft(path: String, to_commit: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// 检查改动中是否残留冲突标记（压缩挑拣流程：外部解决冲突后自动校验）
+#[tauri::command]
+pub async fn git_check_conflict_markers(path: String) -> Result<Vec<String>, String> {
+    GitExecutor::check_conflict_markers(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// hard reset 到指定提交（压缩挑拣流程：全部回滚）
+/// 危险操作，仅限用户在弹窗中明确确认后调用
+#[tauri::command]
+pub async fn git_reset_hard(path: String, to_commit: String) -> Result<(), String> {
+    GitExecutor::reset_hard(&to_path(&path), &to_commit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 获取所有已注册的 command 列表，用于 lib.rs 注册
 pub fn all_commands() -> Vec<&'static str> {
     vec![
@@ -534,5 +551,9 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_discard_file",
         "git_discard_all",
         "git_commit",
+        "git_cherry_pick_no_commit",
+        "git_reset_soft",
+        "git_check_conflict_markers",
+        "git_reset_hard",
     ]
 }
