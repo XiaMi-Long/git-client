@@ -6,8 +6,8 @@
 
 ```
 发版：npm run tauri build
-  → 产物：git-client_x.x.x_x64-setup.exe（安装包）
-         git-client_x.x.x_x64-setup.exe.sig（签名，私钥生成）
+  → 产物：GitAura_x.x.x_x64-setup.exe（安装包，文件名随 productName）
+         GitAura_x.x.x_x64-setup.exe.sig（签名，私钥生成）
          latest.json（更新清单：版本号 + 下载地址 + 签名）
   → 上传到 GitHub Releases
 
@@ -36,8 +36,8 @@ $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "E:\私人项目\.tauri-key\git-client.key
 npm run tauri build
 
 # 3. 产物在 src-tauri/target/release/bundle/nsis/ 下：
-#    git-client_0.2.0_x64-setup.exe
-#    git-client_0.2.0_x64-setup.exe.sig
+#    GitAura_0.2.0_x64-setup.exe
+#    GitAura_0.2.0_x64-setup.exe.sig
 #    latest.json（在同一目录或根目录，随版本生成）
 
 # 4. 发布到 GitHub Releases（网页操作）：
@@ -59,7 +59,7 @@ npm run tauri build
   "platforms": {
     "windows-x86_64": {
       "signature": "（.sig 文件内容）",
-      "url": "https://github.com/XiaMi-Long/git-client/releases/download/v0.2.0/git-client_0.2.0_x64-setup.exe"
+      "url": "https://github.com/XiaMi-Long/git-client/releases/download/v0.2.0/GitAura_0.2.0_x64-setup.exe"
     }
   }
 }

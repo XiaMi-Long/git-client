@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicehash/tauri/v2/crates/tauri-config-schema/schema.json",
-  "productName": "git-client",
+  "productName": "GitAura",
   "version": "0.1.0",
   "identifier": "com.yitao.git-client",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Git 客户端",
+        "title": "GitAura",
         "width": 1200,
         "height": 800,
         "minWidth": 1300,

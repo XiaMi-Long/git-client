@@ -117,9 +117,21 @@ onUnmounted(() => {
         </svg>
       </div>
 
-      <div class="title rise" style="--rise-delay: 60ms">Git 客户端</div>
+      <div class="title rise" style="--rise-delay: 60ms">
+        <!-- AI 星芒：品牌名旁的轻闪烁元素，暗示 AI 属性 -->
+        <svg class="ai-spark" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2l1.8 8.2L22 12l-8.2 1.8L12 22l-1.8-8.2L2 12l8.2-1.8L12 2z" />
+        </svg>
+        GitAura
+      </div>
       <div class="subtitle rise" style="--rise-delay: 110ms">
         打开一个本地仓库，开始管理你的提交与分支
+      </div>
+      <div class="ai-hint rise" style="--rise-delay: 150ms">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2l1.8 8.2L22 12l-8.2 1.8L12 22l-1.8-8.2L2 12l8.2-1.8L12 2z" />
+        </svg>
+        AI 能力即将接入
       </div>
 
       <!-- 点阵球：安静的生命感 -->
@@ -214,15 +226,44 @@ onUnmounted(() => {
 }
 
 .title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 600;
   color: var(--fg-primary);
   letter-spacing: 0.02em;
 }
 
+/* AI 星芒：标题旁缓慢闪烁，亮暗主题均用 accent */
+.ai-spark {
+  color: var(--accent);
+  animation: spark-twinkle 2.6s ease-in-out infinite;
+}
+
+@keyframes spark-twinkle {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .subtitle {
   font-size: 13px;
   color: var(--fg-secondary);
+}
+
+.ai-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--accent);
 }
 
 .orb {
@@ -294,6 +335,9 @@ onUnmounted(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .rise {
+    animation: none;
+  }
+  .ai-spark {
     animation: none;
   }
 }

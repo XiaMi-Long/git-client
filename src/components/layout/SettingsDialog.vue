@@ -115,7 +115,7 @@ async function checkUpdate() {
                 <span class="cat-label">{{ cat.label }}</span>
               </div>
             </nav>
-            <div class="sidebar-foot">git-client</div>
+            <div class="sidebar-foot">GitAura</div>
           </div>
 
           <!-- 右侧设置项 -->
@@ -357,7 +357,7 @@ async function checkUpdate() {
               <div v-else-if="activeCategory === 'about'">
                 <div class="setting-card">
                   <div class="card-title">关于</div>
-                  <div class="about-row"><label>应用</label><span class="mono">Git 客户端</span></div>
+                  <div class="about-row"><label>应用</label><span class="mono">GitAura</span></div>
                   <div class="about-row"><label>版本</label><span class="mono">0.1.0</span></div>
                   <div class="about-row"><label>仓库</label><span class="mono">XiaMi-Long/git-client</span></div>
                   <div class="about-row"><label>技术栈</label><span class="mono">Tauri 2 · Vue 3 · Rust</span></div>

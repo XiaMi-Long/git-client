@@ -1,6 +1,6 @@
-# git-client
+# GitAura
 
-自用的桌面端 Git 客户端，扁平化界面、暗色优先、纯中文。
+自用的桌面端 Git 客户端，扁平化界面、暗色优先、纯中文，AI 能力规划中。
 
 基于 Tauri 2 + Vue 3，通过 shell 调用系统 git。
 
