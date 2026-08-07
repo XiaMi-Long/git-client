@@ -25,6 +25,7 @@ import FileList from "@/components/layout/FileList.vue";
 import DiffViewer from "@/components/layout/DiffViewer.vue";
 import CommitBox from "@/components/layout/CommitBox.vue";
 import StatusBar from "@/components/layout/StatusBar.vue";
+import WelcomeScreen from "@/components/layout/WelcomeScreen.vue";
 import ToastContainer from "@/components/layout/ToastContainer.vue";
 import GlobalProgress from "@/components/layout/GlobalProgress.vue";
 import ConfirmDialog from "@/components/layout/ConfirmDialog.vue";
@@ -128,8 +129,9 @@ function onWindowFocus() {
     <!-- 顶栏 -->
     <TopBar />
 
-    <!-- 主体三栏 -->
-    <div class="main-body">
+    <!-- 主体：无仓库时展示欢迎空状态，否则三栏 -->
+    <WelcomeScreen v-if="repoStore.repos.length === 0" />
+    <div v-else class="main-body">
       <!-- 侧栏 -->
       <Sidebar class="pane-sidebar" :style="{ width: sidebarWidth + 'px' }" />
 
