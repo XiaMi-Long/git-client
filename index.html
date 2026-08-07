@@ -4,9 +4,279 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Git 客户端</title>
+    <script>
+      // 首帧主题：读取已保存主题（默认暗色），立即设置 data-theme，杜绝白屏闪烁
+      (function () {
+        try {
+          var t = localStorage.getItem("git-client-theme");
+          document.documentElement.setAttribute(
+            "data-theme",
+            t === "light" ? "light" : "dark"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <style>
+      /* 启动画面（零依赖内联，JS 打包前即可绘制） */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: #1e1e1e;
+      }
+      html[data-theme="light"] body {
+        background: #ffffff;
+      }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: #1e1e1e;
+        transition: opacity 400ms cubic-bezier(0.25, 1, 0.5, 1),
+          transform 400ms cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      html[data-theme="light"] #boot-splash {
+        background: #ffffff;
+      }
+      #boot-splash.boot-hide {
+        opacity: 0;
+        transform: scale(1.015);
+        pointer-events: none;
+      }
+
+      /* 蓝色系极光渐变层（暗色低饱和晕光 / 亮色极淡蓝晕） */
+      #boot-splash::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(55% 45% at 16% 18%, rgba(59, 130, 246, 0.17) 0%, transparent 62%),
+          radial-gradient(45% 40% at 86% 12%, rgba(99, 102, 241, 0.13) 0%, transparent 60%),
+          radial-gradient(65% 55% at 72% 92%, rgba(14, 165, 233, 0.11) 0%, transparent 65%),
+          radial-gradient(40% 35% at 40% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 60%);
+      }
+      html[data-theme="light"] #boot-splash::before {
+        background:
+          radial-gradient(55% 45% at 16% 18%, rgba(59, 130, 246, 0.10) 0%, transparent 62%),
+          radial-gradient(45% 40% at 86% 12%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+          radial-gradient(65% 55% at 72% 92%, rgba(14, 165, 233, 0.07) 0%, transparent 65%),
+          radial-gradient(40% 35% at 40% 80%, rgba(37, 99, 235, 0.05) 0%, transparent 60%);
+      }
+
+      /* Grainy 颗粒噪点层（feTurbulence 分形噪声，overlay 混合） */
+      #boot-splash::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+        background-size: 160px 160px;
+        mix-blend-mode: overlay;
+        opacity: 0.06;
+      }
+      html[data-theme="light"] #boot-splash::after {
+        opacity: 0.05;
+      }
+
+      #boot-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      #boot-orb {
+        width: 96px;
+        height: 96px;
+      }
+      #boot-title {
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        color: #e8e8e8;
+        letter-spacing: 0.02em;
+      }
+      html[data-theme="light"] #boot-title {
+        color: #333333;
+      }
+      #boot-status {
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 12px;
+        color: #a0a0a0;
+      }
+      html[data-theme="light"] #boot-status {
+        color: #666666;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash {
+          transition: opacity 200ms linear;
+        }
+        #boot-splash.boot-hide {
+          transform: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <!-- 启动画面：应用就绪后由 main.ts 淡出移除 -->
+    <div id="boot-splash">
+      <div id="boot-content">
+        <canvas id="boot-orb" width="96" height="96"></canvas>
+        <div id="boot-title">Git 客户端</div>
+        <div id="boot-status">正在启动…</div>
+      </div>
+    </div>
     <div id="app"></div>
+    <script>
+      // 启动 Orb 动画：thinking-orbs（MIT, Jakub Antalik）working/orbits 态移植
+      // 12 条倾斜轨道 x 40 幽灵点 + 每轨 3 粒子，纯 2D canvas、z 排序单色墨色
+      (function () {
+        var canvas = document.getElementById("boot-orb");
+        if (!canvas || !canvas.getContext) return;
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        var size = 96;
+        canvas.width = size * dpr;
+        canvas.height = size * dpr;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.scale(dpr, dpr);
+
+        var dark =
+          document.documentElement.getAttribute("data-theme") !== "light";
+
+        // orbits 模式参数（64px 基准 profile，尺寸经 radiusScale 非线性换算）
+        var SPEED = 1.885;
+        var orbitN = 12, ghostN = 40, ghostR = 0.9, ghostA = 0.5;
+        var particles = 3, partR = 1.2, partRDepth = 1.6, rsPow = 0.6, rMin = 0.3;
+
+        function hashD(a, b) {
+          var h = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+          return h - Math.floor(h);
+        }
+        function makeProj(yaw, tilt, cx, cy, scale) {
+          var st = Math.sin(tilt), ct = Math.cos(tilt);
+          var sy = Math.sin(yaw), cyw = Math.cos(yaw);
+          return function (x, y, z) {
+            var x1 = x * cyw + z * sy;
+            var z1 = -x * sy + z * cyw;
+            var y1 = y * ct - z1 * st;
+            var z2 = y * st + z1 * ct;
+            return [cx + x1 * scale, cy - y1 * scale, z2];
+          };
+        }
+        function radiusScale(s, pow) {
+          return Math.pow(s / 300, pow);
+        }
+
+        function draw(t) {
+          ctx.clearRect(0, 0, size, size);
+          var cx = size / 2, cy = size / 2;
+          var R = (size / 2) * 0.82;
+          var pt = makeProj(t * 0.12, 0.3, cx, cy, 1);
+          var rs = radiusScale(size, rsPow);
+          var dots = [];
+
+          for (var orb = 0; orb < orbitN; orb++) {
+            var h1 = hashD(orb, 1.7);
+            var h2 = hashD(orb, 5.2);
+            var h3 = hashD(orb, 8.9);
+            var ro = R * (0.45 + 0.52 * h1);
+            var th = h1 * 2 * Math.PI;
+            var phi = Math.acos(2 * h2 - 1);
+            var nx = Math.sin(phi) * Math.cos(th);
+            var ny = Math.cos(phi);
+            var nz = Math.sin(phi) * Math.sin(th);
+            var ux = -ny, uy = nx, uz = 0;
+            var ul = Math.max(1e-6, Math.sqrt(ux * ux + uy * uy));
+            ux /= ul; uy /= ul;
+            var vx = ny * uz - nz * uy;
+            var vy = nz * ux - nx * uz;
+            var vz = nx * uy - ny * ux;
+            var speed = (0.25 + 0.55 * h3) * (h3 > 0.5 ? 1 : -1);
+
+            // 幽灵轨道点
+            for (var k = 0; k < ghostN; k++) {
+              var a = (k / ghostN) * 2 * Math.PI;
+              var ca = Math.cos(a), sa = Math.sin(a);
+              var p = pt(
+                (ux * ca + vx * sa) * ro,
+                (uy * ca + vy * sa) * ro,
+                (uz * ca + vz * sa) * ro
+              );
+              var depth = (p[2] / ro + 1) / 2;
+              dots.push({
+                x: p[0], y: p[1], z: p[2],
+                r: ghostR * rs,
+                white: 0.72,
+                a: ghostA * (0.4 + 0.6 * depth)
+              });
+            }
+            // 运动粒子
+            for (var m = 0; m < particles; m++) {
+              var a2 = t * speed + (m / particles) * 2 * Math.PI + h2 * 6;
+              var ca2 = Math.cos(a2), sa2 = Math.sin(a2);
+              var p2 = pt(
+                (ux * ca2 + vx * sa2) * ro,
+                (uy * ca2 + vy * sa2) * ro,
+                (uz * ca2 + vz * sa2) * ro
+              );
+              var depth2 = (p2[2] / ro + 1) / 2;
+              dots.push({
+                x: p2[0], y: p2[1], z: p2[2],
+                r: (partR + partRDepth * depth2) * rs,
+                white: 0.3 - 0.22 * depth2,
+                a: 1
+              });
+            }
+          }
+
+          dots.sort(function (a, b) { return a.z - b.z; });
+          for (var i = 0; i < dots.length; i++) {
+            var d = dots[i];
+            if (d.a < 0.02) continue;
+            var w = Math.min(1, Math.max(0, d.white));
+            var g = Math.round((dark ? 1 - w : w) * 255);
+            ctx.fillStyle = "rgba(" + g + "," + g + "," + g + "," + d.a + ")";
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, Math.max(rMin, d.r), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        var reduced = window.matchMedia &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (reduced) {
+          draw(2.4); // 静态代表帧，不动画
+        } else {
+          var start = performance.now();
+          (function loop(now) {
+            if (!document.getElementById("boot-splash")) return; // 已移除即停
+            draw(((now - start) / 1000) * SPEED);
+            requestAnimationFrame(loop);
+          })(start);
+        }
+
+        // 兜底：8 秒仍未被应用移除则自行淡出，避免异常时永久遮挡
+        setTimeout(function () {
+          var splash = document.getElementById("boot-splash");
+          if (splash && !window.__bootHidden) {
+            window.__bootHidden = true;
+            splash.classList.add("boot-hide");
+            setTimeout(function () { splash.remove(); }, 500);
+          }
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
