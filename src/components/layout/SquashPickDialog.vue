@@ -86,6 +86,14 @@ watch(show, async (v) => {
 // 右侧详情：当前查看的提交（默认第一个）
 const viewingCommit = ref<string | null>(null);
 
+// 源分支自定义下拉（系统风格：按钮 + 浮层，替代原生 select）
+const branchDropdownOpen = ref(false);
+function onDocMouseDown(e: MouseEvent) {
+  if (branchDropdownOpen.value && !(e.target as HTMLElement).closest(".branch-select-wrap")) {
+    branchDropdownOpen.value = false;
+  }
+}
+
 const isLocal = computed(() => sourceBranch.value === currentBranch.value);
 const selectedList = computed(() => Array.from(selectedHashes.value));
 
@@ -447,8 +455,14 @@ function requestClose() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") requestClose();
 }
-onMounted(() => window.addEventListener("keydown", onKeydown));
-onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+  document.addEventListener("mousedown", onDocMouseDown);
+});
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("mousedown", onDocMouseDown);
+});
 </script>
 
 <template>
@@ -477,9 +491,29 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
               <div class="form-row">
                 <label>源分支</label>
-                <select v-model="sourceBranch">
-                  <option v-for="b in branchOptions" :key="b" :value="b">{{ b }}</option>
-                </select>
+                <div class="branch-select-wrap" :class="{ open: branchDropdownOpen }">
+                  <button
+                    type="button"
+                    class="branch-select"
+                    @click="branchDropdownOpen = !branchDropdownOpen"
+                  >
+                    <span class="branch-select-text">{{ sourceBranch }}</span>
+                    <span class="branch-select-caret">▾</span>
+                  </button>
+                  <div v-if="branchDropdownOpen" class="branch-dropdown">
+                    <div v-if="branchOptions.length === 0" class="branch-dropdown-empty">暂无分支</div>
+                    <button
+                      v-for="b in branchOptions"
+                      :key="b"
+                      type="button"
+                      class="branch-dropdown-item"
+                      :class="{ active: b === sourceBranch }"
+                      @click="sourceBranch = b; branchDropdownOpen = false"
+                    >
+                      {{ b }}
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="hint">
                 {{ isLocal ? "本分支压缩：选择最近的连续提交（从 HEAD 起）" : `跨分支：从 ${sourceBranch} 逐个挑拣后压缩合并到 ${currentBranch}` }}
@@ -823,7 +857,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   white-space: nowrap;
 }
 
-.form-row select,
 .form-row input[type="text"] {
   flex: 1;
   min-width: 0;
@@ -839,10 +872,111 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-.form-row select:focus,
 .form-row input[type="text"]:focus {
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
+}
+
+/* 源分支自定义下拉（系统风格） */
+.branch-select-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.branch-select {
+  width: 100%;
+  height: var(--ctrl-h);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ctrl-radius);
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.branch-select:hover {
+  border-color: var(--border-strong);
+}
+
+.branch-select-wrap.open .branch-select {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.branch-select-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-select-caret {
+  flex-shrink: 0;
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  transition: transform 150ms ease;
+}
+
+.branch-select-wrap.open .branch-select-caret {
+  transform: rotate(180deg);
+}
+
+.branch-dropdown {
+  position: absolute;
+  top: calc(var(--ctrl-h) + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 500;
+}
+
+.branch-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 100ms ease;
+}
+
+.branch-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.branch-dropdown-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.branch-dropdown-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--fg-tertiary);
 }
 
 .hint {

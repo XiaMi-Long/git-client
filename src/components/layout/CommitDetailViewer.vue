@@ -15,6 +15,7 @@ import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { FileDiff } from "@/types/git";
 import DiffViewer from "./DiffViewer.vue";
+import FileTypeIcon from "./FileTypeIcon.vue";
 
 const props = defineProps<{
   /** 仓库路径 */
@@ -80,6 +81,7 @@ const emptyText = computed(() =>
           <span class="file-status" :class="{ renamed: f.is_renamed, deleted: f.is_deleted, added: f.is_new }">
             {{ f.is_new ? "A" : f.is_deleted ? "D" : f.is_renamed ? "R" : "M" }}
           </span>
+          <FileTypeIcon :path="f.new_path || f.old_path" />
           <span class="file-path">{{ fileLabel(f) }}</span>
           <span class="file-stats">
             <span class="add">+{{ f.additions }}</span>
@@ -131,8 +133,14 @@ const emptyText = computed(() =>
   background: var(--bg-hover);
 }
 
+/* 选中态与主界面 FileList 一致：accent 实底 + 白字，亮暗主题表现统一 */
 .file-item.active {
-  background: var(--bg-selected, #2a3f5f);
+  background: var(--accent);
+  color: #fff;
+}
+
+.file-item.active .file-path {
+  color: #fff;
 }
 
 .file-status {
