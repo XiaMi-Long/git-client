@@ -5,7 +5,7 @@
   "identifier": "com.yitao.git-client",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1731",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },

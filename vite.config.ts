@@ -12,7 +12,7 @@ export default defineConfig({
   // Tauri 2 前端开发服务器配置
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 1731,
     strictPort: true,
     watch: {
       // 不监听 Rust 后端目录
