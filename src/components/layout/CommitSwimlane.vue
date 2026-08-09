@@ -271,10 +271,9 @@ function commitMenuItems(c: CommitInfo) {
             <span class="subject" :title="c.subject">{{ c.subject }}</span>
           </template>
         </div>
-        <!-- 行尾悬浮信息：sticky right，hover 时浮出（完整提交信息） -->
+        <!-- 行尾悬浮信息：sticky right，hover 时在行内浮出完整提交信息 -->
         <div class="row-tail" :class="{ show: hoverHash === c.hash && !isSelected(c) }">
-          <div class="tail-subject">{{ c.subject }}</div>
-          <div class="tail-meta">{{ c.short_hash }} · {{ formatTime(c) }}</div>
+          {{ c.subject }} · {{ c.short_hash }} · {{ formatTime(c) }}
         </div>
       </div>
 
@@ -544,41 +543,27 @@ body.col-resizing {
   color: #fff;
 }
 
-/* 行尾悬浮信息：吸附右侧可视区，完整展示提交信息 */
+/* 行尾悬浮信息：吸附右侧可视区，在行内展示完整提交信息（非浮层卡片） */
 .row-tail {
   position: sticky;
   right: 0;
   z-index: 15;
   flex-shrink: 0;
-  max-width: 480px;
-  padding: 3px 10px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  max-width: 70%;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row-tail.show {
   opacity: 1;
-}
-
-.tail-subject {
-  font-size: 12px;
-  color: var(--fg-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tail-meta {
-  margin-top: 2px;
-  font-size: 10.5px;
-  font-family: var(--mono-font-family, ui-monospace, monospace);
-  color: var(--fg-tertiary);
-  white-space: nowrap;
 }
 
 .load-hint {
