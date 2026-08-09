@@ -251,8 +251,8 @@ onUnmounted(() => document.removeEventListener("mousedown", onDocDown));
 
 const listEl = ref<HTMLElement | null>(null);
 
-// 行高（与 CSS .commit-item height 一致）
-const ROW_HEIGHT = 26;
+// 行距（与 CSS .commit-item 实际行距一致：height 26px + 1px 下边距 = 27px）
+const ROW_HEIGHT = 27;
 // 虚拟滚动缓冲行数
 const BUFFER = 8;
 
@@ -962,7 +962,7 @@ function commitMenuItems(c: CommitInfo) {
   align-items: center;
   gap: 8px;
   height: 26px;
-  margin: 1px 6px;
+  margin: 0 6px 1px;
   padding: 0 8px;
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
