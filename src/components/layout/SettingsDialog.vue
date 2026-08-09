@@ -198,6 +198,41 @@ async function checkUpdate() {
                     </div>
                   </div>
 
+                  <div class="setting-row">
+                    <label>提交列表</label>
+                    <div class="segmented">
+                      <button
+                        class="seg"
+                        :class="{ active: settingsStore.commitListMode === 'classic' }"
+                        @click="settingsStore.setCommitListMode('classic')"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="8" y1="6" x2="21" y2="6" />
+                          <line x1="8" y1="12" x2="21" y2="12" />
+                          <line x1="8" y1="18" x2="21" y2="18" />
+                          <line x1="3" y1="6" x2="3.01" y2="6" />
+                          <line x1="3" y1="12" x2="3.01" y2="12" />
+                          <line x1="3" y1="18" x2="3.01" y2="18" />
+                        </svg>
+                        经典列表
+                      </button>
+                      <button
+                        class="seg"
+                        :class="{ active: settingsStore.commitListMode === 'swimlane' }"
+                        @click="settingsStore.setCommitListMode('swimlane')"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3" y="4" width="4" height="16" rx="1" />
+                          <rect x="10" y="4" width="4" height="16" rx="1" />
+                          <rect x="17" y="4" width="4" height="16" rx="1" />
+                        </svg>
+                        泳道图
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="hint">泳道图：行 = 提交，列 = 作者（当前用户第一，其余按提交频率），可横向滚动</div>
+
                   <div class="hint">提交记录列表中的时间展示：相对「2 小时前」或绝对「2026-08-01 14:30」</div>
                 </div>
               </div>

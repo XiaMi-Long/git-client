@@ -26,6 +26,7 @@ import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import SquashPickDialog from "./SquashPickDialog.vue";
 import StashCreateDialog from "./StashCreateDialog.vue";
+import CommitSwimlane from "./CommitSwimlane.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -484,6 +485,29 @@ function commitMenuItems(c: CommitInfo) {
         </span>
       </div>
       <div class="toolbar-right">
+        <!-- 列表模式切换（图标）：经典列表 / 泳道图 -->
+        <button
+          class="tool-btn icon-btn"
+          :class="{ active: settingsStore.commitListMode === 'swimlane' }"
+          :title="settingsStore.commitListMode === 'classic' ? '切换为泳道图模式' : '切换为经典列表模式'"
+          @click="settingsStore.setCommitListMode(settingsStore.commitListMode === 'classic' ? 'swimlane' : 'classic')"
+        >
+          <!-- 泳道图图标（激活时显示） -->
+          <svg v-if="settingsStore.commitListMode === 'swimlane'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="4" height="16" rx="1" />
+            <rect x="10" y="4" width="4" height="16" rx="1" />
+            <rect x="17" y="4" width="4" height="16" rx="1" />
+          </svg>
+          <!-- 经典列表图标 -->
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+        </button>
         <button
           class="tool-btn"
           :class="{ active: commitStore.scope === 'current' && !commitStore.browseBranch }"
@@ -549,8 +573,8 @@ function commitMenuItems(c: CommitInfo) {
       </div>
     </div>
 
-    <!-- 提交列表（虚拟滚动） -->
-    <div ref="listEl" class="commit-scroll" @scroll="onScroll">
+    <!-- 提交列表：经典列表（虚拟滚动） / 泳道图（V2，按设置切换） -->
+    <div v-if="settingsStore.commitListMode === 'classic'" ref="listEl" class="commit-scroll" @scroll="onScroll">
       <div class="virtual-spacer" :style="{ height: totalHeight + 'px' }">
         <div class="virtual-translate" :style="{ transform: `translateY(${offsetY}px)` }">
           <!-- mini 图谱 SVG -->
@@ -622,6 +646,9 @@ function commitMenuItems(c: CommitInfo) {
         <p>{{ repoStore.activeRepo ? "暂无提交" : "打开仓库后展示提交历史" }}</p>
       </div>
     </div>
+
+    <!-- 提交列表：泳道图（V2） -->
+    <CommitSwimlane v-else />
 
     <!-- 提交右键菜单 -->
     <ContextMenu
@@ -726,6 +753,15 @@ function commitMenuItems(c: CommitInfo) {
   font-size: 12px;
   cursor: pointer;
   transition: all 150ms ease;
+}
+
+/* 图标按钮：紧凑方形，无文字 */
+.tool-btn.icon-btn {
+  width: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tool-btn:hover:not(:disabled) {

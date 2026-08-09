@@ -52,7 +52,6 @@ const themeStore = useThemeStore();
     >
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
-    <span>{{ themeStore.isDark ? "亮色" : "暗色" }}</span>
   </button>
 </template>
 
@@ -60,14 +59,14 @@ const themeStore = useThemeStore();
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 28px;
   height: 28px;
-  padding: 0 12px;
+  padding: 0;
   background: transparent;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
-  font-size: 13px;
   cursor: pointer;
   transition: all 150ms ease;
 }

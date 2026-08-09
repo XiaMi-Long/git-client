@@ -38,6 +38,7 @@ pub fn run() {
         .manage(Mutex::new(FetcherState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::git_detect_version,
+            commands::git_get_user_name,
             commands::git_is_valid_repo,
             commands::git_get_status,
             commands::git_get_log,

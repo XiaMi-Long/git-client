@@ -44,6 +44,18 @@ pub async fn git_get_log(path: String, query: LogQuery) -> Result<Vec<CommitInfo
         .map_err(|e| e.to_string())
 }
 
+/// 获取当前仓库 git config user.name（泳道图「用户永远第一」用）
+#[tauri::command]
+pub async fn git_get_user_name(path: String) -> Result<Option<String>, String> {
+    match GitExecutor::run_git(&to_path(&path), &["config", "user.name"]).await {
+        Ok(v) => {
+            let name = v.trim().to_string();
+            Ok(if name.is_empty() { None } else { Some(name) })
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 /// 获取提交总数
 #[tauri::command]
 pub async fn git_get_commit_count(path: String, branch: Option<String>) -> Result<usize, String> {
@@ -507,6 +519,7 @@ pub async fn git_reset_hard(path: String, to_commit: String) -> Result<(), Strin
 pub fn all_commands() -> Vec<&'static str> {
     vec![
         "git_detect_version",
+        "git_get_user_name",
         "git_is_valid_repo",
         "git_get_status",
         "git_get_log",

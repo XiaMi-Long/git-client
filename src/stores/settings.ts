@@ -18,6 +18,7 @@ interface SettingsData {
   enableRemoteHint: boolean;
   remoteHintExpandMode: "click" | "auto";
   timeFormat: "relative" | "absolute";
+  commitListMode: "classic" | "swimlane";
 }
 
 /** 存储名模板支持的占位符说明 */
@@ -44,6 +45,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const remoteHintExpandMode = ref<"click" | "auto">("click");
   // 提交记录时间显示：relative 相对时间（如 "2 hours ago"）/ absolute 绝对时间
   const timeFormat = ref<"relative" | "absolute">("relative");
+  // 提交列表模式：classic 经典列表 / swimlane 泳道图（V2）
+  const commitListMode = ref<"classic" | "swimlane">("classic");
 
   /** 从 localStorage 加载并应用 */
   function load() {
@@ -60,6 +63,7 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint.value = data.enableRemoteHint ?? true;
         remoteHintExpandMode.value = data.remoteHintExpandMode ?? "click";
         timeFormat.value = data.timeFormat ?? "relative";
+        commitListMode.value = data.commitListMode ?? "classic";
       } catch {
         // 忽略损坏数据
       }
@@ -79,6 +83,7 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint: enableRemoteHint.value,
         remoteHintExpandMode: remoteHintExpandMode.value,
         timeFormat: timeFormat.value,
+        commitListMode: commitListMode.value,
       })
     );
   }
@@ -123,6 +128,12 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
+  /** 设置提交列表模式 */
+  function setCommitListMode(mode: "classic" | "swimlane") {
+    commitListMode.value = mode;
+    persist();
+  }
+
   /** 远程更新提示开关 */
   function setEnableRemoteHint(v: boolean) {
     enableRemoteHint.value = v;
@@ -162,6 +173,7 @@ export const useSettingsStore = defineStore("settings", () => {
     enableRemoteHint,
     remoteHintExpandMode,
     timeFormat,
+    commitListMode,
     load,
     setGitPath,
     setDefaultOpenDir,
@@ -170,6 +182,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemoteDelete,
     setStashNameTemplate,
     setTimeFormat,
+    setCommitListMode,
     setEnableRemoteHint,
     setRemoteHintExpandMode,
     renderStashName,
