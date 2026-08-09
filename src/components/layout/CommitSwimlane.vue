@@ -86,32 +86,65 @@ function authorColor(name: string): string {
   return BRANCH_COLORS[Math.abs(hash) % BRANCH_COLORS.length];
 }
 
-// ===== 时间列紧凑格式 =====
-function timeLabel(c: CommitInfo): string {
+// ===== 时间显示：与经典列表一致，跟随设置（相对/绝对） =====
+function formatTime(c: CommitInfo): string {
+  if (settingsStore.timeFormat !== "absolute") return c.relative_date;
   const d = new Date(c.author_date);
-  if (isNaN(d.getTime())) return "";
+  if (isNaN(d.getTime())) return c.relative_date;
   const pad = (n: number) => String(n).padStart(2, "0");
-  if (settingsStore.timeFormat === "absolute") {
-    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const yest = new Date(now);
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) {
-    return `昨天 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// ===== 行虚拟滚动（纵向） =====
+// ===== 作者过滤：点击表头只显示该作者的提交，再点取消 =====
+const filterAuthor = ref<string | null>(null);
+const filteredCommits = computed(() => {
+  if (!filterAuthor.value) return commitStore.commits;
+  return commitStore.commits.filter((c) => c.author_name === filterAuthor.value);
+});
+
+// 点击表头作者列：切换过滤
+function toggleFilter(name: string) {
+  filterAuthor.value = filterAuthor.value === name ? null : name;
+  scrollTop.value = 0;
+  if (scrollEl.value) scrollEl.value.scrollTop = 0;
+}
+
+// ===== 作者列宽：默认 190，可拖拽调节 =====
+const DEFAULT_COL_W = 190;
+const colWidths = ref<Record<string, number>>({});
+function colWidth(name: string): number {
+  return colWidths.value[name] ?? DEFAULT_COL_W;
+}
+// 所有作者列总宽（表头/行 min-width 用）
+const totalColWidth = computed(() =>
+  authors.value.reduce((sum, [name]) => sum + colWidth(name), 0)
+);
+
+// 拖拽状态
+let dragging: { name: string; startX: number; startW: number } | null = null;
+function onColResizeStart(e: MouseEvent, name: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  dragging = { name, startX: e.clientX, startW: colWidth(name) };
+  document.body.classList.add("col-resizing");
+}
+function onColResizeMove(e: MouseEvent) {
+  if (!dragging) return;
+  const w = Math.max(80, dragging.startW + (e.clientX - dragging.startX));
+  colWidths.value = { ...colWidths.value, [dragging.name]: w };
+}
+function onColResizeEnd() {
+  if (dragging) {
+    dragging = null;
+    document.body.classList.remove("col-resizing");
+  }
+}
+// ===== 行虚拟滚动（纵向，基于过滤后列表） =====
 const scrollEl = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportH = ref(600);
 
-const N = computed(() => commitStore.commits.length);
+const N = computed(() => filteredCommits.value.length);
 const visibleStart = computed(() =>
   Math.max(0, Math.floor((scrollTop.value - HEADER_H) / ROW_HEIGHT) - BUFFER)
 );
@@ -119,7 +152,7 @@ const visibleEnd = computed(() =>
   Math.min(N.value, Math.ceil((scrollTop.value - HEADER_H + viewportH.value) / ROW_HEIGHT) + BUFFER)
 );
 const visibleCommits = computed(() =>
-  commitStore.commits.slice(visibleStart.value, visibleEnd.value)
+  filteredCommits.value.slice(visibleStart.value, visibleEnd.value)
 );
 const padTop = computed(() => visibleStart.value * ROW_HEIGHT);
 const padBottom = computed(() => (N.value - visibleEnd.value) * ROW_HEIGHT);
@@ -136,8 +169,6 @@ function onScroll() {
 function updateViewport() {
   if (scrollEl.value) viewportH.value = scrollEl.value.clientHeight;
 }
-onMounted(() => updateViewport());
-onUnmounted(() => {});
 
 // 仓库切换时滚动复位
 watch(
@@ -147,6 +178,16 @@ watch(
     if (scrollEl.value) scrollEl.value.scrollTop = 0;
   }
 );
+
+onMounted(() => {
+  updateViewport();
+  document.addEventListener("mousemove", onColResizeMove);
+  document.addEventListener("mouseup", onColResizeEnd);
+});
+onUnmounted(() => {
+  document.removeEventListener("mousemove", onColResizeMove);
+  document.removeEventListener("mouseup", onColResizeEnd);
+});
 
 // ===== 选中 / hover =====
 const hoverHash = ref<string | null>(null);
@@ -181,15 +222,29 @@ function commitMenuItems(c: CommitInfo) {
 <template>
   <div class="swimlane">
     <div ref="scrollEl" class="swimlane-scroll" @scroll="onScroll">
-      <!-- 表头：时间列 + 作者列（sticky top，横向随内容滚动） -->
-      <div class="header-row" :style="{ minWidth: 64 + authors.length * 190 + 'px' }">
+      <!-- 表头：时间列 + 作者列（sticky top，横向随内容滚动；点击列头过滤该作者，拖拽列边缘调宽） -->
+      <div class="header-row" :style="{ minWidth: 64 + totalColWidth + 'px' }">
         <div class="time-cell header">时间</div>
-        <div v-for="[name, count] in authors" :key="name" class="author-cell header" title="提交次数">
+        <div
+          v-for="[name, count] in authors"
+          :key="name"
+          class="author-cell header"
+          :class="{ filtered: filterAuthor === name, dimmed: filterAuthor && filterAuthor !== name }"
+          :style="{ width: colWidth(name) + 'px' }"
+          :title="filterAuthor === name ? '点击取消过滤' : '点击只显示该作者的提交'"
+          @click="toggleFilter(name)"
+        >
           <span class="lane" :style="{ background: authorColor(name) }" />
           <span class="a-dot" :style="{ background: authorColor(name) }" />
           <span class="a-name">{{ name }}</span>
           <span v-if="name === currentUserName" class="me-tag">我</span>
           <span class="a-count">{{ count }}</span>
+          <span
+            class="col-resizer"
+            title="拖动调整列宽"
+            @click.stop
+            @mousedown="onColResizeStart($event, name)"
+          />
         </div>
       </div>
 
@@ -202,23 +257,24 @@ function commitMenuItems(c: CommitInfo) {
         :key="c.hash"
         class="row"
         :class="{ active: isSelected(c) }"
-        :style="{ minWidth: 64 + authors.length * 190 + 'px' }"
+        :style="{ minWidth: 64 + totalColWidth + 'px' }"
         @click="selectionStore.selectCommit(c.hash)"
         @contextmenu="onCommitContextmenu($event, c)"
         @mouseenter="hoverHash = c.hash"
         @mouseleave="hoverHash = null"
       >
-        <div class="time-cell">{{ timeLabel(c) }}</div>
-        <div v-for="[name] in authors" :key="name" class="author-cell">
+        <div class="time-cell">{{ formatTime(c) }}</div>
+        <div v-for="[name] in authors" :key="name" class="author-cell" :style="{ width: colWidth(name) + 'px' }">
           <span class="lane" :style="{ background: authorColor(name) }" />
           <template v-if="c.author_name === name">
             <span class="dot" :class="{ grow: hoverHash === c.hash }" :style="{ background: authorColor(name) }" />
             <span class="subject" :title="c.subject">{{ c.subject }}</span>
           </template>
         </div>
-        <!-- 行尾悬浮信息：sticky right，hover 时浮出 -->
+        <!-- 行尾悬浮信息：sticky right，hover 时浮出（完整提交信息） -->
         <div class="row-tail" :class="{ show: hoverHash === c.hash && !isSelected(c) }">
-          {{ c.short_hash }} · {{ timeLabel(c) }}
+          <div class="tail-subject">{{ c.subject }}</div>
+          <div class="tail-meta">{{ c.short_hash }} · {{ formatTime(c) }}</div>
         </div>
       </div>
 
@@ -310,7 +366,6 @@ function commitMenuItems(c: CommitInfo) {
 
 .author-cell {
   position: relative;
-  width: 190px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -325,6 +380,44 @@ function commitMenuItems(c: CommitInfo) {
   font-size: 12px;
   border-right: 1px solid var(--border-default);
   background: var(--bg-panel);
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.author-cell.header:hover {
+  background: var(--bg-hover);
+}
+
+/* 过滤状态：选中列高亮，其余列变暗 */
+.author-cell.header.filtered {
+  background: rgba(59, 130, 246, 0.14);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.author-cell.header.dimmed {
+  opacity: 0.35;
+}
+
+/* 列宽拖拽手柄 */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.col-resizer:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+body.col-resizing {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 /* 泳道线：贯穿整个作者列，极淡 */
@@ -451,30 +544,41 @@ function commitMenuItems(c: CommitInfo) {
   color: #fff;
 }
 
-/* 行尾悬浮信息：吸附右侧可视区 */
+/* 行尾悬浮信息：吸附右侧可视区，完整展示提交信息 */
 .row-tail {
   position: sticky;
   right: 0;
   z-index: 15;
   flex-shrink: 0;
-  padding: 0 10px;
-  font-size: 11px;
-  font-family: var(--mono-font-family, ui-monospace, monospace);
-  color: var(--fg-secondary);
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  max-width: 480px;
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   opacity: 0;
   pointer-events: none;
-  white-space: nowrap;
+  transition: opacity 120ms ease;
 }
 
 .row-tail.show {
   opacity: 1;
 }
 
-.row.active .row-tail {
-  background: var(--accent);
-  color: rgba(255, 255, 255, 0.9);
+.tail-subject {
+  font-size: 12px;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tail-meta {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-family: var(--mono-font-family, ui-monospace, monospace);
+  color: var(--fg-tertiary);
+  white-space: nowrap;
 }
 
 .load-hint {
