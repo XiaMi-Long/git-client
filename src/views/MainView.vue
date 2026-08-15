@@ -1,11 +1,11 @@
 <!--
   @component MainView
   @description
-    三栏主视图容器 - 顶栏 + (侧栏 | 提交列表 | 右侧上下分栏) + 状态栏。
+    三栏主视图容器 - 自定义标题栏 + 顶栏 + (侧栏 | 提交列表 | 右侧上下分栏) + 状态栏。
     侧栏、中右、右侧上下三处分隔条均可拖拽调整尺寸。工作区模式时右侧底部显示提交框。
   @usage <MainView />
   @workflow
-    1. 顶栏固定 40px，状态栏固定 24px，中间 main-body 占满剩余高度。
+    1. 自定义标题栏固定 32px，顶栏固定 40px，状态栏固定 24px，中间 main-body 占满剩余高度。
     2. 侧栏宽度可拖拽（160-360px）。
     3. 中右分隔条拖拽调整右侧面板宽度（320-800px，反向），提交列表占剩余。
     4. 右侧上方文件列表高度可拖拽，下方 diff 占剩余。
@@ -18,6 +18,7 @@
 -->
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
+import TitleBar from "@/components/layout/TitleBar.vue";
 import TopBar from "@/components/layout/TopBar.vue";
 import Sidebar from "@/components/layout/Sidebar.vue";
 import CommitList from "@/components/layout/CommitList.vue";
@@ -124,6 +125,9 @@ function onWindowFocus() {
     <!-- 全局操作反馈：顶部进度条 + Toast 气泡 -->
     <GlobalProgress />
     <ToastContainer />
+
+    <!-- 自定义窗口标题栏（无边框窗口，独立一行） -->
+    <TitleBar />
 
     <!-- 顶栏 -->
     <TopBar />

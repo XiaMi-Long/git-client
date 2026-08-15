@@ -12,12 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Git 客户端",
+        "title": "GitTrail",
         "width": 1200,
         "height": 800,
         "minWidth": 1300,
         "minHeight": 640,
-        "decorations": true,
+        "decorations": false,
         "resizable": true,
         "backgroundColor": "#1e1e1e"
       }
