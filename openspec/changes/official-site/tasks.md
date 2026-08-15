@@ -18,4 +18,14 @@
 
 - [x] 3.1 `site/` 内 `npm install` 成功
 - [x] 3.2 `site/` 内 `npm run build` 成功产出静态产物
-- [ ] 3.3 提交并推送到远程
+- [x] 3.3 提交并推送到远程
+
+## 4. 用户向改造、截图占位与 Pages 部署
+
+- [x] 4.1 站点文档去除开发内容（环境要求/安装依赖/开发启动/构建发布/目录结构），改为纯用户下载使用向（下载安装/首次使用/常用操作/自动更新/用户 FAQ）
+- [x] 4.2 更新日志去除面向维护者的「发布说明」开发内容，保留用户向版本记录
+- [x] 4.3 首页新增产品截图区：`ScreenshotGrid` 组件（放 `site/public/screenshots/<id>.png` 即显示，缺失显示虚线占位），并调整首页下载入口
+- [x] 4.4 配置 `base: "/git-client/"`（GitHub Pages 子路径）并修正 favicon 路径
+- [x] 4.5 新增 GitHub Actions 部署 workflow（`.github/workflows/deploy-site.yml`：build → upload-pages-artifact → deploy-pages）
+- [x] 4.6 `site/` 内 `npm run build` 重新验证通过
+- [x] 4.7 提交并推送到远程

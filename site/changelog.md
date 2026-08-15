@@ -31,14 +31,4 @@ GitTrail 通过 **GitHub Releases + 自动更新** 分发：
 - **未推送标识**：本地领先上游的提交显示「未推送」徽章（经典列表 / 泳道图一致）。
 - **自定义标题栏**：无边框窗口 + 自绘标题栏（最小化 / 最大化 / 关闭，拖拽与双击最大化），软件名称统一为 **GitTrail**。
 
-## 发布说明（面向维护者）
-
-发版需在 [docs/RELEASE.md](https://github.com/XiaMi-Long/git-client/blob/main/docs/RELEASE.md) 流程基础上进行：
-
-1. 三处同步升级版本号（`tauri.conf.json` / `Cargo.toml` / 关于页）。
-2. `npm run tauri build`（需签名私钥环境变量）。
-3. 上传 `setup.exe` + `.sig` + `latest.json` 到 GitHub Releases（Tag 形如 `v0.2.0`）。
-
-::: tip
-签名私钥请妥善加密备份：丢失后无法再签名新版本；泄露则可能被伪造更新。
-:::
+> 更新日志以各版本 Release 说明为准。

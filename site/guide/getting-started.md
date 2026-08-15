@@ -1,81 +1,55 @@
 # 快速开始
 
-> GitTrail：自用桌面 Git 客户端，Tauri 2 + Vue 3，通过系统 git 执行操作。
-
-## 环境要求
-
-| 依赖 | 版本 | 说明 |
-|---|---|---|
-| Node.js | 18+（推荐 22） | 前端构建 |
-| Rust 工具链 | 稳定版 | 通过 [rustup](https://rustup.rs) 安装，后端编译 |
-| git | 任意现代版本 | 系统 PATH 中，应用通过 shell 调用 |
-| WebView2 | - | Windows 11 自带 |
-| Visual Studio Build Tools | - | 含"使用 C++ 的桌面开发"（提供 MSVC link.exe） |
-
-## 安装依赖
-
-```bash
-npm install
-```
-
-## 开发启动
-
-```bash
-npm run tauri dev
-```
-
-首次会编译 Rust 依赖（约 1-2 分钟），完成后自动打开桌面窗口。
-开发模式默认打开 DevTools（F12）。
-
-> 改动前端会 HMR 热更新；改动 Rust（`src-tauri/`）需重启 `npm run tauri dev`。
-
-## 构建发布
-
-```bash
-npm run tauri build
-```
-
-产物在 `src-tauri/target/release/bundle/`。已安装版本可通过应用内自动更新（GitHub Releases + 签名校验）。
+> GitTrail：扁平化、暗色优先、纯中文的桌面 Git 客户端。
 
 ## 下载安装
 
-前往 [GitHub Releases](https://github.com/XiaMi-Long/git-client/releases) 下载 `git-client_x.x.x_x64-setup.exe` 安装包，或从源码自行构建。
+1. 前往 [GitHub Releases](https://github.com/XiaMi-Long/git-client/releases) 下载最新版安装包：
+   - `git-client_x.x.x_x64-setup.exe`（Windows）
+2. 双击运行安装包，按提示完成安装。
+3. 安装完成后，从开始菜单或桌面快捷方式启动 GitTrail。
 
-## 目录结构
+::: tip
+GitTrail 依赖 Windows 11 自带的 WebView2 运行时；如系统较旧，安装时按提示补充即可。
+:::
 
-```
-git-client/
-├─ src/                Vue 前端
-│  ├─ components/      组件（layout/ 下为三栏布局组件）
-│  ├─ stores/          Pinia 状态（repo / commit / selection / theme / settings）
-│  ├─ composables/     复用逻辑（useResizable / useRepoWatcher）
-│  ├─ types/           TypeScript 类型（与后端 serde 对齐）
-│  ├─ styles/          tokens.css 设计 token + main.css 全局样式
-│  └─ views/           MainView 三栏主视图
-├─ src-tauri/          Rust 后端
-│  ├─ src/
-│  │  ├─ git/          git 命令封装（executor / status / log / diff / branch / remote / types）
-│  │  ├─ commands/     Tauri command（前端 invoke 入口）
-│  │  └─ watcher/      文件监听（notify + .gitignore + 防抖）
-│  ├─ capabilities/    Tauri 权限配置
-│  └─ tauri.conf.json  Tauri 配置
-├─ docs/               设计语言 + UI 规范 + 发布指南
-├─ openspec/           需求规范（proposal / design / specs / tasks）
-└─ site/               官方站点（本站点，VitePress）
-```
+## 首次使用：添加仓库
 
-## 常见问题
+1. 启动应用后，点击顶栏最右侧的 **「+」** 按钮。
+2. 在弹出的窗口中选择一个 Git 仓库目录（可多选）。
+3. 仓库随即打开：左侧是分支/标签，中间是提交历史，右侧是文件变更与 diff。
 
-| 问题 | 解决 |
+添加多个仓库后，顶栏会出现多个标签页，点击即可切换；下次启动会自动恢复上次打开的仓库。
+
+## 常用操作
+
+| 操作 | 方式 |
 |---|---|
-| `cargo` 无法识别 | rustup 装完重启终端；或 PowerShell 临时加 `$env:PATH += ";$env:USERPROFILE\.cargo\bin"` |
-| `link.exe` 未找到 | 装 Visual Studio Build Tools，勾选"使用 C++ 的桌面开发" |
-| 端口 1731 被占用 | 关闭占用进程，或重启释放 |
-| 拉取/推送鉴权失败 | 首次会走 Windows 凭据管理器；若失败检查凭据或用 `git credential-manager` 配置 |
-| 前端改了没生效 | HMR 通常自动更新；Pinia store 改动有时需刷新页面 |
+| 拉取 / 推送 | 提交列表上方工具栏「拉取」「推送」，或快捷键 `Ctrl+P` / `Ctrl+Shift+P` |
+| 查看提交历史 | 中间栏经典列表或泳道图（工具栏图标切换），未推送提交带「未推送」标识 |
+| 提交 | 工作区模式右侧底部输入提交信息，`Ctrl+Enter` 提交 |
+| 暂存 / 取消暂存 / 丢弃 | 右侧文件列表按文件操作；diff 内可对单个 hunk 右键操作 |
+| 切换 / 新建分支 | 左侧分支列表单击浏览、双击检出，右键有新建/删除/重命名/合并/对比 |
+| cherry-pick | 提交列表右键「cherry-pick」，或用「压缩挑拣」合并多次提交 |
+| 冲突解决 | 冲突文件带 ⚠ 标记，逐文件「标记已解决」，或「中止」操作 |
+
+## 自动更新
+
+- 启动后自动静默检查新版本，下载完成后提示重启即可生效。
+- 也可在 **设置 → 关于 → 检查更新** 手动检查。
+- 更新包均带数字签名校验，防止伪造更新。
+
+## 常见问题（用户向）
+
+| 问题 | 处理 |
+|---|---|
+| 拉取/推送要求登录 | 首次会走 Windows 凭据管理器；若失败请检查系统凭据，或用 `git credential-manager` 配置 |
+| 下载更新慢（国内网络） | GitHub Releases 直连较慢，可稍后重试或使用代理后手动检查更新 |
+| 检查更新提示"签名验证失败" | 通常是网络代理篡改/旧版缓存，请稍后重试或重新下载安装 |
+| 打开目录提示"不是 Git 仓库" | 该目录没有 `.git`，请选择 git init 过的目录 |
 
 ## 相关链接
 
-- [GitHub 仓库](https://github.com/XiaMi-Long/git-client)
 - [功能一览](/features)
 - [更新日志](/changelog)
+- [GitHub 仓库](https://github.com/XiaMi-Long/git-client)

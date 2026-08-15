@@ -1,3 +1,7 @@
+<script setup>
+import ScreenshotGrid from "./.vitepress/theme/components/ScreenshotGrid.vue";
+</script>
+
 ---
 layout: home
 
@@ -10,11 +14,11 @@ hero:
     alt: GitTrail
   actions:
     - theme: brand
+      text: 下载
+      link: https://github.com/XiaMi-Long/git-client/releases
+    - theme: alt
       text: 快速开始
       link: /guide/getting-started
-    - theme: alt
-      text: 功能一览
-      link: /features
     - theme: alt
       text: 更新日志
       link: /changelog
@@ -40,6 +44,10 @@ features:
     details: 右键快速挑选提交，压缩挑拣一步到位，冲突处理有引导。
 ---
 
+## 产品截图
+
+<ScreenshotGrid />
+
 ## 为什么选择 GitTrail
 
 面向**本地高频 Git 操作**的轻量桌面客户端，去掉了协作与远程托管类冗余，聚焦你要的那几件事：
@@ -51,9 +59,10 @@ features:
 
 ## 快速上手
 
-1. 前往 [GitHub Releases](https://github.com/XiaMi-Long/git-client/releases) 下载安装包（或自行从源码构建）。
-2. 打开应用，点击顶栏 **「+」** 添加你的 Git 仓库。
-3. 拉取 / 提交 / 推送，查看提交泳道图与更改 diff。
+1. 前往 [GitHub Releases](https://github.com/XiaMi-Long/git-client/releases) 下载安装包（Windows）。
+2. 运行安装包完成安装，首次启动自动打开应用。
+3. 点击顶栏 **「+」** 添加你的 Git 仓库。
+4. 拉取 / 提交 / 推送，查看提交泳道图与更改 diff。
 
 更多说明见 [快速开始](/guide/getting-started)。
 

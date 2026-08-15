@@ -1,12 +1,17 @@
 import { defineConfig } from "vitepress";
 
+// GitHub Pages 子路径部署（仓库 git-client）→ 站点地址 /git-client/
+// 若以后用自定义域名，改为 "/"
+const base = "/git-client/";
+
 export default defineConfig({
   lang: "zh-CN",
   title: "GitTrail",
   description: "扁平化 · 暗色优先 · 纯中文的桌面 Git 客户端（Tauri 2 + Vue 3）",
   // 默认暗色优先（可切换）
   appearance: "dark",
-  head: [["link", { rel: "icon", href: "/logo.svg" }]],
+  base,
+  head: [["link", { rel: "icon", href: `${base}logo.svg` }]],
   themeConfig: {
     logo: "/logo.svg",
     nav: [
