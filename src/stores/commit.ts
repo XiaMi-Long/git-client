@@ -5,7 +5,7 @@
  * 依据: design.md D6, tasks 6.x
  */
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommitInfo, LogQuery } from "@/types/git";
 import { useRepoStore } from "./repo";
@@ -28,6 +28,58 @@ export const useCommitStore = defineStore("commit", () => {
   const browseBranch = ref<string | null>(null);
   // 6.7 搜索关键词
   const search = ref<string>("");
+
+  // ===== 未推送提交标识（经典列表与泳道图共用，单一数据源） =====
+  // 当前分支（含 upstream / ahead）
+  const currentBranch = computed(
+    () => repoStore.activeRepo?.branches.find((b) => b.is_current) ?? null
+  );
+  const currentAhead = computed(() => currentBranch.value?.ahead ?? 0);
+  // 未推送提交的 hash 集合（相对当前分支上游 @{upstream}..HEAD 的领先提交）
+  const unpushedHashes = ref<Set<string>>(new Set());
+  // 竞态保护：切换分支时丢弃过期响应
+  let unpushedSeq = 0;
+
+  /** 加载当前分支未推送提交 hash 集合 */
+  async function loadUnpushed() {
+    const path = repoStore.activeRepo?.path;
+    const branch = currentBranch.value;
+    const seq = ++unpushedSeq;
+    if (!path || !branch || !branch.upstream) {
+      unpushedHashes.value = new Set();
+      return;
+    }
+    try {
+      const list = await invoke<CommitInfo[]>("git_get_log", {
+        path,
+        query: {
+          skip: 0,
+          limit: 100,
+          branch: `${branch.upstream}..${branch.name}`,
+          search: null,
+          all_branches: false,
+        },
+      });
+      if (seq !== unpushedSeq) return; // 过期响应丢弃
+      unpushedHashes.value = new Set(list.map((c) => c.hash));
+    } catch {
+      if (seq !== unpushedSeq) return;
+      unpushedHashes.value = new Set();
+    }
+  }
+
+  // 分支 / 领先数 / 仓库变化时（重新）加载未推送集合；ahead 为 0 时直接清空
+  watch(
+    () => [currentBranch.value?.name, currentAhead.value, repoStore.activeRepo?.id] as const,
+    () => {
+      if (currentAhead.value > 0) {
+        loadUnpushed();
+      } else {
+        unpushedSeq++;
+        unpushedHashes.value = new Set();
+      }
+    }
+  );
 
   const queryAllBranches = computed(() => scope.value === "all");
   const queryBranch = computed<string | null>(() => {
@@ -125,6 +177,9 @@ export const useCommitStore = defineStore("commit", () => {
     search,
     queryBranch,
     queryAllBranches,
+    currentBranch,
+    currentAhead,
+    unpushedHashes,
     loadCommits,
     loadMore,
     setScope,

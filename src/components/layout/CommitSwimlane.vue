@@ -14,6 +14,7 @@
     由 CommitList 在 settings.commitListMode === 'swimlane' 时渲染，替换经典列表体。
   @changeLog
     - 2026-08-09: Created. 泳道图 V2 首版。
+    - 2026-08-15: Updated. 未推送提交徽章（本地领先上游），数据来自 commitStore.unpushedHashes。
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
@@ -269,6 +270,11 @@ function commitMenuItems(c: CommitInfo) {
           <template v-if="c.author_name === name">
             <span class="dot" :class="{ grow: hoverHash === c.hash }" :style="{ background: authorColor(name) }" />
             <span class="subject" :title="c.subject">{{ c.subject }}</span>
+            <span
+              v-if="commitStore.unpushedHashes.has(c.hash)"
+              class="unpushed-badge"
+              title="本地提交，尚未推送到远程"
+            >未推送</span>
           </template>
         </div>
         <!-- 行尾悬浮信息：sticky right，hover 时在行内浮出完整提交信息 -->
@@ -537,6 +543,21 @@ body.col-resizing {
   white-space: nowrap;
   font-size: 12.5px;
   color: var(--fg-primary);
+}
+
+/* 未推送提交徽章：绿色，表示本地领先上游的提交（与经典列表一致） */
+.unpushed-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  background: var(--badge-ahead-bg, #2ea87a);
+  color: var(--badge-ahead-fg, #ffffff);
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.row.active .unpushed-badge {
+  opacity: 0.85;
 }
 
 .row.active .subject {

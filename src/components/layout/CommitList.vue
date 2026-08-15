@@ -12,6 +12,7 @@
     - 2026-07-29: Created. 布局骨架。
     - 2026-07-29: Updated. 提交列表渲染、分页、范围切换（6.x）、工作区伪节点（7.x）、提交右键（11.1）。
     - 2026-07-30: Updated. mini 图谱 + 分支着色 + 虚拟滚动（6.3 / 6.4）。
+    - 2026-08-15: Updated. 未推送提交集合上移到 commitStore，经典列表与泳道图共用单一数据源。
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
@@ -89,53 +90,6 @@ let remotePullsLoaded = false;
 // 设置联动：开启且落后才显示提示行
 const showRemoteHint = computed(
   () => settingsStore.enableRemoteHint && !!currentBranch.value && currentBehind.value > 0 && !!currentRemoteRef.value
-);
-
-// ===== 未推送提交标识（当前分支领先上游的提交，在历史列表中加绿色「未推送」徽章） =====
-const currentAhead = computed(() => currentBranch.value?.ahead ?? 0);
-// 未推送提交的 hash 集合
-const unpushedHashes = ref<Set<string>>(new Set());
-// 竞态保护：切换分支时丢弃过期响应
-let unpushedSeq = 0;
-
-async function loadUnpushed() {
-  const path = repoStore.activeRepo?.path;
-  const branch = currentBranch.value;
-  const seq = ++unpushedSeq;
-  if (!path || !branch || !branch.upstream) {
-    unpushedHashes.value = new Set();
-    return;
-  }
-  try {
-    const list = await invoke<CommitInfo[]>("git_get_log", {
-      path,
-      query: {
-        skip: 0,
-        limit: 100,
-        branch: `${branch.upstream}..${branch.name}`,
-        search: null,
-        all_branches: false,
-      },
-    });
-    if (seq !== unpushedSeq) return; // 过期响应丢弃
-    unpushedHashes.value = new Set(list.map((c) => c.hash));
-  } catch {
-    if (seq !== unpushedSeq) return;
-    unpushedHashes.value = new Set();
-  }
-}
-
-// 分支或仓库变化时（重新）加载未推送集合；ahead 为 0 时直接清空
-watch(
-  () => [currentBranch.value?.name, currentAhead.value, repoStore.activeRepo?.id] as const,
-  () => {
-    if (currentAhead.value > 0) {
-      loadUnpushed();
-    } else {
-      unpushedSeq++;
-      unpushedHashes.value = new Set();
-    }
-  }
 );
 
 async function loadRemotePulls() {
@@ -623,7 +577,7 @@ function commitMenuItems(c: CommitInfo) {
                 class="ref-badge"
                 :style="{ background: branchColor(r) }"
               >{{ r }}</span>
-              <span v-if="unpushedHashes.has(c.hash)" class="unpushed-badge" title="本地提交，尚未推送到远程">未推送</span>
+              <span v-if="commitStore.unpushedHashes.has(c.hash)" class="unpushed-badge" title="本地提交，尚未推送到远程">未推送</span>
             </span>
             <span class="commit-author">{{ c.author_name }}</span>
             <span class="commit-date">{{ formatTime(c) }}</span>
