@@ -4,7 +4,7 @@ name: Deploy site to GitHub Pages
 
 on:
   push:
-    branches: [main, feat/commit-swimlane-v2]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
