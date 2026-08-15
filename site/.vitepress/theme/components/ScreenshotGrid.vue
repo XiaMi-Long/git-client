@@ -11,8 +11,6 @@
     screenshots/swimlane.png     提交泳道图
     screenshots/commit-list.png  提交历史
     screenshots/diff.png         diff 阅读
-    screenshots/staging.png      暂存与提交
-    screenshots/branches.png     分支管理
 -->
 <script setup lang="ts">
 import { ref } from "vue";
@@ -23,8 +21,6 @@ const slots = [
   { id: "swimlane", title: "提交泳道图" },
   { id: "commit-list", title: "提交历史" },
   { id: "diff", title: "diff 阅读" },
-  { id: "staging", title: "暂存与提交" },
-  { id: "branches", title: "分支管理" },
 ];
 
 // 记录加载失败的截图 → 显示占位

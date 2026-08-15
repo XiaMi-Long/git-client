@@ -8,7 +8,5 @@
 | `swimlane.png` | 提交泳道图 |
 | `commit-list.png` | 提交历史 |
 | `diff.png` | diff 阅读 |
-| `staging.png` | 暂存与提交 |
-| `branches.png` | 分支管理 |
 
 建议尺寸：约 16:10 横向截图（如 1600×1000），深色主题更贴合本站风格。
