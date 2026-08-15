@@ -1,6 +1,6 @@
 [package]
 name = "git-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "自用桌面端 Git 客户端"
 authors = ["yitao"]
 edition = "2021"
