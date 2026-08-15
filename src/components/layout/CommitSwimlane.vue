@@ -15,6 +15,7 @@
   @changeLog
     - 2026-08-09: Created. 泳道图 V2 首版。
     - 2026-08-15: Updated. 未推送提交徽章（本地领先上游），数据来自 commitStore.unpushedHashes。
+    - 2026-08-15: Updated. 时间列加宽（默认 110px）并支持拖拽调节，与作者列一致。
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
@@ -110,29 +111,48 @@ function toggleFilter(name: string) {
   if (scrollEl.value) scrollEl.value.scrollTop = 0;
 }
 
-// ===== 作者列宽：默认 190，可拖拽调节 =====
+// ===== 列宽：时间列默认 110px、作者列默认 190px，均可拖拽调节 =====
 const DEFAULT_COL_W = 190;
+const DEFAULT_TIME_W = 110;
 const colWidths = ref<Record<string, number>>({});
 function colWidth(name: string): number {
   return colWidths.value[name] ?? DEFAULT_COL_W;
 }
+// 时间列宽（拖拽调节）
+const timeWidth = ref(DEFAULT_TIME_W);
 // 所有作者列总宽（表头/行 min-width 用）
 const totalColWidth = computed(() =>
   authors.value.reduce((sum, [name]) => sum + colWidth(name), 0)
 );
 
-// 拖拽状态
-let dragging: { name: string; startX: number; startW: number } | null = null;
+// 拖拽状态（time / author 两类）
+type ColDrag =
+  | { kind: "time"; startX: number; startW: number }
+  | { kind: "author"; name: string; startX: number; startW: number };
+let dragging: ColDrag | null = null;
+function onTimeResizeStart(e: MouseEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  dragging = { kind: "time", startX: e.clientX, startW: timeWidth.value };
+  document.body.classList.add("col-resizing");
+}
 function onColResizeStart(e: MouseEvent, name: string) {
   e.preventDefault();
   e.stopPropagation();
-  dragging = { name, startX: e.clientX, startW: colWidth(name) };
+  dragging = { kind: "author", name, startX: e.clientX, startW: colWidth(name) };
   document.body.classList.add("col-resizing");
 }
 function onColResizeMove(e: MouseEvent) {
   if (!dragging) return;
-  const w = Math.max(80, dragging.startW + (e.clientX - dragging.startX));
-  colWidths.value = { ...colWidths.value, [dragging.name]: w };
+  const delta = e.clientX - dragging.startX;
+  if (dragging.kind === "time") {
+    timeWidth.value = Math.min(240, Math.max(64, dragging.startW + delta));
+  } else {
+    colWidths.value = {
+      ...colWidths.value,
+      [dragging.name]: Math.max(80, dragging.startW + delta),
+    };
+  }
 }
 function onColResizeEnd() {
   if (dragging) {
@@ -224,8 +244,16 @@ function commitMenuItems(c: CommitInfo) {
   <div class="swimlane">
     <div ref="scrollEl" class="swimlane-scroll" @scroll="onScroll">
       <!-- 表头：时间列 + 作者列（sticky top，横向随内容滚动；点击列头过滤该作者，拖拽列边缘调宽） -->
-      <div class="header-row" :style="{ minWidth: 64 + totalColWidth + 'px' }">
-        <div class="time-cell header">时间</div>
+      <div class="header-row" :style="{ minWidth: timeWidth + totalColWidth + 'px' }">
+        <div class="time-cell header" :style="{ width: timeWidth + 'px' }">
+          时间
+          <span
+            class="col-resizer"
+            title="拖动调整列宽"
+            @click.stop
+            @mousedown="onTimeResizeStart($event)"
+          />
+        </div>
         <div
           v-for="[name, count] in authors"
           :key="name"
@@ -258,13 +286,13 @@ function commitMenuItems(c: CommitInfo) {
         :key="c.hash"
         class="row"
         :class="{ active: isSelected(c) }"
-        :style="{ minWidth: 64 + totalColWidth + 'px' }"
+        :style="{ minWidth: timeWidth + totalColWidth + 'px' }"
         @click="selectionStore.selectCommit(c.hash)"
         @contextmenu="onCommitContextmenu($event, c)"
         @mouseenter="hoverHash = c.hash"
         @mouseleave="hoverHash = null"
       >
-        <div class="time-cell">{{ formatTime(c) }}</div>
+        <div class="time-cell" :style="{ width: timeWidth + 'px' }">{{ formatTime(c) }}</div>
         <div v-for="[name] in authors" :key="name" class="author-cell" :style="{ width: colWidth(name) + 'px' }">
           <span class="lane" :style="{ background: authorColor(name) }" />
           <template v-if="c.author_name === name">
@@ -349,7 +377,6 @@ function commitMenuItems(c: CommitInfo) {
   position: sticky;
   left: 0;
   z-index: 20;
-  width: 64px;
   flex-shrink: 0;
   padding: 0 8px;
   font-size: 11px;
@@ -367,6 +394,8 @@ function commitMenuItems(c: CommitInfo) {
   align-items: center;
   background: var(--bg-panel);
   z-index: 40;
+  /* 不裁剪列宽拖拽手柄 */
+  overflow: visible;
 }
 
 .author-cell {
