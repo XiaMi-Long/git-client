@@ -1,7 +1,3 @@
-<script setup>
-import ScreenshotGrid from "./.vitepress/theme/components/ScreenshotGrid.vue";
-</script>
-
 ---
 layout: home
 
@@ -43,6 +39,10 @@ features:
     title: cherry-pick
     details: 右键快速挑选提交，压缩挑拣一步到位，冲突处理有引导。
 ---
+
+<script setup>
+import ScreenshotGrid from "./.vitepress/theme/components/ScreenshotGrid.vue";
+</script>
 
 ## 产品截图
 
