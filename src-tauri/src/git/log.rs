@@ -56,6 +56,18 @@ pub struct LogQuery {
     pub search: Option<String>,
     /// 是否查询所有分支（--all），为 true 时忽略 branch
     pub all_branches: bool,
+    /// 限制到仓库相对路径或目录
+    #[serde(default)]
+    pub path: Option<String>,
+    /// 使用拓扑顺序排列提交
+    #[serde(default)]
+    pub topo_order: bool,
+    /// 起始时间（Git 可识别的日期表达式）
+    #[serde(default)]
+    pub since: Option<String>,
+    /// 结束时间（Git 可识别的日期表达式）
+    #[serde(default)]
+    pub until: Option<String>,
 }
 
 impl Default for LogQuery {
@@ -66,6 +78,10 @@ impl Default for LogQuery {
             branch: None,
             search: None,
             all_branches: false,
+            path: None,
+            topo_order: false,
+            since: None,
+            until: None,
         }
     }
 }
@@ -92,7 +108,8 @@ impl GitExecutor {
             }
         }
 
-        let args = Self::build_log_args(query, None);
+        let mut args = Self::build_log_args(query, None);
+        Self::append_pathspec(&mut args, query);
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = Self::run_git(repo_path, &arg_refs).await?;
         Self::parse_log(&output)
@@ -115,11 +132,31 @@ impl GitExecutor {
             args.push(branch.clone());
         }
 
+        if query.topo_order {
+            args.push("--topo-order".to_string());
+        }
+
+        if let Some(since) = &query.since {
+            args.push(format!("--since={since}"));
+        }
+
+        if let Some(until) = &query.until {
+            args.push(format!("--until={until}"));
+        }
+
         if search.is_some() {
             args.push("--regexp-ignore-case".to_string());
         }
 
         args
+    }
+
+    /// 在查询参数尾部添加 Git pathspec 分隔符和路径
+    fn append_pathspec(args: &mut Vec<String>, query: &LogQuery) {
+        if let Some(path) = &query.path {
+            args.push("--".to_string());
+            args.push(path.clone());
+        }
     }
 
     /// 搜索模式：提交信息 / 作者 / 哈希 任一匹配（OR），合并去重后返回前 100 条
@@ -140,6 +177,7 @@ impl GitExecutor {
         // 1. 提交信息搜索
         let mut args = Self::build_log_args(&base, Some(search));
         args.push(format!("--grep={search}"));
+        Self::append_pathspec(&mut args, &base);
         let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         if let Ok(out) = Self::run_git(repo_path, &refs).await {
             if let Ok(commits) = Self::parse_log(&out) {
@@ -155,6 +193,7 @@ impl GitExecutor {
         if merged.len() < SEARCH_CAP {
             let mut args = Self::build_log_args(&base, Some(search));
             args.push(format!("--author={search}"));
+            Self::append_pathspec(&mut args, &base);
             let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             if let Ok(out) = Self::run_git(repo_path, &refs).await {
                 if let Ok(commits) = Self::parse_log(&out) {
@@ -172,14 +211,24 @@ impl GitExecutor {
             && Self::run_git(repo_path, &["rev-parse", "--verify", "--quiet", search])
                 .await
                 .is_ok()
+            && Self::commit_matches_scope(repo_path, query, search).await
         {
             let args = vec![
                 "log".to_string(),
                 format!("--format={LOG_FORMAT}"),
                 "-z".to_string(),
+                "--no-walk".to_string(),
                 "-n1".to_string(),
                 search.to_string(),
             ];
+            let mut args = args;
+            if let Some(since) = &query.since {
+                args.push(format!("--since={since}"));
+            }
+            if let Some(until) = &query.until {
+                args.push(format!("--until={until}"));
+            }
+            Self::append_pathspec(&mut args, query);
             let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             if let Ok(out) = Self::run_git(repo_path, &refs).await {
                 if let Ok(commits) = Self::parse_log(&out) {
@@ -193,7 +242,97 @@ impl GitExecutor {
         }
 
         merged.truncate(SEARCH_CAP);
+        if query.topo_order {
+            Self::sort_topologically(&mut merged);
+        }
         Ok(merged)
+    }
+
+    /// 判断指定提交是否属于当前日志查询的分支或版本范围。
+    async fn commit_matches_scope(repo_path: &Path, query: &LogQuery, hash: &str) -> bool {
+        if query.all_branches {
+            let contains_arg = format!("--contains={hash}");
+            return Self::run_git(
+                repo_path,
+                &["for-each-ref", contains_arg.as_str(), "--format=%(refname)"],
+            )
+            .await
+            .map(|refs| !refs.trim().is_empty())
+            .unwrap_or(false);
+        }
+
+        let revision = query.branch.as_deref().unwrap_or("HEAD");
+        if let Some((left, right)) = revision.split_once("...") {
+            let in_left = Self::is_ancestor(repo_path, hash, left).await;
+            let in_right = Self::is_ancestor(repo_path, hash, right).await;
+            return in_left ^ in_right;
+        }
+        if let Some((base, target)) = revision.split_once("..") {
+            return Self::is_ancestor(repo_path, hash, target).await
+                && !Self::is_ancestor(repo_path, hash, base).await;
+        }
+
+        Self::is_ancestor(repo_path, hash, revision).await
+    }
+
+    /// 判断一个提交是否是指定 Git 引用的祖先。
+    async fn is_ancestor(repo_path: &Path, commit: &str, reference: &str) -> bool {
+        Self::run_git(repo_path, &["merge-base", "--is-ancestor", commit, reference])
+            .await
+            .is_ok()
+    }
+
+    /// 将多个搜索结果合并后按父子关系恢复拓扑顺序。
+    /// @param commits 合并去重后的提交列表
+    /// @returns 按子提交在前、父提交在后的历史顺序
+    fn sort_topologically(commits: &mut Vec<CommitInfo>) {
+        let indices: std::collections::HashMap<String, usize> = commits
+            .iter()
+            .enumerate()
+            .map(|(index, commit)| (commit.hash.clone(), index))
+            .collect();
+        let mut child_counts = vec![0usize; commits.len()];
+
+        for commit in commits.iter() {
+            for parent in &commit.parents {
+                if let Some(parent_index) = indices.get(parent) {
+                    child_counts[*parent_index] += 1;
+                }
+            }
+        }
+
+        let mut ready = std::collections::VecDeque::new();
+        for (index, count) in child_counts.iter().enumerate() {
+            if *count == 0 {
+                ready.push_back(index);
+            }
+        }
+
+        let mut order = Vec::with_capacity(commits.len());
+        while let Some(index) = ready.pop_front() {
+            order.push(index);
+            for parent in &commits[index].parents {
+                if let Some(parent_index) = indices.get(parent) {
+                    child_counts[*parent_index] -= 1;
+                    if child_counts[*parent_index] == 0 {
+                        ready.push_back(*parent_index);
+                    }
+                }
+            }
+        }
+
+        if order.len() < commits.len() {
+            for index in 0..commits.len() {
+                if !order.contains(&index) {
+                    order.push(index);
+                }
+            }
+        }
+
+        let original = commits.clone();
+        for (index, source_index) in order.into_iter().enumerate() {
+            commits[index] = original[source_index].clone();
+        }
     }
 
     /// 解析 git log --format 输出
@@ -281,4 +420,55 @@ impl GitExecutor {
         let output = Self::run_git(repo_path, &args).await?;
         Ok(output.trim().parse().unwrap_or(0))
     }
+
+    /// 获取指定分支范围内最近一段时间的每日提交数量
+    pub async fn get_commit_activity(
+        repo_path: &Path,
+        days: usize,
+        branch: Option<&str>,
+        all_branches: bool,
+    ) -> GitResult<Vec<CommitActivityDay>> {
+        let days = days.clamp(1, 366);
+        let mut args = vec![
+            "log".to_string(),
+            "--date=iso-local".to_string(),
+            "--format=%cd".to_string(),
+            // 多取一天以覆盖热力图最早显示日期的完整自然日。
+            format!("--since={} days ago", days + 1),
+            "--until=now".to_string(),
+        ];
+
+        if all_branches {
+            args.push("--all".to_string());
+        } else if let Some(branch) = branch {
+            args.push(branch.to_string());
+        }
+
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let output = Self::run_git(repo_path, &arg_refs).await?;
+        let mut counts = std::collections::BTreeMap::<String, u32>::new();
+
+        for line in output.lines() {
+            let date = line.get(..10).unwrap_or("");
+            if date.len() != 10 {
+                continue;
+            }
+            let count = counts.entry(date.to_string()).or_default();
+            *count = count.saturating_add(1);
+        }
+
+        Ok(counts
+            .into_iter()
+            .map(|(date, count)| CommitActivityDay { date, count })
+            .collect())
+    }
+}
+
+/// 单日提交活动数量
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitActivityDay {
+    /// 日期（YYYY-MM-DD）
+    pub date: String,
+    /// 当日提交数量
+    pub count: u32,
 }

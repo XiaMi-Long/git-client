@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use crate::git::{
-    BranchOperationResult, BranchInfo, CommitInfo, CompareResult, FileDiff, GitExecutor,
+    BranchOperationResult, BranchInfo, CommitActivityDay, CommitInfo, CompareResult, FileDiff, GitExecutor,
     GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
 
@@ -28,6 +28,36 @@ pub async fn git_is_valid_repo(path: String) -> Result<bool, String> {
     Ok(GitExecutor::is_valid_repo(&to_path(&path)).await)
 }
 
+/// 查找绝对路径所属的 Git 仓库根目录。
+#[tauri::command]
+pub async fn git_find_repository_root(path: String) -> Result<String, String> {
+    let target_path = to_path(&path);
+    if !target_path.is_absolute() {
+        return Err("文件历史查询需要绝对路径".to_string());
+    }
+
+    let mut search_path = if target_path.is_dir() {
+        target_path.clone()
+    } else {
+        target_path
+            .parent()
+            .map(PathBuf::from)
+            .ok_or_else(|| "无法确定目标路径所在目录".to_string())?
+    };
+
+    while !search_path.is_dir() {
+        search_path = search_path
+            .parent()
+            .map(PathBuf::from)
+            .ok_or_else(|| "无法找到目标路径所在目录".to_string())?;
+    }
+
+    GitExecutor::get_repo_root(&search_path)
+        .await
+        .map(|root| root.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
+}
+
 /// 获取工作区状态（2.2）
 #[tauri::command]
 pub async fn git_get_status(path: String) -> Result<WorkingAreaStatus, String> {
@@ -40,6 +70,19 @@ pub async fn git_get_status(path: String) -> Result<WorkingAreaStatus, String> {
 #[tauri::command]
 pub async fn git_get_log(path: String, query: LogQuery) -> Result<Vec<CommitInfo>, String> {
     GitExecutor::get_log(&to_path(&path), &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取指定分支范围内最近一段时间的每日提交数量
+#[tauri::command]
+pub async fn git_get_commit_activity(
+    path: String,
+    days: usize,
+    branch: Option<String>,
+    all_branches: bool,
+) -> Result<Vec<CommitActivityDay>, String> {
+    GitExecutor::get_commit_activity(&to_path(&path), days, branch.as_deref(), all_branches)
         .await
         .map_err(|e| e.to_string())
 }
@@ -282,6 +325,14 @@ pub async fn git_pull(path: String) -> Result<RemoteResult, String> {
         .map_err(|e| e.to_string())
 }
 
+/// 手动获取远程引用，不合并或切换分支
+#[tauri::command]
+pub async fn git_fetch(path: String) -> Result<(), String> {
+    GitExecutor::fetch_repo(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 推送
 #[tauri::command]
 pub async fn git_push(path: String) -> Result<RemoteResult, String> {
@@ -313,14 +364,6 @@ pub async fn git_push_delete_remote(
         .map_err(|e| e.to_string())
 }
 
-/// 获取远程更新（git fetch，更新 origin/* 引用，不动工作区）
-#[tauri::command]
-pub async fn git_fetch(path: String) -> Result<(), String> {
-    GitExecutor::fetch_repo(&to_path(&path))
-        .await
-        .map_err(|e| e.to_string())
-}
-
 /// 快进更新指定本地分支到其上游（不切换分支，仅 fast-forward）
 #[tauri::command]
 pub async fn git_fetch_branch_ff(
@@ -331,17 +374,6 @@ pub async fn git_fetch_branch_ff(
     GitExecutor::fetch_branch_ff(&to_path(&path), &branch, &upstream)
         .await
         .map_err(|e| e.to_string())
-}
-
-/// 设置当前激活仓库（供后台定时 fetch 使用）
-#[tauri::command]
-pub fn git_set_active_repo(
-    state: tauri::State<'_, std::sync::Mutex<crate::FetcherState>>,
-    path: String,
-) -> Result<(), String> {
-    let mut s = state.lock().map_err(|e| e.to_string())?;
-    s.current_repo = Some(path);
-    Ok(())
 }
 
 /// 检测冲突状态（2.9）
@@ -523,6 +555,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_is_valid_repo",
         "git_get_status",
         "git_get_log",
+        "git_get_commit_activity",
         "git_get_commit_count",
         "git_get_working_diff",
         "git_get_staged_diff",
@@ -546,12 +579,11 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_cherry_pick_continue",
         "git_cherry_pick_abort",
         "git_pull",
+        "git_fetch",
         "git_push",
         "git_push_upstream",
         "git_push_delete_remote",
-        "git_fetch",
         "git_fetch_branch_ff",
-        "git_set_active_repo",
         "git_check_conflict",
         "git_list_conflicted_files",
         "git_mark_resolved",

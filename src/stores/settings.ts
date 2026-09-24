@@ -18,8 +18,13 @@ interface SettingsData {
   enableRemoteHint: boolean;
   remoteHintExpandMode: "click" | "auto";
   timeFormat: "relative" | "absolute";
-  commitListMode: "classic" | "swimlane";
+  /** 新版历史视图；旧字段用于兼容迁移 */
+  commitHistoryView?: CommitHistoryView;
+  commitListMode?: "classic" | "swimlane";
 }
+
+/** 提交历史可选的展示方式 */
+export type CommitHistoryView = "classic" | "swimlane" | "graph" | "file" | "release" | "activity";
 
 /** 存储名模板支持的占位符说明 */
 export const STASH_TEMPLATE_HINT =
@@ -45,10 +50,13 @@ export const useSettingsStore = defineStore("settings", () => {
   const remoteHintExpandMode = ref<"click" | "auto">("click");
   // 提交记录时间显示：relative 相对时间（如 "2 hours ago"）/ absolute 绝对时间
   const timeFormat = ref<"relative" | "absolute">("relative");
-  // 提交列表模式：classic 经典列表 / swimlane 泳道图（V2）
-  const commitListMode = ref<"classic" | "swimlane">("classic");
+  // 当前提交历史视图；初次读取时兼容原来的二态字段
+  const commitHistoryView = ref<CommitHistoryView>("classic");
 
-  /** 从 localStorage 加载并应用 */
+  /**
+   * 从 localStorage 加载设置并迁移旧的二态历史视图字段。
+   * @returns {void} 应用已保存的偏好
+   */
   function load() {
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
@@ -63,13 +71,22 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint.value = data.enableRemoteHint ?? true;
         remoteHintExpandMode.value = data.remoteHintExpandMode ?? "click";
         timeFormat.value = data.timeFormat ?? "relative";
-        commitListMode.value = data.commitListMode ?? "classic";
+        const savedView = data.commitHistoryView;
+        const legacyView = data.commitListMode;
+        const validViews: CommitHistoryView[] = ["classic", "swimlane", "graph", "file", "release", "activity"];
+        commitHistoryView.value = savedView && validViews.includes(savedView)
+          ? savedView
+          : legacyView === "swimlane" ? "swimlane" : "classic";
       } catch {
         // 忽略损坏数据
       }
     }
   }
 
+  /**
+   * 持久化当前设置。
+   * @returns {void} 写入 localStorage
+   */
   function persist() {
     localStorage.setItem(
       SETTINGS_KEY,
@@ -83,7 +100,7 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint: enableRemoteHint.value,
         remoteHintExpandMode: remoteHintExpandMode.value,
         timeFormat: timeFormat.value,
-        commitListMode: commitListMode.value,
+        commitHistoryView: commitHistoryView.value,
       })
     );
   }
@@ -128,9 +145,13 @@ export const useSettingsStore = defineStore("settings", () => {
     persist();
   }
 
-  /** 设置提交列表模式 */
-  function setCommitListMode(mode: "classic" | "swimlane") {
-    commitListMode.value = mode;
+  /**
+   * 设置提交历史视图。
+   * @param {CommitHistoryView} mode - 目标历史视图
+   * @returns {void} 更新状态并持久化
+   */
+  function setCommitHistoryView(mode: CommitHistoryView) {
+    commitHistoryView.value = mode;
     persist();
   }
 
@@ -173,7 +194,7 @@ export const useSettingsStore = defineStore("settings", () => {
     enableRemoteHint,
     remoteHintExpandMode,
     timeFormat,
-    commitListMode,
+    commitHistoryView,
     load,
     setGitPath,
     setDefaultOpenDir,
@@ -182,7 +203,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemoteDelete,
     setStashNameTemplate,
     setTimeFormat,
-    setCommitListMode,
+    setCommitHistoryView,
     setEnableRemoteHint,
     setRemoteHintExpandMode,
     renderStashName,

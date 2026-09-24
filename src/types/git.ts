@@ -69,6 +69,7 @@ export interface TagInfo {
   commit_hash: string;
   subject: string;
   is_annotated: boolean;
+  /** 标签时间；轻量标签使用目标提交时间 */
   date: string | null;
 }
 
@@ -101,6 +102,22 @@ export interface LogQuery {
   search: string | null;
   /** 是否查询所有分支（--all），为 true 时忽略 branch */
   all_branches: boolean;
+  /** 可选的仓库相对路径或目录 pathspec */
+  path?: string | null;
+  /** 是否使用拓扑顺序排列提交 */
+  topo_order?: boolean;
+  /** 可选的起始时间表达式 */
+  since?: string | null;
+  /** 可选的结束时间表达式 */
+  until?: string | null;
+}
+
+/** 某一天的提交活动聚合数量 */
+export interface CommitActivityDay {
+  /** 日期（YYYY-MM-DD） */
+  date: string;
+  /** 当日提交数量 */
+  count: number;
 }
 
 /** 分支操作结果（对应后端 BranchOperationResult） */

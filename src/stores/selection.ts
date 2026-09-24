@@ -20,9 +20,13 @@ export const useSelectionStore = defineStore("selection", () => {
   // 选中类型：null 未选中 / working 工作区 / commit 提交
   const type = ref<"working" | "commit" | null>(null);
   const commitHash = ref<string | null>(null);
+  // 当前选中提交所属仓库，文件历史可指向当前项目以外的仓库。
+  const commitRepositoryPath = ref<string | null>(repoStore.activeRepo?.path ?? null);
   const selectedFile = ref<string | null>(null);
   const commitMessage = ref("");
   const commitFileDiffs = ref<FileDiff[]>([]);
+  // 触发当前 diff 重新读取的序号
+  const diffRefreshKey = ref(0);
 
   // 当前 git 操作状态（冲突 / merge / rebase / cherry-pick）
   const operationState = ref<OperationState>("normal");
@@ -51,41 +55,151 @@ export const useSelectionStore = defineStore("selection", () => {
     }
   }
 
-  function selectWorking() {
+  /**
+   * 切换到当前激活仓库的工作区选择状态。
+   * @returns {void} 清除提交选择并记录当前仓库路径
+   */
+  function selectWorking(): void {
     type.value = "working";
     commitHash.value = null;
+    commitRepositoryPath.value = repoStore.activeRepo?.path ?? null;
     selectedFile.value = null;
     commitFileDiffs.value = [];
   }
 
-  function selectCommit(hash: string) {
+  /**
+   * 选择提交并记录其所属仓库。
+   * @param {string} hash - 完整提交哈希
+   * @param {string} [repositoryPath] - 提交所属仓库，默认使用当前激活仓库
+   * @returns {void} 更新提交选择和仓库上下文
+   */
+  function selectCommit(hash: string, repositoryPath?: string): void {
     type.value = "commit";
     commitHash.value = hash;
+    commitRepositoryPath.value = repositoryPath ?? repoStore.activeRepo?.path ?? null;
     selectedFile.value = null;
   }
 
-  function clear() {
+  /**
+   * 清除提交、文件和仓库上下文选择。
+   * @returns {void} 重置右侧详情状态
+   */
+  function clear(): void {
     type.value = null;
     commitHash.value = null;
+    commitRepositoryPath.value = null;
     selectedFile.value = null;
     commitFileDiffs.value = [];
   }
 
-  async function loadCommitDiffs() {
-    const path = repoStore.activeRepo?.path;
+  /**
+   * 从当前选中提交所属仓库重新读取所有文件差异。
+   * @returns {Promise<boolean>} 提交差异是否成功读取
+   */
+  async function loadCommitDiffs(): Promise<boolean> {
+    const path = commitRepositoryPath.value ?? repoStore.activeRepo?.path;
     if (!path || !commitHash.value) {
       commitFileDiffs.value = [];
-      return;
+      return false;
     }
+    // 捕获请求时的提交，避免异步结果覆盖后来选择
+    const selectedHash = commitHash.value;
+    const selectedRepositoryPath = path;
     try {
-      commitFileDiffs.value = await invoke<FileDiff[]>("git_get_commit_diff", {
+      // 等请求成功后再校验用户是否仍选中该提交
+      const diffs = await invoke<FileDiff[]>("git_get_commit_diff", {
         path,
-        commitHash: commitHash.value,
+        commitHash: selectedHash,
         filePath: null,
       });
+      if (
+        commitHash.value === selectedHash
+        && commitRepositoryPath.value === selectedRepositoryPath
+        && type.value === "commit"
+      ) {
+        commitFileDiffs.value = diffs;
+      }
+      return true;
     } catch {
-      commitFileDiffs.value = [];
+      if (
+        commitHash.value === selectedHash
+        && commitRepositoryPath.value === selectedRepositoryPath
+        && type.value === "commit"
+      ) {
+        commitFileDiffs.value = [];
+      }
+      return false;
     }
+  }
+
+  /**
+   * 刷新仓库数据，并在该仓库仍处于激活状态时重读提交、冲突与当前 diff。
+   * @param {string} repoId - 需要刷新的仓库标签 ID
+   * @returns {Promise<void>} 刷新完成
+   */
+  async function refreshRepositoryView(repoId: string): Promise<void> {
+    await repoStore.refreshRepo(repoId);
+    if (repoStore.activeId !== repoId) return;
+
+    await Promise.all([commitStore.loadCommits(), loadOperationState()]);
+
+    if (type.value === "commit" && commitHash.value) {
+      // 刷新后重新确认当前提交仍然可读取
+      const commitExists = await loadCommitDiffs();
+      if (!commitExists) selectWorking();
+    }
+
+    diffRefreshKey.value++;
+  }
+
+  /**
+   * 只从本地 Git 数据刷新当前仓库展示，不访问远程。
+   * @returns {Promise<void>} 刷新完成
+   */
+  async function refreshLocalState(): Promise<void> {
+    if (currentOp.value) return;
+    // 固定本次刷新目标，避免操作期间切换仓库后刷新错标签
+    const repo = repoStore.activeRepo;
+    if (!repo) return;
+
+    await withOp("刷新中", async () => {
+      await refreshRepositoryView(repo.id);
+    });
+  }
+
+  /**
+   * Fetch 远程引用，并在成功或失败后刷新当前仓库展示。
+   * @returns {Promise<RemoteResult | null>} Fetch 执行结果
+   */
+  async function fetchRemote(): Promise<RemoteResult | null> {
+    if (currentOp.value) return null;
+    // 固定本次 Fetch 目标，避免操作期间切换仓库后刷新错标签
+    const repo = repoStore.activeRepo;
+    if (!repo) return null;
+
+    return withOp("获取远程中", async () => {
+      // 保存 Fetch 结果，确保 finally 刷新后仍能向调用方返回结果
+      let result: RemoteResult;
+      try {
+        await invoke("git_fetch", { path: repo.path });
+        result = {
+          success: true,
+          message: "远程引用已更新",
+          has_conflict: false,
+          status: null,
+        };
+      } catch (error) {
+        result = {
+          success: false,
+          message: `获取远程失败: ${error instanceof Error ? error.message : String(error)}`,
+          has_conflict: false,
+          status: null,
+        };
+      } finally {
+        await refreshRepositoryView(repo.id).catch(() => {});
+      }
+      return result;
+    });
   }
 
   // ===== 暂存 / 提交 =====
@@ -581,14 +695,16 @@ export const useSelectionStore = defineStore("selection", () => {
   }
 
   // commitHash 变化时加载该提交的所有文件 diff
-  watch(commitHash, () => {
+  watch([commitHash, commitRepositoryPath], () => {
     loadCommitDiffs();
   });
 
-  // 切换仓库时重新检测该仓库的冲突状态（按仓库隔离，避免串扰）
+  // 仓库变化时清除旧提交选择和 diff，再加载新仓库状态。
   watch(
     () => repoStore.activeRepo?.id,
-    () => {
+    (repoId) => {
+      if (repoId) selectWorking();
+      else clear();
       loadOperationState();
     },
     { immediate: true }
@@ -597,9 +713,11 @@ export const useSelectionStore = defineStore("selection", () => {
   return {
     type,
     commitHash,
+    commitRepositoryPath,
     selectedFile,
     commitMessage,
     commitFileDiffs,
+    diffRefreshKey,
     operationState,
     conflictedFiles,
     currentOp,
@@ -610,6 +728,8 @@ export const useSelectionStore = defineStore("selection", () => {
     selectCommit,
     clear,
     loadCommitDiffs,
+    refreshLocalState,
+    fetchRemote,
     loadOperationState,
     stageFile,
     unstageFile,

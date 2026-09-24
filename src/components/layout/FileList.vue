@@ -9,6 +9,8 @@
     - 2026-07-29: Created. 布局骨架。
     - 2026-07-29: Updated. 工作区模式两组与暂存（7.x）、提交模式文件列表（8.4）。
     - 2026-07-29: Updated. 冲突模式冲突文件列表与标记已解决（12.2 / 12.3）。
+    - 2026-09-24: Updated. 增加从提交文件快捷打开文件历史的入口。
+    - 2026-09-24: Updated. 快捷入口传递提交所属仓库内的绝对路径。
 -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
@@ -22,6 +24,10 @@ import type { FileChangeType, FileDiff } from "@/types/git";
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
 const { dialogState, showConfirm, onConfirm, onCancel } = useDialog();
+const emit = defineEmits<{
+  /** 请求切换到当前提交文件的历史视图 */
+  (e: "file-history", path: string): void;
+}>();
 
 const staged = computed(() => repoStore.activeRepo?.status?.staged ?? []);
 const unstaged = computed(() => repoStore.activeRepo?.status?.unstaged ?? []);
@@ -76,6 +82,23 @@ function diffStatusColor(f: FileDiff): string {
 
 function diffPath(f: FileDiff): string {
   return f.is_renamed ? `${f.old_path} -> ${f.new_path}` : f.new_path;
+}
+
+/**
+ * 返回文件历史查询使用的绝对文件路径。
+ * @param {FileDiff} file - 当前提交中的文件差异
+ * @returns {string} 文件的新绝对路径，删除文件时回退到旧路径
+ */
+function historyPath(file: FileDiff): string {
+  const relativePath = file.new_path || file.old_path;
+  const repositoryPath = selectionStore.commitRepositoryPath ?? repoStore.activeRepo?.path;
+  if (!repositoryPath) return relativePath;
+
+  const separator = repositoryPath.includes("\\") ? "\\" : "/";
+  const trimmedRoot = repositoryPath.replace(/[\\/]+$/, "");
+  const root = trimmedRoot || (separator === "/" ? "/" : `${repositoryPath.slice(0, 2)}\\`);
+  const suffix = relativePath.replace(/[\\/]/g, separator);
+  return `${root}${/[\\/]$/.test(root) ? "" : separator}${suffix}`;
 }
 
 // 手动刷新冲突状态（外部解决冲突后点击）
@@ -240,6 +263,11 @@ async function handleDiscardAll() {
           <span class="add">+{{ f.additions }}</span>
           <span class="del">-{{ f.deletions }}</span>
         </span>
+        <button
+          class="file-action"
+          title="查看此文件的提交历史"
+          @click.stop="emit('file-history', historyPath(f))"
+        >历史</button>
       </div>
       <div v-if="commitFiles.length === 0" class="list-empty">
         <p>该提交无文件更改</p>

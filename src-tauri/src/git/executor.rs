@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
+use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -35,6 +36,53 @@ impl GitExecutor {
         if !output.status.success() {
             // git 部分错误会输出到 stdout（如 unmerged 时 "xx needs merge"），
             // stderr 为空时回退用 stdout，避免错误信息为空
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let msg = if stderr.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                stderr
+            };
+            return Err(GitError::CommandFailed {
+                stderr: msg,
+                exit_code: output.status.code(),
+            });
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// 在指定仓库目录执行带超时的 git 命令，超时时终止 Git 子进程。
+    /// @param repo_path - Git 仓库目录
+    /// @param args - Git 命令参数
+    /// @param timeout - 命令最长执行时间
+    /// @returns 命令标准输出；命令失败或超时时返回错误
+    pub async fn run_git_with_timeout(
+        repo_path: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> GitResult<String> {
+        // 使用独立命令实例，以便超时只影响调用此方法的操作
+        let mut cmd = Command::new("git");
+        cmd.args(args);
+        // 禁止弹出控制台窗口（打包后的 GUI 主进程调用 git 时）
+        no_window(&mut cmd);
+        cmd.current_dir(repo_path);
+        // 强制英文输出，避免 locale 导致解析问题
+        cmd.env("LC_ALL", "C");
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.kill_on_drop(true);
+
+        // 超时后丢弃命令 future，并由 kill_on_drop 终止子进程
+        let output = tokio::time::timeout(timeout, cmd.output())
+            .await
+            .map_err(|_| GitError::CommandFailed {
+                stderr: format!("git 命令执行超时（{} 秒）", timeout.as_secs()),
+                exit_code: None,
+            })??;
+
+        if !output.status.success() {
+            // git 部分错误会输出到 stdout，stderr 为空时回退用 stdout
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let msg = if stderr.trim().is_empty() {

@@ -15,6 +15,8 @@
     - 2026-07-29: Created. 布局骨架。
     - 2026-07-29: Updated. 接入文件变更监听（3.3）、中右可拖拽分隔条。
     - 2026-07-29: Updated. 工作区模式提交框（7.2）、修复中右拖拽反向。
+    - 2026-09-24: Updated. 接入提交文件列表到文件历史视图的快捷切换。
+    - 2026-09-24: Updated. 文件历史快捷路径可指向当前项目之外的 Git 仓库。
 -->
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
@@ -33,25 +35,35 @@ import { useResizable } from "@/composables/useResizable";
 import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import { useCommitStore } from "@/stores/commit";
+import { useSettingsStore } from "@/stores/settings";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
 import { useDialog } from "@/composables/useDialog";
-import { checkForUpdate, relaunchApp } from "@/utils/updater";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+// 3.0 开发期间暂时停用 2.0 的自动更新检查。
+// import { checkForUpdate, relaunchApp } from "@/utils/updater";
 
 const repoStore = useRepoStore();
 const selectionStore = useSelectionStore();
 const commitStore = useCommitStore();
-const { dialogState, showMessage, showConfirm, onConfirm, onCancel } = useDialog();
-let updateTimer: ReturnType<typeof setTimeout> | null = null;
+const settingsStore = useSettingsStore();
+const { dialogState, showConfirm, onConfirm, onCancel } = useDialog();
+
+/**
+ * 从提交文件列表打开对应文件的历史。
+ * @param {string} path - 文件的绝对路径
+ * @returns {void} 更新文件历史路径并切换视图
+ */
+function openFileHistory(path: string): void {
+  commitStore.setFileHistoryPath(path);
+  settingsStore.setCommitHistoryView("file");
+}
+// 3.0 开发期间暂时停用启动时的自动更新检查。
+// let updateTimer: ReturnType<typeof setTimeout> | null = null;
 // 文件变更时刷新当前仓库 + 重新检测冲突状态（后端 500ms 防抖后 emit "repo-changed"）
 const { start: startWatcher } = useRepoWatcher(() => {
   repoStore.refreshActive();
   // 外部编辑器解决冲突后，重新检测操作状态（watcher 排除 .git，git add 不触发，但文件编辑会触发）
   selectionStore.loadOperationState();
 });
-
-// 后台定时 fetch 完成事件的取消函数
-let unlistenFetched: Promise<UnlistenFn> | null = null;
 
 // 侧栏宽度（左右拖拽，面板在左）
 const { size: sidebarWidth, onMouseDown: onSidebarResize } = useResizable({
@@ -80,41 +92,34 @@ const { size: fileListHeight, onMouseDown: onFileListResize } = useResizable({
 
 onMounted(() => {
   startWatcher();
-  // 后台定时 fetch 完成后刷新分支落后数（Rust 侧每 10 分钟 emit "repo-fetched"）
-  unlistenFetched = listen("repo-fetched", () => {
-    repoStore.refreshActive();
-  });
-  // 窗口聚焦时统一刷新：获取最新远程拉取数 + 提交列表 + 工作区/冲突状态
+  // 窗口聚焦时刷新当前仓库的提交列表、工作区与冲突状态
   window.addEventListener("focus", onWindowFocus);
 
-  // 启动 5 秒后静默检查更新（有新版本自动下载，下载完成才提示重启）
-  updateTimer = setTimeout(async () => {
-    const r = await checkForUpdate();
-    if (r.status === "downloaded") {
-      const ok = await showConfirm(
-        "发现新版本",
-        `新版本 ${r.version} 已下载完成，重启应用以生效？`,
-        false
-      );
-      if (ok) await relaunchApp();
-    }
-    // none / error 静默处理
-  }, 5000);
+  // 3.0 开发期间暂时停用启动时的自动更新检查。
+  // updateTimer = setTimeout(async () => {
+  //   const r = await checkForUpdate();
+  //   if (r.status === "downloaded") {
+  //     const ok = await showConfirm(
+  //       "发现新版本",
+  //       `新版本 ${r.version} 已下载完成，重启应用以生效？`,
+  //       false
+  //     );
+  //     if (ok) await relaunchApp();
+  //   }
+  //   // none / error 静默处理
+  // }, 5000);
 });
 
 onUnmounted(() => {
-  if (updateTimer) clearTimeout(updateTimer);
-  unlistenFetched?.then((fn) => fn());
+  // 3.0 开发期间已停用自动更新计时器。
+  // if (updateTimer) clearTimeout(updateTimer);
   window.removeEventListener("focus", onWindowFocus);
 });
 
-// 窗口显示且聚焦时刷新（替代轮询）：
-// 1. fetch 获取最新远程引用 → 落后/领先徽章更新（可拉取数量）
-// 2. 刷新提交列表
-// 3. 刷新右侧工作区状态 + 重新检测冲突（外部解决冲突后切回窗口自动恢复）
+// 窗口显示且聚焦时刷新提交列表、工作区状态与冲突状态。
 function onWindowFocus() {
   if (!repoStore.activeRepo) return;
-  repoStore.fetchAndRefresh();
+  repoStore.refreshActive();
   commitStore.loadCommits();
   selectionStore.loadOperationState();
 }
@@ -150,7 +155,7 @@ function onWindowFocus() {
 
       <!-- 右侧上下分栏 -->
       <div class="pane-right" :style="{ width: rightWidth + 'px' }">
-        <FileList :style="{ height: fileListHeight + 'px' }" />
+        <FileList :style="{ height: fileListHeight + 'px' }" @file-history="openFileHistory" />
         <div class="resizer resizer-h" @mousedown="onFileListResize" />
         <div class="pane-diff">
           <DiffViewer />

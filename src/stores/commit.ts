@@ -28,6 +28,10 @@ export const useCommitStore = defineStore("commit", () => {
   const browseBranch = ref<string | null>(null);
   // 6.7 搜索关键词
   const search = ref<string>("");
+  // 从提交文件列表快捷打开或手动查询文件历史时预填的路径
+  const fileHistoryPath = ref("");
+  // 递增序号用于丢弃被新查询或仓库切换取代的提交日志响应
+  let logRequestSequence = 0;
 
   // ===== 未推送提交标识（经典列表与泳道图共用，单一数据源） =====
   // 当前分支（含 upstream / ahead）
@@ -87,15 +91,23 @@ export const useCommitStore = defineStore("commit", () => {
     return browseBranch.value;
   });
 
-  /** 加载第一页 */
-  async function loadCommits() {
-    const path = repoStore.activeRepo?.path;
-    if (!path) {
+  /**
+   * 加载当前仓库和筛选条件下的第一页提交。
+   * @returns {Promise<void>} 完成第一页提交查询
+   */
+  async function loadCommits(): Promise<void> {
+    const requestSequence = ++logRequestSequence;
+    const repo = repoStore.activeRepo;
+    if (!repo) {
       commits.value = [];
       hasMore.value = false;
+      loading.value = false;
+      loadingMore.value = false;
       return;
     }
+    const path = repo.path;
     loading.value = true;
+    loadingMore.value = false;
     try {
       const query: LogQuery = {
         skip: 0,
@@ -105,37 +117,48 @@ export const useCommitStore = defineStore("commit", () => {
         all_branches: queryAllBranches.value,
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
+      if (requestSequence !== logRequestSequence || repo.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       commits.value = result;
       // 搜索模式返回合并结果（固定上限），不触发分页加载
       hasMore.value = !search.value.trim() && result.length >= PAGE_SIZE;
     } catch {
+      if (requestSequence !== logRequestSequence || repo.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       commits.value = [];
       hasMore.value = false;
     } finally {
-      loading.value = false;
+      if (requestSequence === logRequestSequence) loading.value = false;
     }
   }
 
-  /** 加载下一页（6.2 分页） */
-  async function loadMore() {
-    const path = repoStore.activeRepo?.path;
+  /**
+   * 加载当前查询的下一页提交。
+   * @returns {Promise<void>} 完成下一页提交查询
+   */
+  async function loadMore(): Promise<void> {
+    const repo = repoStore.activeRepo;
+    const path = repo?.path;
     if (!path || loadingMore.value || !hasMore.value || loading.value) return;
+    const requestSequence = logRequestSequence;
+    const offset = commits.value.length;
+    const searchQuery = search.value.trim();
     loadingMore.value = true;
     try {
       const query: LogQuery = {
-        skip: commits.value.length,
+        skip: offset,
         limit: PAGE_SIZE,
         branch: queryBranch.value,
-        search: search.value.trim() || null,
+        search: searchQuery || null,
         all_branches: queryAllBranches.value,
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
+      if (requestSequence !== logRequestSequence || repo?.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       commits.value.push(...result);
-      hasMore.value = !search.value.trim() && result.length >= PAGE_SIZE;
+      hasMore.value = !searchQuery && result.length >= PAGE_SIZE;
     } catch {
+      if (requestSequence !== logRequestSequence || repo?.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       // 忽略分页错误
     } finally {
-      loadingMore.value = false;
+      if (requestSequence === logRequestSequence) loadingMore.value = false;
     }
   }
 
@@ -159,10 +182,28 @@ export const useCommitStore = defineStore("commit", () => {
     loadCommits();
   }
 
-  /** 切换仓库时重置浏览状态（旧分支在新仓库不存在） */
+  /**
+   * 设置文件历史的路径筛选。
+   * @param {string} path - 文件历史输入路径，可为绝对路径或快捷入口提供的仓库相对路径
+   * @returns {void} 更新共享路径筛选
+   */
+  function setFileHistoryPath(path: string): void {
+    fileHistoryPath.value = path;
+  }
+
+  /**
+   * 切换仓库时重置分支、搜索和文件路径浏览状态。
+   * @returns {Promise<void>} 加载新仓库第一页提交
+   */
   async function switchRepo() {
+    logRequestSequence++;
+    commits.value = [];
+    hasMore.value = true;
+    loading.value = false;
+    loadingMore.value = false;
     browseBranch.value = null;
     search.value = "";
+    fileHistoryPath.value = "";
     scope.value = "current";
     await loadCommits();
   }
@@ -175,6 +216,7 @@ export const useCommitStore = defineStore("commit", () => {
     scope,
     browseBranch,
     search,
+    fileHistoryPath,
     queryBranch,
     queryAllBranches,
     currentBranch,
@@ -185,6 +227,7 @@ export const useCommitStore = defineStore("commit", () => {
     setScope,
     browseTo,
     setSearch,
+    setFileHistoryPath,
     switchRepo,
   };
 });

@@ -42,7 +42,7 @@ pub struct TagInfo {
     pub subject: String,
     /// 是否为附注标签（annotated）
     pub is_annotated: bool,
-    /// 标签创建日期（仅附注标签）
+    /// 标签创建日期（轻量标签使用目标提交日期）
     pub date: Option<String>,
 }
 
@@ -167,7 +167,7 @@ impl GitExecutor {
             repo_path,
             &[
                 "for-each-ref",
-                "--format=%(refname:short)%00%(objectname)%00%(subject)%00%(objecttype)%00%(creatordate)",
+                "--format=%(refname:short)%00%(objectname)%00%(*objectname)%00%(subject)%00%(objecttype)%00%(creatordate:iso8601)",
                 "refs/tags/",
             ],
         )
@@ -186,18 +186,24 @@ impl GitExecutor {
             }
 
             let fields: Vec<&str> = line.split('\0').collect();
-            if fields.len() < 5 {
+            if fields.len() < 6 {
                 continue;
             }
 
             let name = fields[0].to_string();
-            let commit_hash = fields[1].to_string();
-            let subject = fields[2].to_string();
-            let object_type = fields[3].to_string();
-            let date_str = fields[4].to_string();
+            let object_hash = fields[1].to_string();
+            let peeled_hash = fields[2].to_string();
+            let subject = fields[3].to_string();
+            let object_type = fields[4].to_string();
+            let date_str = fields[5].to_string();
 
             let is_annotated = object_type == "tag";
-            let date = if is_annotated && !date_str.is_empty() {
+            let commit_hash = if is_annotated && !peeled_hash.is_empty() {
+                peeled_hash
+            } else {
+                object_hash
+            };
+            let date = if !date_str.is_empty() {
                 Some(date_str)
             } else {
                 None

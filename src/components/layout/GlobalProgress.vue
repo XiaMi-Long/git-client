@@ -1,7 +1,7 @@
 <!--
   @component GlobalProgress
   @description
-    顶部全局进度条（VS Code 风格）。任何 git 操作（currentOp）或 fetch 进行中显示。
+    顶部全局进度条（VS Code 风格）。Git 操作（currentOp）进行中显示。
   @usage <GlobalProgress />
   @changeLog
     - 2026-07-30: Created. 交互反馈优化 - 操作明显反馈。
@@ -9,13 +9,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useSelectionStore } from "@/stores/selection";
-import { useRepoStore } from "@/stores/repo";
 
 const selectionStore = useSelectionStore();
-const repoStore = useRepoStore();
 
-// 有操作进行中（含后台 fetch）就显示进度条
-const busy = computed(() => !!selectionStore.currentOp || repoStore.fetching);
+// 有 Git 操作进行中就显示进度条
+const busy = computed(() => !!selectionStore.currentOp);
 </script>
 
 <template>

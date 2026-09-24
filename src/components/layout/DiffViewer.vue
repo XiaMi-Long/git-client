@@ -9,6 +9,7 @@
   @changeLog
     - 2026-07-29: Created. 布局骨架与视图切换按钮。
     - 2026-07-29: Updated. 完整 diff 渲染、词级高亮、双栏、懒加载、换行（8.1-8.5）。
+    - 2026-09-24: Updated. 提交详情跟随提交所属仓库加载。
 -->
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
@@ -55,6 +56,8 @@ watch(
     selectionStore.selectedFile,
     selectionStore.type,
     selectionStore.commitHash,
+    selectionStore.commitRepositoryPath,
+    selectionStore.diffRefreshKey,
     props.externalDiffs,
     props.externalFile,
   ],
@@ -72,7 +75,7 @@ watch(
         ) ?? null;
       return;
     }
-    const path = repoStore.activeRepo?.path;
+    const path = selectionStore.commitRepositoryPath ?? repoStore.activeRepo?.path;
     const file = selectionStore.selectedFile;
     if (!path || !file) {
       fileDiff.value = null;

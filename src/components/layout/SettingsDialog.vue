@@ -7,20 +7,162 @@
   @changeLog
     - 2026-07-30: Created. 设置弹窗（左右布局 + 动画）。
     - 2026-08-02: Redesigned. UI 改版：分支图谱导航 + 现代扁平控件（Segmented / 选项卡片 / 现代开关）。
+    - 2026-09-24: Updated. 历史视图设置扩展为六种浏览模式。
+    - 2026-09-24: Updated. 历史视图选择改为应用风格的可键盘操作菜单。
 -->
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, nextTick, ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useThemeStore } from "@/stores/theme";
 import { useSettingsStore } from "@/stores/settings";
+import type { CommitHistoryView } from "@/stores/settings";
 import { useDialog } from "@/composables/useDialog";
-import { checkForUpdate, relaunchApp } from "@/utils/updater";
+// 3.0 开发期间暂时停用 2.0 的手动更新检查。
+// import { checkForUpdate, relaunchApp } from "@/utils/updater";
 
 const emit = defineEmits<{ close: [] }>();
 
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
 const { dialogState, showMessage, showConfirm, onConfirm, onCancel } = useDialog();
+
+const historyViewOptions: Array<{ value: CommitHistoryView; label: string }> = [
+  { value: "classic", label: "提交列表" },
+  { value: "swimlane", label: "作者泳道" },
+  { value: "graph", label: "分支拓扑" },
+  { value: "file", label: "文件历史" },
+  { value: "release", label: "版本标签" },
+  { value: "activity", label: "提交活动" },
+];
+const historyViewPickerOpen = ref(false);
+const historyViewPickerIndex = ref(0);
+const historyViewPickerRoot = ref<HTMLElement | null>(null);
+const historyViewPickerTrigger = ref<HTMLButtonElement | null>(null);
+const selectedHistoryViewOption = computed(() =>
+  historyViewOptions.find((option) => option.value === settingsStore.commitHistoryView) ?? historyViewOptions[0]
+);
+const selectedHistoryViewIndex = computed(() =>
+  Math.max(0, historyViewOptions.findIndex((option) => option.value === settingsStore.commitHistoryView))
+);
+
+/**
+ * 打开历史视图选项并将焦点放到指定选项。
+ * @param {number} index - 初始聚焦选项的索引
+ * @returns {Promise<void>} 完成菜单展开和焦点设置
+ */
+async function openHistoryViewPicker(index: number): Promise<void> {
+  historyViewPickerIndex.value = (index + historyViewOptions.length) % historyViewOptions.length;
+  historyViewPickerOpen.value = true;
+  await nextTick();
+  historyViewPickerRoot.value
+    ?.querySelector<HTMLButtonElement>(`[data-history-view-index="${historyViewPickerIndex.value}"]`)
+    ?.focus();
+}
+
+/**
+ * 收起历史视图选项菜单。
+ * @param {boolean} [returnFocus] - 是否将焦点返回到触发按钮
+ * @returns {void} 更新菜单状态并按需恢复焦点
+ */
+function closeHistoryViewPicker(returnFocus = true): void {
+  historyViewPickerOpen.value = false;
+  if (returnFocus) void nextTick(() => historyViewPickerTrigger.value?.focus());
+}
+
+/**
+ * 切换历史视图选择菜单的展开状态。
+ * @returns {void} 展开菜单或收起当前菜单
+ */
+function toggleHistoryViewPicker(): void {
+  if (historyViewPickerOpen.value) {
+    closeHistoryViewPicker(false);
+    return;
+  }
+  void openHistoryViewPicker(selectedHistoryViewIndex.value);
+}
+
+/**
+ * 持久化选择的历史视图并关闭菜单。
+ * @param {CommitHistoryView} value - 目标历史视图
+ * @returns {void} 更新设置并将焦点返回触发按钮
+ */
+function selectHistoryView(value: CommitHistoryView): void {
+  settingsStore.setCommitHistoryView(value);
+  closeHistoryViewPicker();
+}
+
+/**
+ * 在菜单中移动选项焦点并循环到列表另一端。
+ * @param {number} index - 要聚焦的选项索引
+ * @returns {void} 更新活动索引并聚焦对应选项
+ */
+function focusHistoryViewOption(index: number): void {
+  historyViewPickerIndex.value = (index + historyViewOptions.length) % historyViewOptions.length;
+  void nextTick(() => {
+    historyViewPickerRoot.value
+      ?.querySelector<HTMLButtonElement>(`[data-history-view-index="${historyViewPickerIndex.value}"]`)
+      ?.focus();
+  });
+}
+
+/**
+ * 处理历史视图菜单中的方向键、确认键、Home/End、Escape 和 Tab。
+ * @param {KeyboardEvent} event - 菜单选项的键盘事件
+ * @returns {void} 移动焦点、确认选择或收起菜单
+ */
+function onHistoryViewMenuKeydown(event: KeyboardEvent): void {
+  const activeIndex = historyViewPickerIndex.value;
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    focusHistoryViewOption(activeIndex + 1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusHistoryViewOption(activeIndex - 1);
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    focusHistoryViewOption(0);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    focusHistoryViewOption(historyViewOptions.length - 1);
+  } else if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    selectHistoryView(historyViewOptions[activeIndex].value);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeHistoryViewPicker();
+  } else if (event.key === "Tab") {
+    closeHistoryViewPicker(false);
+  }
+}
+
+/**
+ * 处理触发按钮的键盘展开和 Escape 收起。
+ * @param {KeyboardEvent} event - 历史视图触发按钮的键盘事件
+ * @returns {void} 展开菜单、移动焦点或恢复对话框 Escape 行为
+ */
+function onHistoryViewTriggerKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && historyViewPickerOpen.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeHistoryViewPicker();
+  } else if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+    const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+    void openHistoryViewPicker(selectedHistoryViewIndex.value + offset);
+  }
+}
+
+/**
+ * 点击视图选择器以外区域时关闭菜单。
+ * @param {MouseEvent} event - 文档级鼠标按下事件
+ * @returns {void} 仅在点击外部时收起菜单
+ */
+function onHistoryViewPointerDown(event: MouseEvent): void {
+  if (historyViewPickerOpen.value && !historyViewPickerRoot.value?.contains(event.target as Node)) {
+    closeHistoryViewPicker(false);
+  }
+}
 
 // 分类（含描述，右侧头部展示）
 const categories = [
@@ -49,6 +191,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+onMounted(() => document.addEventListener("mousedown", onHistoryViewPointerDown));
+onUnmounted(() => document.removeEventListener("mousedown", onHistoryViewPointerDown));
 
 // git 版本检测
 const gitVersion = ref("");
@@ -65,7 +209,7 @@ async function detectGit() {
   }
 }
 
-// 检查更新
+/* 3.0 开发期间暂时停用 2.0 的手动更新检查逻辑。
 const updateState = ref<"idle" | "checking" | "done" | "error">("idle");
 const updateMsg = ref("");
 async function checkUpdate() {
@@ -90,6 +234,7 @@ async function checkUpdate() {
     await showMessage("检查更新失败", r.message);
   }
 }
+*/
 </script>
 
 <template>
@@ -199,39 +344,57 @@ async function checkUpdate() {
                   </div>
 
                   <div class="setting-row">
-                    <label>提交列表</label>
-                    <div class="segmented">
+                    <label id="commit-history-view-label">提交历史视图</label>
+                    <div ref="historyViewPickerRoot" class="history-view-picker">
                       <button
-                        class="seg"
-                        :class="{ active: settingsStore.commitListMode === 'classic' }"
-                        @click="settingsStore.setCommitListMode('classic')"
+                        ref="historyViewPickerTrigger"
+                        class="history-view-trigger"
+                        type="button"
+                        role="combobox"
+                        aria-haspopup="listbox"
+                        aria-labelledby="commit-history-view-label"
+                        aria-controls="commit-history-view-options"
+                        :aria-expanded="historyViewPickerOpen"
+                        :aria-activedescendant="historyViewPickerOpen ? `history-view-option-${historyViewOptions[historyViewPickerIndex].value}` : undefined"
+                        @click="toggleHistoryViewPicker"
+                        @keydown="onHistoryViewTriggerKeydown"
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <line x1="8" y1="6" x2="21" y2="6" />
-                          <line x1="8" y1="12" x2="21" y2="12" />
-                          <line x1="8" y1="18" x2="21" y2="18" />
-                          <line x1="3" y1="6" x2="3.01" y2="6" />
-                          <line x1="3" y1="12" x2="3.01" y2="12" />
-                          <line x1="3" y1="18" x2="3.01" y2="18" />
+                        <span>{{ selectedHistoryViewOption.label }}</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
                         </svg>
-                        经典列表
                       </button>
-                      <button
-                        class="seg"
-                        :class="{ active: settingsStore.commitListMode === 'swimlane' }"
-                        @click="settingsStore.setCommitListMode('swimlane')"
+                      <div
+                        v-if="historyViewPickerOpen"
+                        id="commit-history-view-options"
+                        class="history-view-options"
+                        role="listbox"
+                        aria-labelledby="commit-history-view-label"
+                        @keydown.stop="onHistoryViewMenuKeydown"
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <rect x="3" y="4" width="4" height="16" rx="1" />
-                          <rect x="10" y="4" width="4" height="16" rx="1" />
-                          <rect x="17" y="4" width="4" height="16" rx="1" />
-                        </svg>
-                        泳道图
-                      </button>
+                        <button
+                          v-for="(option, index) in historyViewOptions"
+                          :id="`history-view-option-${option.value}`"
+                          :key="option.value"
+                          :data-history-view-index="index"
+                          class="history-view-option"
+                          :class="{ selected: settingsStore.commitHistoryView === option.value }"
+                          type="button"
+                          role="option"
+                          :aria-selected="settingsStore.commitHistoryView === option.value"
+                          :tabindex="historyViewPickerIndex === index ? 0 : -1"
+                          @focus="historyViewPickerIndex = index"
+                          @click="selectHistoryView(option.value)"
+                        >
+                          <span>{{ option.label }}</span>
+                          <span v-if="settingsStore.commitHistoryView === option.value" class="history-view-check" aria-hidden="true">✓</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div class="hint">泳道图：行 = 提交，列 = 作者（当前用户第一，其余按提交频率），可横向滚动</div>
+                  <div class="hint">可在历史工具栏快速切换列表、作者泳道、分支拓扑、文件历史、版本标签和提交活动。</div>
+                  <div class="hint">作者泳道：行 = 提交，列 = 作者（当前用户第一，其余按提交频率），可横向滚动。</div>
 
                   <div class="hint">提交记录列表中的时间展示：相对「2 小时前」或绝对「2026-08-01 14:30」</div>
                 </div>
@@ -396,6 +559,7 @@ async function checkUpdate() {
                   <div class="about-row"><label>版本</label><span class="mono">0.2.0</span></div>
                   <div class="about-row"><label>仓库</label><span class="mono">XiaMi-Long/git-client</span></div>
                   <div class="about-row"><label>技术栈</label><span class="mono">Tauri 2 · Vue 3 · Rust</span></div>
+                  <!-- 3.0 开发期间暂时隐藏 2.0 的检查更新入口。
                   <div class="about-row">
                     <label>更新</label>
                     <div class="about-update">
@@ -406,6 +570,7 @@ async function checkUpdate() {
                       <span v-else-if="updateState === 'done'" class="update-done">已下载，重启生效</span>
                     </div>
                   </div>
+                  -->
                 </div>
               </div>
             </div>
@@ -671,6 +836,91 @@ async function checkUpdate() {
 .setting-row input[type="text"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.history-view-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-view-trigger {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--fg-primary);
+  background: var(--bg-input);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.history-view-trigger:hover,
+.history-view-picker:focus-within .history-view-trigger {
+  border-color: var(--border-strong);
+}
+
+.history-view-trigger:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.history-view-trigger svg {
+  flex-shrink: 0;
+  color: var(--fg-tertiary);
+}
+
+.history-view-options {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.history-view-option {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg-secondary);
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-view-option:hover,
+.history-view-option:focus-visible,
+.history-view-option.selected {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.history-view-check {
+  color: var(--accent);
+  font-size: 13px;
 }
 
 /* ===== Segmented Control（分段控制） ===== */

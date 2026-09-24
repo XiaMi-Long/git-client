@@ -3,6 +3,19 @@ import { createPinia } from "pinia";
 import App from "./App.vue";
 import "./styles/main.css";
 
+/**
+ * 阻止正式环境显示 WebView 的原生浏览器右键菜单。
+ * @param {MouseEvent} event - 用户触发的原生右键菜单事件
+ * @returns {void} 无返回值
+ */
+function preventNativeContextMenu(event: MouseEvent): void {
+  event.preventDefault();
+}
+
+if (!import.meta.env.DEV) {
+  window.addEventListener("contextmenu", preventNativeContextMenu);
+}
+
 const app = createApp(App);
 app.use(createPinia());
 app.mount("#app");

@@ -11,11 +11,13 @@
     - 选中：整行 accent 实底白字（与 V1 一致），右侧 diff 联动
     - 右键：cherry-pick / 复制提交信息 / 复制哈希（复用 ContextMenu）
   @usage
-    由 CommitList 在 settings.commitListMode === 'swimlane' 时渲染，替换经典列表体。
+    由 CommitList 在 settings.commitHistoryView === 'swimlane' 时显示，保留独立滚动位置。
   @changeLog
     - 2026-08-09: Created. 泳道图 V2 首版。
     - 2026-08-15: Updated. 未推送提交徽章（本地领先上游），数据来自 commitStore.unpushedHashes。
     - 2026-08-15: Updated. 时间列加宽（默认 110px）并支持拖拽调节，与作者列一致。
+    - 2026-09-24: Updated. 接入统一历史视图切换并保留泳道滚动状态。
+    - 2026-09-24: Updated. 仅在泳道对应仓库中高亮当前提交。
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
@@ -212,8 +214,14 @@ onUnmounted(() => {
 
 // ===== 选中 / hover =====
 const hoverHash = ref<string | null>(null);
-function isSelected(c: CommitInfo) {
-  return selectionStore.commitHash === c.hash;
+/**
+ * 判断提交是否为当前仓库上下文中的选中项。
+ * @param {CommitInfo} c - 当前泳道提交
+ * @returns {boolean} 提交哈希和仓库上下文是否同时匹配
+ */
+function isSelected(c: CommitInfo): boolean {
+  return selectionStore.commitHash === c.hash
+    && selectionStore.commitRepositoryPath === repoStore.activeRepo?.path;
 }
 
 // ===== 右键菜单 =====

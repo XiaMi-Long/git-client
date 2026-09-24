@@ -2,20 +2,21 @@
   @component CommitList
   @description
     提交列表区 - 分支范围切换、工作区伪节点、提交列表。
-    含 mini 分支图谱（6.4，SVG 节点 + 连线 + 分支着色）、虚拟滚动（6.3）、提交右键 cherry-pick（11.1）。
+    含虚拟滚动（6.3）、提交右键 cherry-pick（11.1）。
   @workflow
     1. 仓库切换 -> loadCommits 加载第一页。
     2. 虚拟滚动：只渲染可视区 + 缓冲，滚动到底加载下一页（6.2 / 6.3）。
-    3. computeGraph 计算每个提交的 lane 与父子连线，SVG 渲染图谱（6.4）。
-    4. 右键提交 -> cherry-pick（11.1）。
+    3. 右键提交 -> cherry-pick（11.1）。
   @changeLog
     - 2026-07-29: Created. 布局骨架。
     - 2026-07-29: Updated. 提交列表渲染、分页、范围切换（6.x）、工作区伪节点（7.x）、提交右键（11.1）。
     - 2026-07-30: Updated. mini 图谱 + 分支着色 + 虚拟滚动（6.3 / 6.4）。
     - 2026-08-15: Updated. 未推送提交集合上移到 commitStore，经典列表与泳道图共用单一数据源。
+    - 2026-09-24: Updated. 移除经典列表左侧的分支图谱。
+    - 2026-09-24: Updated. 增加日期分组、多视图选择器及扩展历史视图容器。
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
@@ -23,11 +24,13 @@ import { useSelectionStore } from "@/stores/selection";
 import { useSettingsStore } from "@/stores/settings";
 import { useDialog } from "@/composables/useDialog";
 import type { CommitInfo } from "@/types/git";
+import type { CommitHistoryView } from "@/stores/settings";
 import ContextMenu from "./ContextMenu.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import SquashPickDialog from "./SquashPickDialog.vue";
 import StashCreateDialog from "./StashCreateDialog.vue";
 import CommitSwimlane from "./CommitSwimlane.vue";
+import CommitHistoryViews from "./CommitHistoryViews.vue";
 
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
@@ -39,6 +42,31 @@ const { dialogState, showMessage, onConfirm, onCancel } = useDialog();
 const pulling = ref(false);
 const pushing = ref(false);
 const squashOpen = ref(false);
+const viewPickerOpen = ref(false);
+const viewPickerTrigger = ref<HTMLButtonElement | null>(null);
+const viewPickerMenu = ref<HTMLElement | null>(null);
+const groupByDate = ref(true); // 默认开启经典列表日期分组
+
+const historyViewOptions: Array<{ mode: CommitHistoryView; label: string; description: string }> = [
+  { mode: "classic", label: "提交列表", description: "按提交时间顺序浏览与搜索" },
+  { mode: "swimlane", label: "作者泳道", description: "按作者查看提交分布" },
+  { mode: "graph", label: "分支拓扑", description: "查看分支分叉与合并关系" },
+  { mode: "file", label: "文件历史", description: "只看某个文件或目录的提交" },
+  { mode: "release", label: "版本标签", description: "按标签浏览版本提交范围" },
+  { mode: "activity", label: "提交活动", description: "查看近 180 天的每日提交" },
+];
+
+const currentHistoryView = computed(() =>
+  historyViewOptions.find((option) => option.mode === settingsStore.commitHistoryView) ?? historyViewOptions[0]
+);
+const isSupplementaryView = computed(() =>
+  !["classic", "swimlane"].includes(settingsStore.commitHistoryView)
+);
+const supplementaryView = computed(() =>
+  isSupplementaryView.value
+    ? settingsStore.commitHistoryView as Extract<CommitHistoryView, "graph" | "file" | "release" | "activity">
+    : "graph"
+);
 
 // 储藏：下拉三选项 + 命名弹窗
 const stashScope = ref<"unstaged" | "staged" | "all" | null>(null);
@@ -161,6 +189,116 @@ watch(
   }
 );
 
+// 刷新仓库引用后，更新当前已展开的远程提交提示列表
+watch(
+  () => repoStore.activeRepo?.branches,
+  (branches) => {
+    if (branches && remotePullsOpen.value && showRemoteHint.value) {
+      loadRemotePulls();
+    }
+  }
+);
+
+/**
+ * 重新读取当前仓库的本地状态和当前 diff。
+ * @returns {Promise<void>} 刷新完成
+ */
+async function handleRefresh(): Promise<void> {
+  if (!repoStore.activeRepo || selectionStore.isBusy) return;
+  await selectionStore.refreshLocalState();
+}
+
+/**
+ * 获取远程引用并展示执行结果。
+ * @returns {Promise<void>} Fetch 及结果提示完成
+ */
+async function handleFetchRemote(): Promise<void> {
+  if (!repoStore.activeRepo || selectionStore.isBusy) return;
+  // 等待 Fetch 与后续仓库刷新全部结束，再显示结果
+  const result = await selectionStore.fetchRemote();
+  if (result) {
+    await showMessage(result.success ? "获取远程" : "获取远程失败", result.message);
+  }
+}
+
+/**
+ * 切换提交历史视图并关闭选择菜单。
+ * @param {CommitHistoryView} mode - 目标提交历史视图
+ * @returns {void} 持久化目标视图
+ */
+function selectHistoryView(mode: CommitHistoryView): void {
+  settingsStore.setCommitHistoryView(mode);
+  viewPickerOpen.value = false;
+  nextTick(() => viewPickerTrigger.value?.focus());
+}
+
+/**
+ * 将焦点移动到历史视图菜单中的指定项目。
+ * @param {"first" | "last" | "selected"} target - 菜单焦点目标
+ * @returns {void} 聚焦目标菜单项
+ */
+function focusHistoryMenuItem(target: "first" | "last" | "selected"): void {
+  const items = Array.from(viewPickerMenu.value?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']") ?? []);
+  if (items.length === 0) return;
+
+  const selectedIndex = items.findIndex((item) => item.getAttribute("aria-checked") === "true");
+  const index = target === "first" ? 0 : target === "last" ? items.length - 1 : Math.max(0, selectedIndex);
+  items[index].focus();
+}
+
+/**
+ * 展开或收起历史视图菜单，展开时聚焦当前视图。
+ * @returns {void} 更新菜单状态并安排焦点
+ */
+function toggleHistoryViewPicker(): void {
+  viewPickerOpen.value = !viewPickerOpen.value;
+  if (viewPickerOpen.value) nextTick(() => focusHistoryMenuItem("selected"));
+}
+
+/**
+ * 处理历史视图菜单的方向键和首尾导航。
+ * @param {KeyboardEvent} event - 当前菜单键盘事件
+ * @returns {void} 按键盘方向移动菜单焦点
+ */
+function onHistoryViewMenuKeydown(event: KeyboardEvent): void {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = Array.from(viewPickerMenu.value?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']") ?? []);
+  if (items.length === 0) return;
+
+  event.preventDefault();
+  const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+  let nextIndex = currentIndex < 0 ? 0 : currentIndex;
+  if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = items.length - 1;
+  else if (event.key === "ArrowDown") nextIndex = (nextIndex + 1) % items.length;
+  else nextIndex = (nextIndex - 1 + items.length) % items.length;
+  items[nextIndex].focus();
+}
+
+/**
+ * 焦点离开菜单后关闭菜单并保留新的焦点位置。
+ * @param {FocusEvent} event - 当前焦点离开事件
+ * @returns {void} 在焦点移出菜单时收起菜单
+ */
+function onHistoryViewMenuFocusout(event: FocusEvent): void {
+  const nextTarget = event.relatedTarget as Node | null;
+  if (nextTarget && viewPickerMenu.value?.contains(nextTarget)) return;
+  viewPickerOpen.value = false;
+}
+
+/**
+ * 从历史视图触发按钮用方向键打开菜单并定位首项或末项。
+ * @param {KeyboardEvent} event - 当前触发按钮键盘事件
+ * @returns {void} 按键盘方向打开并聚焦菜单
+ */
+function onHistoryViewTriggerKeydown(event: KeyboardEvent): void {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  viewPickerOpen.value = true;
+  const target = event.key === "ArrowUp" || event.key === "End" ? "last" : "first";
+  nextTick(() => focusHistoryMenuItem(target));
+}
+
 async function handlePull() {
   if (pulling.value || !repoStore.activeRepo) return;
   pulling.value = true;
@@ -183,8 +321,16 @@ async function handlePush() {
   }
 }
 
-// 快捷键 Ctrl+P 拉取，Ctrl+Shift+P 推送
+/**
+ * 处理历史菜单 Escape 和 Git 拉取/推送快捷键。
+ * @param {KeyboardEvent} e - 当前键盘事件
+ * @returns {void} 关闭视图菜单或触发对应远程操作
+ */
 function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && viewPickerOpen.value) {
+    viewPickerOpen.value = false;
+    nextTick(() => viewPickerTrigger.value?.focus());
+  }
   if (e.ctrlKey && e.key.toLowerCase() === "p") {
     e.preventDefault();
     if (e.shiftKey) handlePush();
@@ -196,9 +342,17 @@ onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 // 点击外部关闭储藏下拉
-function onDocDown(e: MouseEvent) {
+/**
+ * 点击下拉菜单外部时收起菜单。
+ * @param {MouseEvent} e - 文档级鼠标事件
+ * @returns {void} 关闭失焦的下拉菜单
+ */
+function onDocDown(e: MouseEvent): void {
   if (stashDropdownOpen.value && !(e.target as HTMLElement).closest(".stash-dropdown-wrap")) {
     stashDropdownOpen.value = false;
+  }
+  if (viewPickerOpen.value && !(e.target as HTMLElement).closest(".history-view-picker")) {
+    viewPickerOpen.value = false;
   }
 }
 onMounted(() => document.addEventListener("mousedown", onDocDown));
@@ -210,6 +364,26 @@ const listEl = ref<HTMLElement | null>(null);
 const ROW_HEIGHT = 27;
 // 虚拟滚动缓冲行数
 const BUFFER = 8;
+
+interface CommitDateRow {
+  /** 行类型 */
+  kind: "date";
+  /** 虚拟滚动稳定键 */
+  key: string;
+  /** 日期分组标题 */
+  label: string;
+}
+
+interface CommitEntryRow {
+  /** 行类型 */
+  kind: "commit";
+  /** 虚拟滚动稳定键 */
+  key: string;
+  /** 提交数据 */
+  commit: CommitInfo;
+}
+
+type CommitListRow = CommitDateRow | CommitEntryRow;
 
 // 未提交文件数
 const workingCount = computed(() => {
@@ -231,11 +405,6 @@ const BRANCH_COLORS = [
   "#c586c0", // 粉
 ];
 
-/** lane -> 颜色 */
-function laneColor(lane: number): string {
-  return BRANCH_COLORS[lane % BRANCH_COLORS.length];
-}
-
 /** 分支名 -> 颜色（ref 徽章用，按名 hash 分配稳定色） */
 function branchColor(name: string): string {
   let hash = 0;
@@ -245,103 +414,45 @@ function branchColor(name: string): string {
   return BRANCH_COLORS[Math.abs(hash) % BRANCH_COLORS.length];
 }
 
-// ===== mini 图谱算法（6.4） =====
-interface GraphNode {
-  hash: string;
-  lane: number;
-  parents: { hash: string; lane: number; index: number }[];
-}
-
-/** 计算每个提交的 lane（列）与父子连线 */
-function computeGraph(commits: CommitInfo[]): GraphNode[] {
-  const indexMap = new Map<string, number>();
-  commits.forEach((c, i) => indexMap.set(c.hash, i));
-  // 每列活跃的"下一目标 hash"
-  const lanes: string[] = [];
-  return commits.map((c) => {
-    // 找 c 是否已在某 lane（作为某提交的父）
-    let lane = lanes.indexOf(c.hash);
-    if (lane === -1) {
-      lane = lanes.length;
-      lanes.push(c.hash);
-    }
-    const parents = c.parents.map((p, pi) => {
-      let pl: number;
-      if (pi === 0) {
-        // 第一父继承当前 lane
-        lanes[lane] = p;
-        pl = lane;
-      } else {
-        // 第二父及以后，找或新建 lane
-        pl = lanes.indexOf(p);
-        if (pl === -1) {
-          pl = lanes.length;
-          lanes.push(p);
-        }
-      }
-      return { hash: p, lane: pl, index: indexMap.get(p) ?? -1 };
-    });
-    return { hash: c.hash, lane, parents };
-  });
-}
-
-const graph = computed(() => computeGraph(commitStore.commits));
-
 // ===== 虚拟滚动（6.3） =====
 const scrollTop = ref(0);
 const viewportHeight = ref(600);
 
-const totalHeight = computed(() => commitStore.commits.length * ROW_HEIGHT);
+/**
+ * 构造经典列表的提交行和可选日期分组行。
+ * @returns {CommitListRow[]} 当前已加载历史对应的虚拟行
+ */
+function buildCommitRows(): CommitListRow[] {
+  const rows: CommitListRow[] = [];
+  let previousDate = "";
+  for (const commit of commitStore.commits) {
+    const date = new Date(commit.commit_date);
+    const dateKey = Number.isNaN(date.getTime()) ? commit.commit_date.slice(0, 10) : date.toLocaleDateString("sv-SE");
+    if (groupByDate.value && dateKey !== previousDate) {
+      const label = Number.isNaN(date.getTime())
+        ? dateKey
+        : date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+      rows.push({ kind: "date", key: `date-${dateKey}-${rows.length}`, label });
+    }
+    rows.push({ kind: "commit", key: commit.hash, commit });
+    previousDate = dateKey;
+  }
+  return rows;
+}
+
+const listRows = computed(buildCommitRows);
+const totalHeight = computed(() => listRows.value.length * ROW_HEIGHT);
 const visibleStart = computed(() =>
   Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - BUFFER)
 );
 const visibleEnd = computed(() =>
   Math.min(
-    commitStore.commits.length,
+    listRows.value.length,
     Math.ceil((scrollTop.value + viewportHeight.value) / ROW_HEIGHT) + BUFFER
   )
 );
-const visibleCommits = computed(() =>
-  commitStore.commits.slice(visibleStart.value, visibleEnd.value)
-);
+const visibleRows = computed(() => listRows.value.slice(visibleStart.value, visibleEnd.value));
 const offsetY = computed(() => visibleStart.value * ROW_HEIGHT);
-
-// 图谱节点（可视区内）
-const visibleNodes = computed(() =>
-  visibleCommits.value.map((c, i) => {
-    const gi = visibleStart.value + i;
-    const lane = graph.value[gi]?.lane ?? 0;
-    return { cx: lane * 4 + 6, cy: i * ROW_HEIGHT + 13, color: laneColor(lane) };
-  })
-);
-
-// 图谱连线（可视区内，跨可视区截断到边缘）
-const visibleEdges = computed(() => {
-  const edges: { id: string; x1: number; y1: number; x2: number; y2: number; color: string }[] = [];
-  const maxLocal = visibleCommits.value.length;
-  visibleCommits.value.forEach((c, i) => {
-    const gi = visibleStart.value + i;
-    const node = graph.value[gi];
-    if (!node) return;
-    const fromX = node.lane * 4 + 6;
-    const fromY = i * ROW_HEIGHT + 13;
-    node.parents.forEach((p) => {
-      if (p.index < 0) return;
-      const pLocal = p.index - visibleStart.value;
-      // 截断到可视区边缘
-      const clamped = Math.max(0, Math.min(maxLocal, pLocal));
-      edges.push({
-        id: `${gi}-${p.hash}`,
-        x1: fromX,
-        y1: fromY,
-        x2: p.lane * 4 + 6,
-        y2: clamped * ROW_HEIGHT + 13,
-        color: laneColor(p.lane),
-      });
-    });
-  });
-  return edges;
-});
 
 function onScroll() {
   const el = listEl.value;
@@ -362,10 +473,17 @@ function updateViewport() {
 onMounted(() => updateViewport());
 onUnmounted(() => {});
 
+watch(
+  () => settingsStore.commitHistoryView,
+  () => nextTick(updateViewport)
+);
+
 // 仓库切换时重置浏览状态并重新加载
 watch(
   () => repoStore.activeRepo?.id,
   () => {
+    scrollTop.value = 0;
+    if (listEl.value) listEl.value.scrollTop = 0;
     commitStore.switchRepo();
   },
   { immediate: true }
@@ -374,9 +492,43 @@ watch(
 // ===== 提交右键 cherry-pick（11.1） =====
 const commitMenu = ref<{ x: number; y: number; commit: CommitInfo } | null>(null);
 
-function onCommitContextmenu(e: MouseEvent, c: CommitInfo) {
+/**
+ * 比较仓库根路径，按 Windows 路径规则忽略大小写。
+ * @param {string} firstPath - 第一个仓库根路径
+ * @param {string | undefined} secondPath - 第二个仓库根路径
+ * @returns {boolean} 两个路径是否指向同一个仓库
+ */
+function sameRepositoryPath(firstPath: string, secondPath: string | undefined): boolean {
+  if (!secondPath) return false;
+  const first = firstPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const second = secondPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const windowsPath = /^[a-z]:\//i.test(first) || first.startsWith("//");
+  return windowsPath
+    ? first.toLowerCase() === second.toLowerCase()
+    : first === second;
+}
+
+/**
+ * 打开当前仓库提交的上下文菜单；外部仓库提交保持只读。
+ * @param {MouseEvent} e - 提交行右键事件
+ * @param {CommitInfo} c - 当前提交
+ * @param {string} [repositoryPath] - 提交所属仓库
+ * @returns {void} 显示可用于当前仓库的提交菜单
+ */
+function onCommitContextmenu(e: MouseEvent, c: CommitInfo, repositoryPath?: string): void {
   e.preventDefault();
+  if (repositoryPath && !sameRepositoryPath(repositoryPath, repoStore.activeRepo?.path)) return;
   commitMenu.value = { x: e.clientX, y: e.clientY, commit: c };
+}
+
+/**
+ * 选择历史视图中的提交，并使用事件携带的仓库上下文读取详情。
+ * @param {string} hash - 完整提交哈希
+ * @param {string} [repositoryPath] - 提交所属仓库；其他历史视图默认使用当前仓库
+ * @returns {void} 更新右侧提交详情
+ */
+function selectHistoryCommit(hash: string, repositoryPath?: string): void {
+  selectionStore.selectCommit(hash, repositoryPath);
 }
 
 function closeCommitMenu() {
@@ -401,9 +553,23 @@ function commitMenuItems(c: CommitInfo) {
 
 <template>
   <div class="commit-list">
-    <!-- 工具栏：拉取/推送/压缩挑拣 + 范围切换 -->
+    <!-- 工具栏：仓库刷新、远程同步、压缩挑拣 + 范围切换 -->
     <div class="toolbar">
       <div class="toolbar-left">
+        <button
+          class="tool-btn"
+          :disabled="!repoStore.activeRepo || selectionStore.isBusy"
+          @click="handleRefresh"
+        >
+          {{ selectionStore.currentOp === "刷新中" ? "刷新中…" : "刷新" }}
+        </button>
+        <button
+          class="tool-btn"
+          :disabled="!repoStore.activeRepo || selectionStore.isBusy"
+          @click="handleFetchRemote"
+        >
+          {{ selectionStore.currentOp === "获取远程中" ? "获取中…" : "获取远程" }}
+        </button>
         <button class="tool-btn" :disabled="!repoStore.activeRepo || pulling" @click="handlePull">
           {{ pulling ? "拉取中…" : "拉取" }}
         </button>
@@ -434,34 +600,62 @@ function commitMenuItems(c: CommitInfo) {
           </div>
         </div>
         <!-- 浏览提示：紧跟按钮区域，方便用户看到当前浏览的分支 -->
-        <span v-if="commitStore.browseBranch" class="browse-hint">
+        <span v-if="commitStore.browseBranch && settingsStore.commitHistoryView !== 'release'" class="browse-hint">
           浏览: {{ commitStore.browseBranch }}
         </span>
       </div>
       <div class="toolbar-right">
-        <!-- 列表模式切换（图标）：经典列表 / 泳道图 -->
-        <button
-          class="tool-btn icon-btn"
-          :class="{ active: settingsStore.commitListMode === 'swimlane' }"
-          :title="settingsStore.commitListMode === 'classic' ? '切换为泳道图模式' : '切换为经典列表模式'"
-          @click="settingsStore.setCommitListMode(settingsStore.commitListMode === 'classic' ? 'swimlane' : 'classic')"
-        >
-          <!-- 泳道图图标（激活时显示） -->
-          <svg v-if="settingsStore.commitListMode === 'swimlane'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="4" height="16" rx="1" />
-            <rect x="10" y="4" width="4" height="16" rx="1" />
-            <rect x="17" y="4" width="4" height="16" rx="1" />
-          </svg>
-          <!-- 经典列表图标 -->
-          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" />
-            <line x1="3" y1="12" x2="3.01" y2="12" />
-            <line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-        </button>
+        <div class="history-view-picker">
+          <button
+            ref="viewPickerTrigger"
+            class="tool-btn history-view-trigger"
+            :aria-expanded="viewPickerOpen"
+            aria-haspopup="menu"
+            aria-controls="history-view-menu"
+            @click="toggleHistoryViewPicker"
+            @keydown="onHistoryViewTriggerKeydown"
+          >
+            视图：{{ currentHistoryView.label }} ▾
+          </button>
+          <div
+            v-show="viewPickerOpen"
+            id="history-view-menu"
+            ref="viewPickerMenu"
+            class="history-view-menu"
+            role="menu"
+            aria-label="提交历史视图"
+            @keydown="onHistoryViewMenuKeydown"
+            @focusout="onHistoryViewMenuFocusout"
+          >
+            <button
+              v-for="option in historyViewOptions"
+              :key="option.mode"
+              class="history-view-option"
+              :class="{ selected: settingsStore.commitHistoryView === option.mode }"
+              role="menuitemradio"
+              :aria-checked="settingsStore.commitHistoryView === option.mode"
+              @click="selectHistoryView(option.mode)"
+            >
+              <span class="view-option-copy">
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+              <span v-if="settingsStore.commitHistoryView === option.mode" aria-hidden="true">✓</span>
+            </button>
+            <button
+              v-if="settingsStore.commitHistoryView === 'classic'"
+              class="history-group-option"
+              role="menuitemcheckbox"
+              :aria-checked="groupByDate"
+              @click="groupByDate = !groupByDate"
+            >
+              <span>列表按日期分组</span>
+              <span>{{ groupByDate ? "✓" : "" }}</span>
+            </button>
+          </div>
+        </div>
+        <span v-if="settingsStore.commitHistoryView === 'release'" class="scope-label">范围由标签选择</span>
+        <template v-else>
         <button
           class="tool-btn"
           :class="{ active: commitStore.scope === 'current' && !commitStore.browseBranch }"
@@ -476,6 +670,7 @@ function commitMenuItems(c: CommitInfo) {
         >
           所有分支
         </button>
+        </template>
       </div>
     </div>
 
@@ -485,7 +680,6 @@ function commitMenuItems(c: CommitInfo) {
       :class="{ active: selectionStore.isWorkingMode }"
       @click="selectionStore.selectWorking()"
     >
-      <span class="graph-col">◎</span>
       <span class="working-label">工作区（分支：{{ currentBranch?.name ?? "-" }}）</span>
       <span class="working-count" :class="{ 'has-changes': workingCount > 0 }">{{ workingCount }}</span>
     </div>
@@ -515,7 +709,7 @@ function commitMenuItems(c: CommitInfo) {
           v-for="c in remotePulls"
           :key="c.hash"
           class="remote-pull-item"
-          :class="{ active: selectionStore.commitHash === c.hash }"
+          :class="{ active: selectionStore.commitHash === c.hash && selectionStore.commitRepositoryPath === repoStore.activeRepo?.path }"
           :title="c.subject"
           @click="selectionStore.selectCommit(c.hash)"
         >
@@ -527,61 +721,35 @@ function commitMenuItems(c: CommitInfo) {
       </div>
     </div>
 
-    <!-- 提交列表：经典列表（虚拟滚动） / 泳道图（V2，按设置切换） -->
-    <div v-if="settingsStore.commitListMode === 'classic'" ref="listEl" class="commit-scroll" @scroll="onScroll">
+    <!-- 经典提交列表：日期分组与提交行共用固定行高的虚拟滚动 -->
+    <div v-show="settingsStore.commitHistoryView === 'classic'" ref="listEl" class="commit-scroll" @scroll="onScroll">
       <div class="virtual-spacer" :style="{ height: totalHeight + 'px' }">
         <div class="virtual-translate" :style="{ transform: `translateY(${offsetY}px)` }">
-          <!-- mini 图谱 SVG -->
-          <svg
-            class="graph-svg"
-            :width="20"
-            :height="visibleCommits.length * ROW_HEIGHT"
-          >
-            <line
-              v-for="edge in visibleEdges"
-              :key="edge.id"
-              :x1="edge.x1"
-              :y1="edge.y1"
-              :x2="edge.x2"
-              :y2="edge.y2"
-              :stroke="edge.color"
-              stroke-width="1.5"
-            />
-            <circle
-              v-for="(n, i) in visibleNodes"
-              :key="i"
-              :cx="n.cx"
-              :cy="n.cy"
-              r="3"
-              :fill="n.color"
-            />
-          </svg>
-
-          <!-- 提交项 -->
-          <div
-            v-for="(c, i) in visibleCommits"
-            :key="c.hash"
-            class="commit-item"
-            :class="{ active: selectionStore.commitHash === c.hash }"
-            :title="c.subject"
-            @click="selectionStore.selectCommit(c.hash)"
-            @contextmenu="onCommitContextmenu($event, c)"
-          >
-            <span class="graph-col" />
-            <span class="commit-hash">{{ c.short_hash }}</span>
-            <span class="commit-subject">{{ c.subject }}</span>
-            <span class="commit-refs">
-              <span
-                v-for="r in visibleRefs(c)"
-                :key="r"
-                class="ref-badge"
-                :style="{ background: branchColor(r) }"
-              >{{ r }}</span>
-              <span v-if="commitStore.unpushedHashes.has(c.hash)" class="unpushed-badge" title="本地提交，尚未推送到远程">未推送</span>
-            </span>
-            <span class="commit-author">{{ c.author_name }}</span>
-            <span class="commit-date">{{ formatTime(c) }}</span>
-          </div>
+          <template v-for="row in visibleRows" :key="row.key">
+            <div v-if="row.kind === 'date'" class="date-group-row">{{ row.label }}</div>
+            <div
+              v-else
+              class="commit-item"
+              :class="{ active: selectionStore.commitHash === row.commit.hash && selectionStore.commitRepositoryPath === repoStore.activeRepo?.path }"
+              :title="row.commit.subject"
+              @click="selectionStore.selectCommit(row.commit.hash)"
+              @contextmenu="onCommitContextmenu($event, row.commit)"
+            >
+              <span class="commit-hash">{{ row.commit.short_hash }}</span>
+              <span class="commit-subject">{{ row.commit.subject }}</span>
+              <span class="commit-refs">
+                <span
+                  v-for="r in visibleRefs(row.commit)"
+                  :key="r"
+                  class="ref-badge"
+                  :style="{ background: branchColor(r) }"
+                >{{ r }}</span>
+                <span v-if="commitStore.unpushedHashes.has(row.commit.hash)" class="unpushed-badge" title="本地提交，尚未推送到远程">未推送</span>
+              </span>
+              <span class="commit-author">{{ row.commit.author_name }}</span>
+              <span class="commit-date">{{ formatTime(row.commit) }}</span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -601,8 +769,17 @@ function commitMenuItems(c: CommitInfo) {
       </div>
     </div>
 
-    <!-- 提交列表：泳道图（V2） -->
-    <CommitSwimlane v-else />
+    <!-- 作者泳道保留其内部滚动位置 -->
+    <CommitSwimlane v-show="settingsStore.commitHistoryView === 'swimlane'" />
+
+    <!-- 分支拓扑、文件历史、版本标签和活动视图 -->
+    <CommitHistoryViews
+      v-show="isSupplementaryView"
+      :mode="supplementaryView"
+      :active="isSupplementaryView"
+      @select="selectHistoryCommit"
+      @contextmenu="onCommitContextmenu"
+    />
 
     <!-- 提交右键菜单 -->
     <ContextMenu
@@ -658,6 +835,100 @@ function commitMenuItems(c: CommitInfo) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.toolbar-left {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar-left::-webkit-scrollbar {
+  display: none;
+}
+
+.toolbar-right {
+  flex-shrink: 0;
+}
+
+.history-view-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.history-view-trigger {
+  white-space: nowrap;
+}
+
+.history-view-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 250px;
+  padding: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.history-view-option,
+.history-group-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-view-option:hover,
+.history-view-option.selected,
+.history-group-option:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.view-option-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.view-option-copy strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.view-option-copy small {
+  overflow: hidden;
+  color: var(--fg-tertiary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-group-option {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-default);
+  border-radius: 0;
+  font-size: 11px;
+}
+
+.scope-label {
+  padding: 0 6px;
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 /* 储藏下拉 */
@@ -766,17 +1037,6 @@ function commitMenuItems(c: CommitInfo) {
 
 .working-node.active {
   background: var(--accent);
-  color: #fff;
-}
-
-.graph-col {
-  width: 20px;
-  text-align: center;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.working-node.active .graph-col {
   color: #fff;
 }
 
@@ -938,15 +1198,6 @@ function commitMenuItems(c: CommitInfo) {
   right: 0;
 }
 
-/* mini 图谱 SVG，绝对定位在左侧 20px 列，z-index 高于提交项背景避免被覆盖 */
-.graph-svg {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  z-index: 2;
-}
-
 .commit-item {
   display: flex;
   align-items: center;
@@ -977,8 +1228,21 @@ function commitMenuItems(c: CommitInfo) {
   color: #fff;
 }
 
+.date-group-row {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  margin: 0 6px 1px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--fg-tertiary);
+  background: var(--bg-panel);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .commit-hash {
-  width: 56px;
+  width: 88px;
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
   color: var(--fg-tertiary);

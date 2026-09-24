@@ -2,6 +2,7 @@
 // 依据: design.md D3/D8, tasks 2.7/2.8/2.9
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -149,6 +150,14 @@ impl GitExecutor {
         }
     }
 
+    /// 获取远程引用；超时后终止 Git 子进程。
+    /// @param repo_path - Git 仓库目录
+    /// @returns Fetch 成功时为空结果，失败或超时时返回错误
+    pub async fn fetch_repo(repo_path: &Path) -> GitResult<()> {
+        Self::run_git_with_timeout(repo_path, &["fetch"], Duration::from_secs(30)).await?;
+        Ok(())
+    }
+
     /// 推送本地提交到远程（git push）
     pub async fn push(repo_path: &Path) -> GitResult<RemoteResult> {
         match Self::run_git(repo_path, &["push"]).await {
@@ -214,15 +223,6 @@ impl GitExecutor {
                 exit_code: None,
             })?;
         Self::run_git(repo_path, &["push", remote, "--delete", branch]).await?;
-        Ok(())
-    }
-
-    // ===== 获取远程更新（fetch） =====
-
-    /// 获取远程更新（git fetch）
-    /// 只更新远程引用（origin/*），不动工作区；之后才能算出分支落后数
-    pub async fn fetch_repo(repo_path: &Path) -> GitResult<()> {
-        Self::run_git(repo_path, &["fetch"]).await?;
         Ok(())
     }
 
