@@ -1,0 +1,222 @@
+<!doctype html>
+<!--
+  GitTrail 静态原型 - 项目切换 / 普通提交列表 / Review 弹窗 / 设置页
+  @description
+    用于确认重写方向，不接后端。项目、提交与差异均为演示数据。
+  @usage
+    直接用浏览器打开本文件；主题、密度与设置会保存在 localStorage。
+  @changeLog
+    - 2026-11-04: Created. 柔和双主题、Parisienne 品牌字、代码配色、设置页与分支行内拉取/提交。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitTrail · 提交列表原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Parisienne&amp;display=swap" rel="stylesheet">
+  <script>
+    // 首帧主题：先于样式应用，避免浅色闪一下再切深色
+    (function () {
+      try {
+        var mode = localStorage.getItem("gittrail-theme") || "system";
+        var dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var density = localStorage.getItem("gittrail-density");
+        if (density) document.documentElement.dataset.density = density;
+      } catch (error) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 左侧项目栏 -->
+    <aside class="projects" aria-label="项目">
+      <div class="brand">
+        <span class="brand-full">GitTrail</span>
+        <span class="brand-short" aria-hidden="true">GT</span>
+      </div>
+
+      <div class="projects-tools">
+        <div class="tools-row">
+          <span class="projects-label">项目</span>
+          <div class="tools-actions">
+            <button class="icon-btn add-btn" id="addProject" type="button" aria-label="打开项目" title="打开项目">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            </button>
+            <button class="icon-btn rail-toggle" id="railToggle" type="button" aria-label="折叠项目栏" aria-expanded="true" title="折叠项目栏">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <label class="project-search">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          <input id="projectSearch" type="text" placeholder="搜索项目" aria-label="搜索项目">
+        </label>
+      </div>
+
+      <div class="project-list" id="projectList" role="list"></div>
+
+      <div class="projects-footer">
+        <button class="settings-btn" id="settingsBtn" type="button">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/><circle cx="6" cy="4" r="1.4" fill="currentColor"/><circle cx="10" cy="8" r="1.4" fill="currentColor"/><circle cx="5" cy="12" r="1.4" fill="currentColor"/></svg>
+          <span class="settings-label">设置</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main">
+      <header class="main-header">
+        <div class="header-top">
+          <h1 class="project-title" id="projectTitle">git-client</h1>
+          <div class="window-controls" aria-label="窗口控制">
+            <button class="window-btn theme-btn" id="themeToggle" type="button" aria-label="切换主题" title="切换主题">
+              <svg class="icon-sun" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>
+              <svg class="icon-moon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg>
+            </button>
+            <button class="window-btn" type="button" data-window="minimize" aria-label="最小化" title="最小化">
+              <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.2"><path d="M2 7h6"/></svg>
+            </button>
+            <button class="window-btn" type="button" data-window="maximize" aria-label="最大化" title="最大化">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="6" height="6" rx="1"/></svg>
+            </button>
+            <button class="window-btn close" type="button" data-window="close" aria-label="关闭" title="关闭">
+              <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.2"><path d="m2 2 6 6M8 2 2 8"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="header-bottom" id="headerBottom">
+          <div class="branch-wrap">
+            <button class="branch-btn" id="branchBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="切换分支">
+              <span id="branchLabel">feat/ui-rewrite</span>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
+            </button>
+            <div class="popover" id="branchPopover" role="menu" hidden></div>
+          </div>
+          <span class="status" id="statusLine"></span>
+          <div class="tool-wrap">
+            <button class="icon-control" id="syncBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="远程操作">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/><path d="M11.5 2v3h-3"/><path d="M4.5 14v-3h3"/></svg>
+            </button>
+            <div class="stash-wrap">
+              <button class="icon-control stash-btn" id="stashBtn" type="button" aria-haspopup="dialog" aria-expanded="false" title="储藏">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h11v8h-11z"/><path d="M2 2.5h12v2.5H2z"/><path d="M6 8.5h4"/></svg>
+                <span class="stash-count" id="stashCount">0</span>
+              </button>
+              <div class="popover stash-popover" id="stashPopover" hidden></div>
+            </div>
+          </div>
+          <div class="search-wrap">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+            <input class="search-input" id="searchInput" type="search" placeholder="搜索提交、作者或哈希" aria-label="搜索提交" autocomplete="off" spellcheck="false">
+            <button class="search-clear" id="searchClear" type="button" aria-label="清除搜索" hidden>×</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="conflict-bar" id="conflictBar" hidden></div>
+
+      <div class="commit-scroll" id="commitScroll" aria-label="提交列表"></div>
+      <div class="settings-view" id="settingsView" hidden></div>
+    </main>
+  </div>
+
+  <!-- 提交右键菜单 -->
+  <div class="context-menu" id="contextMenu" role="menu" aria-label="提交操作" hidden></div>
+
+  <!-- 通用操作菜单 -->
+  <div class="context-menu" id="actionMenu" role="menu" aria-label="操作" hidden></div>
+
+  <!-- 通用操作对话框 -->
+  <div class="action-backdrop" id="actionBackdrop" hidden>
+    <section class="action-dialog" id="actionDialog" role="dialog" aria-modal="true" aria-labelledby="actionTitle" tabindex="-1">
+      <h2 class="action-title" id="actionTitle"></h2>
+      <p class="action-desc" id="actionDesc"></p>
+      <div class="action-body" id="actionBody"></div>
+      <div class="action-actions">
+        <button class="action-btn secondary" id="actionCancel" type="button">取消</button>
+        <button class="action-btn primary" id="actionConfirm" type="button">确定</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 冲突处理弹窗 -->
+  <div class="backdrop" id="conflictBackdrop" hidden>
+    <section class="dialog conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflictTitle">
+      <header class="dialog-header">
+        <div class="dialog-heading">
+          <div class="dialog-label">冲突处理</div>
+          <h2 class="dialog-subject" id="conflictTitle"></h2>
+          <div class="dialog-meta" id="conflictMeta"></div>
+        </div>
+        <div class="dialog-actions">
+          <button class="close-btn" id="closeConflict" type="button" aria-label="关闭">×</button>
+        </div>
+      </header>
+      <div class="conflict-body" id="conflictBody"></div>
+      <footer class="dialog-footer">
+        <div class="foot-left">
+          <button class="foot-btn" id="checkConflictMarkers" type="button">检查冲突标记</button>
+        </div>
+        <div class="foot-center" id="conflictCount"></div>
+        <div class="foot-right conflict-actions">
+          <button class="foot-btn" id="abortConflict" type="button">中止</button>
+          <button class="action-btn primary small" id="continueConflict" type="button">继续</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Review 弹窗 -->
+  <div class="backdrop" id="reviewBackdrop" hidden>
+    <section class="dialog" id="reviewDialog" role="dialog" aria-modal="true" aria-labelledby="reviewSubject" tabindex="-1">
+      <header class="dialog-header">
+        <div class="dialog-heading">
+          <div class="dialog-label">提交审查</div>
+          <h2 class="dialog-subject" id="reviewSubject"></h2>
+          <div class="dialog-meta" id="reviewMeta"></div>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-btn" id="copyHash" type="button">复制哈希</button>
+          <button class="close-btn" id="closeReview" type="button" aria-label="关闭审查">×</button>
+        </div>
+      </header>
+
+      <div class="dialog-body">
+        <aside class="files" aria-label="改动文件">
+          <div class="files-head"><span>改动文件</span><span id="fileCountHead">0</span></div>
+          <div id="fileList"></div>
+        </aside>
+
+        <section class="diff" id="diffPane" aria-label="文件差异">
+          <div class="diff-toolbar" id="diffToolbar">
+            <button class="tab active" type="button" data-view="unified" aria-pressed="true">统一</button>
+            <button class="tab" type="button" data-view="split" aria-pressed="false">双栏</button>
+            <button class="tab" type="button" data-wrap="wrap" aria-pressed="false">换行</button>
+          </div>
+          <div id="diffContent"></div>
+        </section>
+      </div>
+
+      <footer class="dialog-footer">
+        <div class="foot-left">
+          <button class="foot-btn" id="prevCommit" type="button">← 上一个提交</button>
+          <button class="foot-btn" id="nextCommit" type="button">下一个提交 →</button>
+        </div>
+        <div class="foot-center" id="fileCountFoot">文件 0 / 0</div>
+        <div class="foot-right"><span class="foot-hint">Esc 关闭</span></div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

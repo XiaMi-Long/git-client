@@ -1,0 +1,2408 @@
+<!doctype html>
+<!--
+  GitTrail 静态原型 - 项目切换 / 普通提交列表 / Review 弹窗
+  @description
+    用于确认重写方向，不接后端。项目、提交与差异均为演示数据。
+  @usage
+    直接用浏览器打开本文件；点击项目、分支、提交行即可体验。
+  @changeLog
+    - 2026-11-04: Created. 黑白分栏 + 信号橙的提交列表原型。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitTrail · 提交列表原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    /* ===== 设计 token：黑白承担结构，橙只做状态与可操作项 ===== */
+    :root {
+      --ink: #101112;
+      --ink-2: #1a1b1c;
+      --ink-3: #242526;
+      --paper: #f2f3f4;
+      --surface: #ffffff;
+      --muted: #63676b;
+      --muted-2: #9a9ea1;
+      --line: #d6d8da;
+      --line-dark: #2c2e30;
+      --rail-muted: #a2a6a8;
+      --signal: #ff4d00;
+      --signal-text: #c23500;
+      --add: #147a4b;
+      --add-bg: #e7f4ec;
+      --del: #b42318;
+      --del-bg: #fce8e6;
+      --hunk: #eceeef;
+      --font: "Archivo", "MiSans", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+      --mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input { font: inherit; }
+
+    button {
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    svg { display: block; }
+
+    :focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: 2px;
+    }
+
+    .projects :focus-visible { outline-color: #ff7a3d; }
+
+    /* ===== 双栏骨架 ===== */
+    .app {
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      height: 100vh;
+      background: var(--paper);
+    }
+
+    .app.rail { grid-template-columns: 64px minmax(0, 1fr); }
+
+    /* ===== 左侧项目栏 ===== */
+    .projects {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .brand {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 12px;
+      height: 72px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line-dark);
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+      background: var(--signal);
+    }
+
+    .brand-text { min-width: 0; }
+
+    .brand-name {
+      font-size: 19px;
+      font-weight: 600;
+      line-height: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-sub {
+      margin-top: 2px;
+      color: var(--rail-muted);
+      font-size: 11px;
+      line-height: 15px;
+    }
+
+    .projects-tools {
+      flex-shrink: 0;
+      padding: 16px 16px 8px;
+    }
+
+    .tools-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 24px;
+      margin-bottom: 10px;
+    }
+
+    .projects-label {
+      color: var(--rail-muted);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 16px;
+    }
+
+    .tools-actions { display: flex; gap: 2px; }
+
+    .icon-btn {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 2px;
+      color: var(--rail-muted);
+    }
+
+    .icon-btn:hover { background: var(--ink-2); color: #fff; }
+
+    .project-search { position: relative; display: block; }
+
+    .project-search > svg {
+      position: absolute;
+      top: 50%;
+      left: 8px;
+      color: var(--rail-muted);
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .project-search input {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px 0 30px;
+      border: 1px solid var(--line-dark);
+      border-radius: 2px;
+      outline: none;
+      background: var(--ink-2);
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .project-search input::placeholder { color: var(--rail-muted); }
+
+    .project-search input:focus {
+      border-color: var(--signal);
+      box-shadow: 0 0 0 1px var(--signal);
+    }
+
+    .project-list {
+      flex: 1;
+      min-height: 0;
+      padding: 0 8px 12px;
+      overflow: auto;
+    }
+
+    .project {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+      height: 64px;
+      padding: 0 12px;
+      border-radius: 2px;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .project:hover { background: var(--ink-2); }
+
+    .project.active { background: #fff; color: var(--ink); }
+
+    .project[hidden] { display: none; }
+
+    .project-initials {
+      display: none;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .project-name {
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 19px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .project-branch {
+      overflow: hidden;
+      color: var(--rail-muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 15px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .project.active .project-branch { color: var(--muted); }
+
+    .projects-footer {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      height: 48px;
+      padding: 0 16px;
+      border-top: 1px solid var(--line-dark);
+    }
+
+    .settings-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 32px;
+      padding: 0 6px;
+      border-radius: 2px;
+      color: var(--rail-muted);
+      font-size: 12px;
+    }
+
+    .settings-btn:hover { background: var(--ink-2); color: #fff; }
+
+    /* 折叠态 */
+    .app.rail .brand { justify-content: center; padding: 0; }
+    .app.rail .brand-text { display: none; }
+    .app.rail .projects-tools { padding: 12px 0; }
+    .app.rail .tools-row { justify-content: center; margin: 0; }
+    .app.rail .projects-label,
+    .app.rail .project-search,
+    .app.rail .add-btn { display: none; }
+    .app.rail .rail-toggle svg { transform: rotate(180deg); }
+    .app.rail .project { align-items: center; justify-content: center; padding: 0; }
+    .app.rail .project-initials { display: block; }
+    .app.rail .project-name,
+    .app.rail .project-branch { display: none; }
+    .app.rail .project.active .project-initials { color: var(--ink); }
+    .app.rail .projects-footer { justify-content: center; padding: 0; }
+    .app.rail .settings-label { display: none; }
+
+    /* ===== 主区域 ===== */
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--paper);
+    }
+
+    .main-header {
+      flex-shrink: 0;
+      padding: 18px 28px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 30px;
+    }
+
+    .project-title {
+      margin: 0;
+      overflow: hidden;
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 30px;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .window-controls {
+      display: flex;
+      flex-shrink: 0;
+      gap: 0;
+      margin-top: -6px;
+      margin-right: -14px;
+    }
+
+    .window-btn {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 28px;
+      color: var(--muted);
+      border-radius: 0;
+    }
+
+    .window-btn:hover { background: #e4e6e7; color: var(--ink); }
+    .window-btn.close:hover { background: #c42b1c; color: #fff; }
+
+    .header-bottom {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      margin-top: 10px;
+    }
+
+    .branch-wrap { position: relative; flex-shrink: 0; }
+
+    .branch-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--ink);
+      border-radius: 2px;
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .branch-btn:hover { background: var(--ink); color: #fff; }
+    .branch-btn svg { opacity: 0.7; }
+
+    .status {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 16px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .search-wrap {
+      position: relative;
+      flex-shrink: 0;
+      width: 300px;
+      margin-left: auto;
+    }
+
+    .search-wrap > svg {
+      position: absolute;
+      top: 50%;
+      left: 9px;
+      color: var(--muted);
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .search-input {
+      width: 100%;
+      height: 32px;
+      padding: 0 30px;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      outline: none;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 12px;
+    }
+
+    .search-input::placeholder { color: var(--muted); }
+
+    .search-input:focus {
+      border-color: var(--ink);
+      box-shadow: 0 0 0 2px var(--signal);
+    }
+
+    .search-input::-webkit-search-cancel-button { display: none; }
+
+    .search-clear {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 2px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1;
+      transform: translateY(-50%);
+    }
+
+    .search-clear:hover { background: var(--paper); color: var(--ink); }
+    .search-clear[hidden] { display: none; }
+
+    /* 分支浮层：硬边框，无阴影 */
+    .popover {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 30;
+      min-width: 240px;
+      padding: 4px;
+      border: 1px solid var(--ink);
+      background: var(--surface);
+    }
+
+    .popover[hidden] { display: none; }
+
+    .popover-head {
+      padding: 6px 10px 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .popover-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .popover-item:hover { background: var(--paper); }
+    .popover-item.active { background: var(--ink); color: #fff; }
+    .popover-item .check { color: var(--signal); }
+
+    /* ===== 提交列表：时间账簿 ===== */
+    .commit-scroll {
+      flex: 1;
+      min-height: 0;
+      padding: 0 28px 40px;
+      overflow: auto;
+    }
+
+    .date-head {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 42px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+    }
+
+    .date-label {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 16px;
+    }
+
+    .date-count { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+    .commit-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 56px 26px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      height: 56px;
+      margin: 0 -12px;
+      padding: 0 12px;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+
+    .commit-row:hover { background: var(--surface); }
+
+    .commit-row:focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: -2px;
+      background: var(--surface);
+    }
+
+    .commit-time {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .commit-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .commit-subject {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 20px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .commit-meta {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 16px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .hash { font-family: var(--mono); font-size: 11px; }
+    .ref { color: var(--ink); font-weight: 500; }
+    .ref.remote { color: var(--muted); font-weight: 400; }
+    .meta-dot { color: var(--line); }
+
+    .unpushed {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--signal-text);
+      font-weight: 500;
+    }
+
+    .unpushed::before {
+      display: block;
+      width: 5px;
+      height: 5px;
+      background: var(--signal);
+      content: "";
+    }
+
+    .commit-action {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--signal-text);
+      font-size: 12px;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .commit-row:hover .commit-action,
+    .commit-row:focus-visible .commit-action { opacity: 1; }
+
+    .load-more {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      height: 52px;
+      margin-top: 8px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .load-more:hover { background: var(--surface); color: var(--ink); }
+    .load-more:disabled { color: var(--muted-2); cursor: default; }
+
+    .empty { max-width: 520px; padding: 64px 0 80px; }
+
+    .empty h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 28px;
+    }
+
+    .empty p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 20px;
+    }
+
+    .empty-action {
+      margin-top: 18px;
+      padding-bottom: 2px;
+      border-bottom: 1px solid var(--signal-text);
+      color: var(--signal-text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* 加载骨架 */
+    .skeleton-row {
+      display: grid;
+      grid-template-columns: 56px 26px minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      height: 56px;
+      margin: 0 -12px;
+      padding: 0 12px;
+    }
+
+    .sk {
+      display: block;
+      border-radius: 1px;
+      background: #e1e3e4;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .sk-time { justify-self: end; width: 40px; height: 12px; }
+    .sk-avatar { width: 26px; height: 26px; border-radius: 50%; }
+    .sk-lines { display: flex; flex-direction: column; gap: 8px; }
+    .sk-subject { width: 60%; height: 12px; }
+    .sk-meta { width: 38%; height: 10px; }
+    .sk-date { width: 56px; height: 12px; }
+    .sk-count { width: 44px; height: 10px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
+
+    /* ===== Review 弹窗：全窗黑色头部 ===== */
+    body.modal-open { overflow: hidden; }
+
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(10, 11, 12, 0.66);
+    }
+
+    .backdrop[hidden] { display: none; }
+
+    .dialog {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      max-width: 1440px;
+      max-height: 920px;
+      border: 1px solid var(--ink);
+      outline: none;
+      background: var(--paper);
+      animation: dialog-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes dialog-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .dialog-header {
+      display: flex;
+      flex-shrink: 0;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 16px 24px 14px;
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .dialog-heading { min-width: 0; }
+
+    .dialog-label {
+      color: var(--rail-muted);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 16px;
+    }
+
+    .dialog-subject {
+      margin: 2px 0 0;
+      overflow: hidden;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 28px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .dialog-meta {
+      margin-top: 4px;
+      overflow: hidden;
+      color: #b8bcbf;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 16px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .dialog-actions {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ghost-btn {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #3a3d3f;
+      border-radius: 2px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .ghost-btn:hover { border-color: var(--signal); color: var(--signal); }
+
+    .close-btn {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 2px;
+      color: #fff;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .close-btn:hover { background: var(--signal); color: var(--ink); }
+
+    .dialog-body {
+      display: grid;
+      flex: 1;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .files {
+      min-height: 0;
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .files-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      height: 44px;
+      padding: 0 14px;
+      border-bottom: 1px solid #eef0f1;
+      text-align: left;
+    }
+
+    .file-row:hover { background: var(--paper); }
+
+    .file-row:focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: -2px;
+    }
+
+    .file-row.active { background: var(--ink); color: #fff; border-bottom-color: var(--ink); }
+
+    .file-status { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+    .file-status.m { color: var(--signal-text); }
+    .file-status.a { color: var(--add); }
+    .file-status.d { color: var(--del); }
+    .file-row.active .file-status.m { color: var(--signal); }
+    .file-row.active .file-status.a { color: #6fcf97; }
+    .file-row.active .file-status.d { color: #ff8a80; }
+
+    .file-name {
+      overflow: hidden;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 18px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .file-stat {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .file-row.active .file-stat { color: #b8bcbf; }
+
+    .diff {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      background: var(--surface);
+    }
+
+    .diff-toolbar {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 18px;
+      height: 40px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .tab:hover { color: var(--ink); }
+    .tab.active { border-bottom-color: var(--ink); color: var(--ink); }
+    .tab[aria-pressed="true"] { color: var(--ink); }
+
+    #diffContent {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .diff-scroll {
+      flex: 1;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 20px;
+    }
+
+    .diff-line {
+      display: grid;
+      grid-template-columns: 42px 42px 18px minmax(0, 1fr);
+      align-items: start;
+      padding-right: 12px;
+    }
+
+    .ln {
+      padding-right: 8px;
+      color: #6f7376;
+      font-size: 11px;
+      line-height: 20px;
+      text-align: right;
+      user-select: none;
+    }
+
+    .sign {
+      color: #6f7376;
+      line-height: 20px;
+      text-align: center;
+      user-select: none;
+    }
+
+    .code {
+      padding-right: 8px;
+      color: #25282a;
+      line-height: 20px;
+      white-space: pre;
+    }
+
+    .diff-line.add { background: var(--add-bg); }
+    .diff-line.add .code { color: #0e5b38; }
+    .diff-line.del { background: var(--del-bg); }
+    .diff-line.del .code { color: #8a1c14; }
+
+    .hunk {
+      overflow: hidden;
+      padding: 4px 12px;
+      border-top: 1px solid #e0e2e3;
+      border-bottom: 1px solid #e0e2e3;
+      background: var(--hunk);
+      color: #4a4e51;
+      font-size: 11px;
+      line-height: 18px;
+      white-space: pre;
+      text-overflow: ellipsis;
+    }
+
+    .diff-empty { padding: 56px 24px; color: var(--muted); font-size: 13px; }
+
+    .diff.wrap .code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    .diff-split {
+      display: grid;
+      flex: 1;
+      grid-template-columns: 1fr 1fr;
+      min-height: 0;
+    }
+
+    .pane {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: auto;
+    }
+
+    .pane + .pane { border-left: 1px solid var(--line); }
+
+    .pane-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .split-line {
+      display: grid;
+      grid-template-columns: 42px 18px minmax(0, 1fr);
+      align-items: start;
+      padding-right: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 20px;
+    }
+
+    .split-line .code { line-height: 20px; }
+    .split-line.add { background: var(--add-bg); }
+    .split-line.add .code { color: #0e5b38; }
+    .split-line.del { background: var(--del-bg); }
+    .split-line.del .code { color: #8a1c14; }
+    .split-line.blank { background: #f7f8f9; }
+    .split-line.blank .ln { color: transparent; }
+
+    .dialog-footer {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 20px;
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .foot-left { display: flex; gap: 18px; }
+
+    .foot-btn {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 2px;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .foot-btn:hover { color: var(--signal-text); }
+    .foot-btn:disabled { color: var(--muted-2); cursor: default; }
+
+    .foot-center { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    .foot-hint { color: var(--muted); font-size: 11px; }
+
+    /* ===== 轻提示 ===== */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      z-index: 80;
+      padding: 9px 14px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 12px;
+      line-height: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 8px);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .search-wrap { width: 220px; }
+      .status { display: none; }
+      .main-header { padding-right: 20px; padding-left: 20px; }
+      .commit-scroll { padding-right: 20px; padding-left: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 左侧项目栏 -->
+    <aside class="projects" aria-label="项目">
+      <div class="brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <div class="brand-name">GitTrail</div>
+          <div class="brand-sub">本地 Git</div>
+        </div>
+      </div>
+
+      <div class="projects-tools">
+        <div class="tools-row">
+          <span class="projects-label">项目</span>
+          <div class="tools-actions">
+            <button class="icon-btn add-btn" id="addProject" type="button" aria-label="打开项目" title="打开项目">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            </button>
+            <button class="icon-btn rail-toggle" id="railToggle" type="button" aria-label="折叠项目栏" aria-expanded="true" title="折叠项目栏">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <label class="project-search">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          <input id="projectSearch" type="text" placeholder="搜索项目" aria-label="搜索项目">
+        </label>
+      </div>
+
+      <div class="project-list" id="projectList" role="list"></div>
+
+      <div class="projects-footer">
+        <button class="settings-btn" id="settingsBtn" type="button">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/><circle cx="6" cy="4" r="1.5" fill="var(--ink)"/><circle cx="10" cy="8" r="1.5" fill="var(--ink)"/><circle cx="5" cy="12" r="1.5" fill="var(--ink)"/></svg>
+          <span class="settings-label">设置</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main">
+      <header class="main-header">
+        <div class="header-top">
+          <h1 class="project-title" id="projectTitle">git-client</h1>
+          <div class="window-controls" aria-label="窗口控制">
+            <button class="window-btn" type="button" data-window="minimize" aria-label="最小化" title="最小化">
+              <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.2"><path d="M2 7h6"/></svg>
+            </button>
+            <button class="window-btn" type="button" data-window="maximize" aria-label="最大化" title="最大化">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="6" height="6"/></svg>
+            </button>
+            <button class="window-btn close" type="button" data-window="close" aria-label="关闭" title="关闭">
+              <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.2"><path d="m2 2 6 6M8 2 2 8"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="header-bottom">
+          <div class="branch-wrap">
+            <button class="branch-btn" id="branchBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="切换分支">
+              <span id="branchLabel">feat/ui-rewrite</span>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
+            </button>
+            <div class="popover" id="branchPopover" role="menu" hidden></div>
+          </div>
+          <span class="status" id="statusLine"></span>
+          <div class="search-wrap">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+            <input class="search-input" id="searchInput" type="search" placeholder="搜索提交、作者或哈希" aria-label="搜索提交" autocomplete="off" spellcheck="false">
+            <button class="search-clear" id="searchClear" type="button" aria-label="清除搜索" hidden>×</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="commit-scroll" id="commitScroll" aria-label="提交列表"></div>
+    </main>
+  </div>
+
+  <!-- Review 弹窗 -->
+  <div class="backdrop" id="reviewBackdrop" hidden>
+    <section class="dialog" id="reviewDialog" role="dialog" aria-modal="true" aria-labelledby="reviewSubject" tabindex="-1">
+      <header class="dialog-header">
+        <div class="dialog-heading">
+          <div class="dialog-label">提交审查</div>
+          <h2 class="dialog-subject" id="reviewSubject"></h2>
+          <div class="dialog-meta" id="reviewMeta"></div>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-btn" id="copyHash" type="button">复制哈希</button>
+          <button class="close-btn" id="closeReview" type="button" aria-label="关闭审查">×</button>
+        </div>
+      </header>
+
+      <div class="dialog-body">
+        <aside class="files" aria-label="改动文件">
+          <div class="files-head"><span>改动文件</span><span id="fileCountHead">0</span></div>
+          <div id="fileList"></div>
+        </aside>
+
+        <section class="diff" id="diffPane" aria-label="文件差异">
+          <div class="diff-toolbar" id="diffToolbar">
+            <button class="tab active" type="button" data-view="unified" aria-pressed="true">统一</button>
+            <button class="tab" type="button" data-view="split" aria-pressed="false">双栏</button>
+            <button class="tab" type="button" data-wrap="wrap" aria-pressed="false">换行</button>
+          </div>
+          <div id="diffContent"></div>
+        </section>
+      </div>
+
+      <footer class="dialog-footer">
+        <div class="foot-left">
+          <button class="foot-btn" id="prevCommit" type="button">← 上一个提交</button>
+          <button class="foot-btn" id="nextCommit" type="button">下一个提交 →</button>
+        </div>
+        <div class="foot-center" id="fileCountFoot">文件 0 / 0</div>
+        <div class="foot-right"><span class="foot-hint">Esc 关闭</span></div>
+      </footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      /* ===== 演示数据 ===== */
+
+      const FILES_LIST = [
+        {
+          path: "src/components/CommitList.vue",
+          status: "M",
+          add: 42,
+          del: 18,
+          hunks: [
+            {
+              header: "@@ -18,9 +18,13 @@",
+              lines: [
+                ` <div class="commit-scroll">`,
+                `-  <CommitRow v-for="commit in commits" :key="commit.hash" />`,
+                `+  <CommitRow`,
+                `+    v-for="commit in visibleCommits"`,
+                `+    :key="commit.hash"`,
+                `+    @review="openReview(commit)"`,
+                `+  />`,
+                ` </div>`,
+              ],
+            },
+            {
+              header: "@@ -42,7 +46,10 @@",
+              lines: [
+                `-const rows = computed(() => commits.value)`,
+                `+const rows = computed(() => visibleCommits.value)`,
+                `+const reviewOpen = ref(false)`,
+                `+`,
+                ` watch(activeProject, () => {`,
+                `   reviewOpen.value = false`,
+                ` })`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/components/ReviewDialog.vue",
+          status: "A",
+          add: 128,
+          del: 0,
+          hunks: [
+            {
+              header: "@@ -0,0 +1,15 @@",
+              lines: [
+                `+<script setup lang="ts">`,
+                `+import { computed } from 'vue'`,
+                `+import { useReview } from '@/composables/useReview'`,
+                `+`,
+                `+const review = useReview()`,
+                `+const commit = computed(() => review.activeCommit)`,
+                `+<\/script>`,
+                `+`,
+                `+<template>`,
+                `+  <dialog :open="review.isOpen" class="review-dialog">`,
+                `+    <header class="review-head">`,
+                `+      <p class="review-label">提交审查</p>`,
+                `+      <h2>{{ commit.subject }}</h2>`,
+                `+    </header>`,
+                `+  </dialog>`,
+                `+</template>`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/styles/tokens.css",
+          status: "M",
+          add: 24,
+          del: 8,
+          hunks: [
+            {
+              header: "@@ -1,10 +1,14 @@",
+              lines: [
+                ` :root {`,
+                `-  --bg: #101827;`,
+                `-  --accent: #3b82f6;`,
+                `+  --ink: #101112;`,
+                `+  --paper: #f2f3f4;`,
+                `+  --signal: #ff4d00;`,
+                `   --line: #d6d8da;`,
+                ` }`,
+              ],
+            },
+          ],
+        },
+      ];
+
+      const FILES_SHELL = [
+        {
+          path: "src/App.vue",
+          status: "M",
+          add: 12,
+          del: 40,
+          hunks: [
+            {
+              header: "@@ -8,14 +8,10 @@",
+              lines: [
+                ` <template>`,
+                `   <div class="app">`,
+                `-    <StatusBar />`,
+                `     <MainView />`,
+                `   </div>`,
+                ` </template>`,
+                `-`,
+                `-<style scoped>`,
+                `-.status-bar { height: 24px; }`,
+                `-</style>`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/components/MainHeader.vue",
+          status: "M",
+          add: 36,
+          del: 14,
+          hunks: [
+            {
+              header: "@@ -6,12 +6,18 @@",
+              lines: [
+                ` <header class="main-header">`,
+                `-  <nav class="toolbar">`,
+                `-    <button>拉取</button>`,
+                `-    <button>推送</button>`,
+                `-  </nav>`,
+                `+  <div class="title-row">`,
+                `+    <h1>{{ project.name }}</h1>`,
+                `+    <WindowControls />`,
+                `+  </div>`,
+                `+  <div class="status-row">`,
+                `+    <BranchButton />`,
+                `+    <span>{{ status }}</span>`,
+                `+    <SearchInput />`,
+                `+  </div>`,
+                ` </header>`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/stores/repo.ts",
+          status: "M",
+          add: 18,
+          del: 6,
+          hunks: [
+            {
+              header: "@@ -24,8 +24,12 @@",
+              lines: [
+                `-const ahead = ref(0)`,
+                `+const ahead = computed(() => status.value?.ahead ?? 0)`,
+                `+const unpushed = computed(() => status.value?.ahead ?? 0)`,
+                ` const clean = computed(() => {`,
+                `   return status.value?.staged.length === 0`,
+                ` })`,
+              ],
+            },
+          ],
+        },
+      ];
+
+      const FILES_RAIL = [
+        {
+          path: "src/components/ProjectRail.vue",
+          status: "A",
+          add: 96,
+          del: 0,
+          hunks: [
+            {
+              header: "@@ -0,0 +1,18 @@",
+              lines: [
+                `+<script setup lang="ts">`,
+                `+import { useRepoStore } from '@/stores/repo'`,
+                `+const repo = useRepoStore()`,
+                `+<\/script>`,
+                `+`,
+                `+<template>`,
+                `+  <aside class="rail">`,
+                `+    <button`,
+                `+      v-for="project in repo.projects"`,
+                `+      :key="project.id"`,
+                `+      :class="{ active: project.id === repo.activeId }"`,
+                `+      @click="repo.select(project.id)"`,
+                `+    >`,
+                `+      {{ project.name }}`,
+                `+    </button>`,
+                `+  </aside>`,
+                `+</template>`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/data/projects.ts",
+          status: "M",
+          add: 22,
+          del: 4,
+          hunks: [
+            {
+              header: "@@ -10,7 +10,12 @@",
+              lines: [
+                `-export const projects = ref([])`,
+                `+export const projects = ref<Project[]>([`,
+                `+  { id: 'git-client', name: 'git-client' },`,
+                `+  { id: 'deepseek-harness', name: 'deepseek-harness' },`,
+                `+])`,
+                ` export const activeId = ref<string | null>(null)`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/styles/rail.css",
+          status: "A",
+          add: 54,
+          del: 0,
+          hunks: [
+            {
+              header: "@@ -0,0 +1,16 @@",
+              lines: [
+                `+.rail {`,
+                `+  width: 264px;`,
+                `+  background: #101112;`,
+                `+  color: #fff;`,
+                `+}`,
+                `+`,
+                `+.rail .project.active {`,
+                `+  background: #fff;`,
+                `+  color: #101112;`,
+                `+}`,
+                `+`,
+                `+.rail .project.active .branch {`,
+                `+  color: #63676b;`,
+                `+}`,
+              ],
+            },
+          ],
+        },
+      ];
+
+      const FILES_DIFF = [
+        {
+          path: "src/components/DiffView.vue",
+          status: "M",
+          add: 64,
+          del: 22,
+          hunks: [
+            {
+              header: "@@ -12,10 +12,16 @@",
+              lines: [
+                ` <div class="diff">`,
+                `-  <pre>{{ rawDiff }}</pre>`,
+                `+  <div`,
+                `+    v-for="line in lines"`,
+                `+    :key="line.key"`,
+                `+    :class="['diff-line', line.type]"`,
+                `+  >`,
+                `+    <span class="ln">{{ line.newNo }}</span>`,
+                `+    <code>{{ line.text }}</code>`,
+                `+  </div>`,
+                ` </div>`,
+              ],
+            },
+            {
+              header: "@@ -46,7 +52,9 @@",
+              lines: [
+                `-const lines = computed(() => parse(raw.value))`,
+                `+const lines = computed(() =>`,
+                `+  parse(raw.value, { wrap: props.wrap })`,
+                `+)`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/utils/diff.ts",
+          status: "M",
+          add: 30,
+          del: 12,
+          hunks: [
+            {
+              header: "@@ -18,9 +18,13 @@",
+              lines: [
+                `-export function parse(raw: string) {`,
+                `+export function parse(raw: string, options: ParseOptions = {}) {`,
+                `   const lines = raw.split('\\n')`,
+                `-  return lines.map(toLine)`,
+                `+  return lines.map((line) =>`,
+                `+    toLine(line, options)`,
+                `+  )`,
+                ` }`,
+              ],
+            },
+          ],
+        },
+        {
+          path: "src/components/FileList.vue",
+          status: "M",
+          add: 10,
+          del: 6,
+          hunks: [
+            {
+              header: "@@ -8,8 +8,10 @@",
+              lines: [
+                ` <div class="files">`,
+                `-  <div v-for="file in files" :key="file.path">`,
+                `+  <button`,
+                `+    v-for="file in files"`,
+                `+    :key="file.path"`,
+                `+    @click="$emit('select', file)"`,
+                `+  >`,
+                `     {{ file.path }}`,
+                `-  </div>`,
+                `+  </button>`,
+                ` </div>`,
+              ],
+            },
+          ],
+        },
+      ];
+
+      function commit(hash, subject, author, initials, iso, refs, options = {}) {
+        return {
+          hash,
+          short: hash.slice(0, 7),
+          subject,
+          author,
+          initials,
+          iso,
+          refs,
+          unpushed: Boolean(options.unpushed),
+          files: options.files || FILES_LIST,
+        };
+      }
+
+      const PROJECTS = [
+        {
+          id: "git-client",
+          name: "git-client",
+          path: "D:\\项目文件夹\\git-client",
+          branch: "feat/ui-rewrite",
+          ahead: 2,
+          behind: 0,
+          status: "干净",
+          branches: ["feat/ui-rewrite", "main"],
+          commits: [
+            commit("3f2a1c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b", "重写提交列表：项目切换、56px 行高与审查弹窗", "Yitao", "YT", "2026-11-04T14:22:00+08:00", ["feat/ui-rewrite"], { unpushed: true, files: FILES_LIST }),
+            commit("8b1d0e2c4a6f8e0b2d4f6a8c0e2b4d6f8a0c2e4b", "移除底部状态栏，同步状态收进项目头部", "Yitao", "YT", "2026-11-04T11:08:00+08:00", ["feat/ui-rewrite"], { unpushed: true, files: FILES_SHELL }),
+            commit("1c9e7f0a2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a", "新增审查弹窗：文件树与上下文件切换", "陈默", "CM", "2026-11-04T09:46:00+08:00", ["feat/ui-rewrite"], { files: FILES_RAIL }),
+            commit("6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b", "补充审查弹窗的上一 / 下一个提交", "林可", "LK", "2026-11-03T18:40:00+08:00", ["feat/ui-rewrite"], { files: FILES_DIFF }),
+            commit("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "Merge branch 'feat/project-switcher'", "Yitao", "YT", "2026-11-03T16:12:00+08:00", ["main"], { files: FILES_RAIL }),
+            commit("c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3", "fix: 日期分组在空仓库下不再报错", "陈默", "CM", "2026-11-02T10:27:00+08:00", ["main"], { files: FILES_LIST }),
+            commit("7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b", "统一键盘操作：J/K、N/P、U/S", "林可", "LK", "2026-11-01T15:03:00+08:00", ["feat/ui-rewrite"], { files: FILES_SHELL }),
+            commit("2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e", "调整审查弹窗的文件列表宽度", "Yitao", "YT", "2026-10-31T09:18:00+08:00", ["main", "origin/main"], { files: FILES_DIFF }),
+          ],
+        },
+        {
+          id: "deepseek-harness",
+          name: "deepseek-harness",
+          path: "D:\\项目文件夹\\deepseek-harness",
+          branch: "master",
+          ahead: 0,
+          behind: 0,
+          status: "干净",
+          branches: ["master", "feat/review"],
+          commits: [
+            commit("9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d", "拆分 DSL 解析器，补上流式输出", "Kenji", "KJ", "2026-11-04T08:12:00+08:00", ["master"], { files: FILES_DIFF }),
+            commit("2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c", "feat: 新增 review 工作流", "Dana", "DA", "2026-11-03T21:05:00+08:00", ["master"], { files: FILES_SHELL }),
+            commit("6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "docs: 更新本地运行说明", "林可", "LK", "2026-11-01T14:30:00+08:00", ["master"], { files: FILES_RAIL }),
+            commit("0f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6", "chore: 升级依赖", "Kenji", "KJ", "2026-10-30T11:40:00+08:00", ["feat/review"], { files: FILES_DIFF }),
+          ],
+        },
+        {
+          id: "maid-atelier",
+          name: "maid-atelier",
+          path: "D:\\项目文件夹\\maid-atelier",
+          branch: "main",
+          ahead: 0,
+          behind: 4,
+          status: "干净",
+          branches: ["main", "release"],
+          commits: [
+            commit("4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b", "调整侧栏搜索的展开态", "林可", "LK", "2026-11-03T19:20:00+08:00", ["main"], { files: FILES_RAIL }),
+            commit("8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e", "fix: 主题切换时保持滚动位置", "陈默", "CM", "2026-11-02T13:10:00+08:00", ["main"], { files: FILES_SHELL }),
+            commit("2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d", "新增作品卡片", "林可", "LK", "2026-10-31T17:45:00+08:00", ["main"], { files: FILES_DIFF }),
+            commit("6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a", "release: 0.4.2", "Yitao", "YT", "2026-10-29T10:05:00+08:00", ["release"], { files: FILES_RAIL }),
+          ],
+        },
+        {
+          id: "design-skills",
+          name: "design-skills",
+          path: "D:\\项目文件夹\\design-skills",
+          branch: "main",
+          ahead: 1,
+          behind: 0,
+          status: "干净",
+          branches: ["main"],
+          commits: [
+            commit("1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "补充 review 规则与状态清单", "Dana", "DA", "2026-11-04T07:30:00+08:00", ["main"], { files: FILES_LIST }),
+            commit("5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e", "docs: 添加安装说明", "Yitao", "YT", "2026-11-02T16:20:00+08:00", ["main"], { files: FILES_RAIL }),
+            commit("9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b", "feat: 新增 landing-page-design", "Dana", "DA", "2026-10-30T09:00:00+08:00", ["main"], { files: FILES_DIFF }),
+          ],
+        },
+      ];
+
+      /* ===== 状态与元素 ===== */
+
+      const state = {
+        projectId: "git-client",
+        branch: "feat/ui-rewrite",
+        query: "",
+        activeCommitIndex: -1,
+        activeFile: 0,
+        view: "unified",
+        wrap: false,
+        lastTrigger: null,
+        loadToken: 0,
+      };
+
+      const els = {
+        app: document.getElementById("app"),
+        projectList: document.getElementById("projectList"),
+        projectSearch: document.getElementById("projectSearch"),
+        railToggle: document.getElementById("railToggle"),
+        addProject: document.getElementById("addProject"),
+        settingsBtn: document.getElementById("settingsBtn"),
+        projectTitle: document.getElementById("projectTitle"),
+        branchBtn: document.getElementById("branchBtn"),
+        branchLabel: document.getElementById("branchLabel"),
+        branchPopover: document.getElementById("branchPopover"),
+        statusLine: document.getElementById("statusLine"),
+        searchInput: document.getElementById("searchInput"),
+        searchClear: document.getElementById("searchClear"),
+        commitScroll: document.getElementById("commitScroll"),
+        reviewBackdrop: document.getElementById("reviewBackdrop"),
+        reviewDialog: document.getElementById("reviewDialog"),
+        reviewSubject: document.getElementById("reviewSubject"),
+        reviewMeta: document.getElementById("reviewMeta"),
+        copyHash: document.getElementById("copyHash"),
+        closeReview: document.getElementById("closeReview"),
+        fileList: document.getElementById("fileList"),
+        fileCountHead: document.getElementById("fileCountHead"),
+        diffPane: document.getElementById("diffPane"),
+        diffToolbar: document.getElementById("diffToolbar"),
+        diffContent: document.getElementById("diffContent"),
+        prevCommit: document.getElementById("prevCommit"),
+        nextCommit: document.getElementById("nextCommit"),
+        fileCountFoot: document.getElementById("fileCountFoot"),
+        toast: document.getElementById("toast"),
+      };
+
+      let searchTimer = null;
+      let toastTimer = null;
+      let railUserSet = false;
+
+      /* ===== 数据查询 ===== */
+
+      function activeProject() {
+        return PROJECTS.find((project) => project.id === state.projectId) || PROJECTS[0];
+      }
+
+      function filteredCommits() {
+        const project = activeProject();
+        const query = state.query.trim().toLowerCase();
+        return project.commits.filter((item) => {
+          const branchMatch = state.branch === "all" || item.refs.includes(state.branch);
+          if (!branchMatch) return false;
+          if (!query) return true;
+          return (
+            item.subject.toLowerCase().includes(query) ||
+            item.author.toLowerCase().includes(query) ||
+            item.short.includes(query) ||
+            item.hash.includes(query)
+          );
+        });
+      }
+
+      function currentCommit() {
+        return filteredCommits()[state.activeCommitIndex] || null;
+      }
+
+      function projectInitials(project) {
+        const parts = project.name.split(/[-_]/).filter(Boolean);
+        const initials = parts.length > 1
+          ? parts.map((part) => part.charAt(0)).join("")
+          : project.name.slice(0, 2);
+        return initials.slice(0, 2).toUpperCase();
+      }
+
+      function projectMeta(project) {
+        const bits = [project.branch];
+        if (project.ahead) bits.push(`${project.ahead} 未推送`);
+        if (project.behind) bits.push(`${project.behind} 待拉取`);
+        if (!project.ahead && !project.behind) bits.push("已同步");
+        return bits.join(" · ");
+      }
+
+      function dateKey(iso) {
+        return iso.slice(0, 10);
+      }
+
+      function groupLabel(key) {
+        if (key === "2026-11-04") return "今天";
+        if (key === "2026-11-03") return "昨天";
+        const parts = key.split("-");
+        return `${Number(parts[1])}月${Number(parts[2])}日`;
+      }
+
+      function fmtTime(iso) {
+        return iso.slice(11, 16);
+      }
+
+      function fmtDateTime(iso) {
+        return iso.slice(0, 16).replace("T", " ");
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (char) => {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+        });
+      }
+
+      /* ===== 项目栏 ===== */
+
+      function renderProjects() {
+        els.projectList.innerHTML = PROJECTS.map((project) => {
+          const active = project.id === state.projectId;
+          return `
+            <div class="project ${active ? "active" : ""}" role="button" tabindex="0"
+              data-project="${project.id}" data-name="${escapeHtml(project.name)}"
+              data-path="${escapeHtml(project.path)}" title="${escapeHtml(project.path)}"
+              aria-current="${active ? "true" : "false"}">
+              <span class="project-initials" aria-hidden="true">${projectInitials(project)}</span>
+              <span class="project-name">${escapeHtml(project.name)}</span>
+              <span class="project-branch">${escapeHtml(projectMeta(project))}</span>
+            </div>
+          `;
+        }).join("");
+      }
+
+      function filterProjects() {
+        const query = els.projectSearch.value.trim().toLowerCase();
+        els.projectList.querySelectorAll(".project").forEach((row) => {
+          const haystack = `${row.dataset.name} ${row.dataset.path}`.toLowerCase();
+          row.hidden = Boolean(query) && !haystack.includes(query);
+        });
+      }
+
+      function selectProject(projectId) {
+        if (!PROJECTS.some((project) => project.id === projectId)) return;
+        state.projectId = projectId;
+        const project = activeProject();
+        state.branch = project.branch;
+        state.query = "";
+        state.activeCommitIndex = -1;
+        closeReview();
+        closeBranch();
+        renderProjects();
+        filterProjects();
+        renderHeader();
+        renderSkeleton();
+        const token = ++state.loadToken;
+        setTimeout(() => {
+          if (token !== state.loadToken) return;
+          renderCommits();
+        }, 220);
+      }
+
+      /* ===== 主头部 ===== */
+
+      function renderHeader() {
+        const project = activeProject();
+        els.projectTitle.textContent = project.name;
+        els.projectTitle.title = project.path;
+        els.branchLabel.textContent = state.branch === "all" ? "所有分支" : state.branch;
+
+        const bits = [];
+        if (project.ahead) bits.push(`${project.ahead} 个未推送`);
+        if (project.behind) bits.push(`${project.behind} 个待拉取`);
+        if (!bits.length) bits.push("已同步");
+        bits.push(project.status);
+        els.statusLine.textContent = bits.join(" · ");
+
+        els.searchInput.value = state.query;
+        els.searchClear.hidden = !state.query;
+      }
+
+      function renderBranchPopover() {
+        const project = activeProject();
+        const options = [...project.branches, "all"];
+        els.branchPopover.innerHTML = `
+          <div class="popover-head">分支</div>
+          ${options.map((branch) => {
+            const active = state.branch === branch;
+            const label = branch === "all" ? "所有分支" : branch;
+            return `
+              <button type="button" class="popover-item ${active ? "active" : ""}"
+                data-branch="${branch}" role="menuitemradio" aria-checked="${active}">
+                <span>${escapeHtml(label)}</span>
+                ${active ? '<span class="check" aria-hidden="true">✓</span>' : ""}
+              </button>
+            `;
+          }).join("")}
+        `;
+      }
+
+      function closeBranch() {
+        els.branchPopover.hidden = true;
+        els.branchBtn.setAttribute("aria-expanded", "false");
+      }
+
+      function toggleBranch() {
+        if (!els.branchPopover.hidden) {
+          closeBranch();
+          return;
+        }
+        renderBranchPopover();
+        els.branchPopover.hidden = false;
+        els.branchBtn.setAttribute("aria-expanded", "true");
+      }
+
+      /* ===== 提交列表 ===== */
+
+      function renderCommits() {
+        const commits = filteredCommits();
+        if (!commits.length) {
+          const title = state.query ? "没有匹配的提交" : "这个分支还没有提交";
+          const hint = state.query ? "换一个关键词，或清除搜索。" : "换一个项目，或切到其他分支。";
+          els.commitScroll.innerHTML = `
+            <div class="empty">
+              <h2>${title}</h2>
+              <p>${hint}</p>
+              ${state.query ? '<button class="empty-action" type="button" data-action="clear-search">清除搜索</button>' : ""}
+            </div>
+          `;
+          return;
+        }
+
+        const groups = new Map();
+        commits.forEach((item) => {
+          const key = dateKey(item.iso);
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(item);
+        });
+
+        let html = "";
+        let index = 0;
+        groups.forEach((list, key) => {
+          html += `<section class="date-group" aria-label="${groupLabel(key)}">`;
+          html += `<div class="date-head"><span class="date-label">${groupLabel(key)}</span><span class="date-count">${list.length} 个提交</span></div>`;
+          list.forEach((item) => {
+            html += commitRow(item, index);
+            index += 1;
+          });
+          html += "</section>";
+        });
+
+        if (!state.query) {
+          html += `
+            <button class="load-more" type="button">
+              加载更早的提交
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
+            </button>
+          `;
+        }
+
+        els.commitScroll.innerHTML = html;
+      }
+
+      function commitRow(item, index) {
+        const refs = item.refs.map((ref) => {
+          const cls = ref.startsWith("origin/") ? "ref remote" : "ref";
+          return `<span class="${cls}">${escapeHtml(ref)}</span>`;
+        }).join('<span class="meta-dot" aria-hidden="true">·</span>');
+
+        const meta = [
+          `<span class="hash">${item.short}</span>`,
+          `<span>${escapeHtml(item.author)}</span>`,
+          refs,
+          item.unpushed ? '<span class="unpushed">未推送</span>' : "",
+        ].filter(Boolean).join('<span class="meta-dot" aria-hidden="true">·</span>');
+
+        return `
+          <div class="commit-row" role="button" tabindex="0" data-index="${index}"
+            aria-label="打开审查：${escapeHtml(item.subject)}">
+            <span class="commit-time">${fmtTime(item.iso)}</span>
+            <span class="avatar" aria-hidden="true">${escapeHtml(item.initials)}</span>
+            <div class="commit-main">
+              <div class="commit-subject">${escapeHtml(item.subject)}</div>
+              <div class="commit-meta">${meta}</div>
+            </div>
+            <span class="commit-action">查看改动 <span aria-hidden="true">→</span></span>
+          </div>
+        `;
+      }
+
+      function renderSkeleton() {
+        let html = `
+          <div class="date-head">
+            <span class="sk sk-date"></span>
+            <span class="sk sk-count"></span>
+          </div>
+        `;
+        for (let index = 0; index < 6; index += 1) {
+          html += `
+            <div class="skeleton-row" aria-hidden="true">
+              <span class="sk sk-time"></span>
+              <span class="sk sk-avatar"></span>
+              <span class="sk-lines">
+                <span class="sk sk-subject"></span>
+                <span class="sk sk-meta"></span>
+              </span>
+            </div>
+          `;
+        }
+        els.commitScroll.innerHTML = html;
+      }
+
+      /* ===== 审查弹窗 ===== */
+
+      function openReview(index) {
+        const commits = filteredCommits();
+        if (!commits[index]) return;
+        state.activeCommitIndex = index;
+        state.activeFile = 0;
+        state.lastTrigger = document.activeElement;
+        closeBranch();
+        renderReview();
+        els.reviewBackdrop.hidden = false;
+        document.body.classList.add("modal-open");
+        els.reviewDialog.focus();
+      }
+
+      function closeReview() {
+        if (els.reviewBackdrop.hidden) return;
+        els.reviewBackdrop.hidden = true;
+        document.body.classList.remove("modal-open");
+        const trigger = state.lastTrigger;
+        state.lastTrigger = null;
+        state.activeCommitIndex = -1;
+        if (trigger && trigger.isConnected) trigger.focus();
+      }
+
+      function renderReview() {
+        const item = currentCommit();
+        if (!item) {
+          closeReview();
+          return;
+        }
+
+        els.reviewSubject.textContent = item.subject;
+        els.reviewMeta.textContent = `${item.short} · ${item.author} · ${fmtDateTime(item.iso)} · ${item.refs[0] || ""}`;
+        els.reviewMeta.title = item.hash;
+
+        const commits = filteredCommits();
+        els.prevCommit.disabled = state.activeCommitIndex <= 0;
+        els.nextCommit.disabled = state.activeCommitIndex >= commits.length - 1;
+
+        state.activeFile = Math.min(state.activeFile, Math.max(item.files.length - 1, 0));
+        renderFiles(item);
+        renderDiff(item);
+      }
+
+      function renderFiles(item) {
+        els.fileCountHead.textContent = item.files.length;
+        if (!item.files.length) {
+          els.fileList.innerHTML = "";
+          els.fileCountFoot.textContent = "文件 0 / 0";
+          return;
+        }
+
+        els.fileList.innerHTML = item.files.map((file, index) => {
+          const active = index === state.activeFile;
+          return `
+            <button type="button" class="file-row ${active ? "active" : ""}" data-file="${index}"
+              title="${escapeHtml(file.path)}" aria-pressed="${active}">
+              <span class="file-status ${file.status.toLowerCase()}">${file.status}</span>
+              <span class="file-name">${escapeHtml(file.path)}</span>
+              <span class="file-stat">+${file.add} −${file.del}</span>
+            </button>
+          `;
+        }).join("");
+
+        els.fileCountFoot.textContent = `文件 ${state.activeFile + 1} / ${item.files.length}`;
+      }
+
+      function renderDiffToolbar() {
+        els.diffToolbar.querySelectorAll("[data-view]").forEach((button) => {
+          const active = button.dataset.view === state.view;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+        const wrapButton = els.diffToolbar.querySelector("[data-wrap]");
+        wrapButton.classList.toggle("active", state.wrap);
+        wrapButton.setAttribute("aria-pressed", String(state.wrap));
+      }
+
+      function renderDiff(item) {
+        const file = item.files[state.activeFile];
+        els.diffPane.classList.toggle("wrap", state.wrap);
+        renderDiffToolbar();
+
+        if (!file) {
+          els.diffContent.innerHTML = '<div class="diff-empty">这个提交没有文件改动</div>';
+          return;
+        }
+
+        els.diffContent.innerHTML = state.view === "split" ? renderSplit(file) : renderUnified(file);
+      }
+
+      function hunkStart(header, index) {
+        const match = header.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
+        if (!match) return 1;
+        return Number(match[index]);
+      }
+
+      function diffLine(type, oldNo, newNo, text) {
+        const sign = type === "add" ? "+" : type === "del" ? "-" : " ";
+        const oldLabel = oldNo === "" ? "" : oldNo;
+        const newLabel = newNo === "" ? "" : newNo;
+        return `<div class="diff-line ${type}"><span class="ln">${oldLabel}</span><span class="ln">${newLabel}</span><span class="sign">${sign}</span><span class="code">${escapeHtml(text)}</span></div>`;
+      }
+
+      function renderUnified(file) {
+        let html = '<div class="diff-scroll">';
+        file.hunks.forEach((hunk) => {
+          html += `<div class="hunk">${escapeHtml(hunk.header)}</div>`;
+          let oldNo = hunkStart(hunk.header, 1);
+          let newNo = hunkStart(hunk.header, 2);
+          hunk.lines.forEach((raw) => {
+            const type = raw.charAt(0);
+            const text = raw.slice(1);
+            if (type === "+") {
+              html += diffLine("add", "", newNo, text);
+              newNo += 1;
+            } else if (type === "-") {
+              html += diffLine("del", oldNo, "", text);
+              oldNo += 1;
+            } else {
+              html += diffLine("ctx", oldNo, newNo, text);
+              oldNo += 1;
+              newNo += 1;
+            }
+          });
+        });
+        html += "</div>";
+        return html;
+      }
+
+      function splitLine(type, lineNo, text) {
+        const sign = type === "add" ? "+" : type === "del" ? "-" : " ";
+        return `<div class="split-line ${type}"><span class="ln">${lineNo}</span><span class="sign">${sign}</span><span class="code">${escapeHtml(text)}</span></div>`;
+      }
+
+      function splitBlank() {
+        return '<div class="split-line blank"><span class="ln">0</span><span class="sign"></span><span class="code"></span></div>';
+      }
+
+      function renderSplit(file) {
+        let oldRows = "";
+        let newRows = "";
+        file.hunks.forEach((hunk) => {
+          oldRows += `<div class="hunk">${escapeHtml(hunk.header)}</div>`;
+          newRows += `<div class="hunk">${escapeHtml(hunk.header)}</div>`;
+          let oldNo = hunkStart(hunk.header, 1);
+          let newNo = hunkStart(hunk.header, 2);
+          hunk.lines.forEach((raw) => {
+            const type = raw.charAt(0);
+            const text = raw.slice(1);
+            if (type === "+") {
+              oldRows += splitBlank();
+              newRows += splitLine("add", newNo, text);
+              newNo += 1;
+            } else if (type === "-") {
+              oldRows += splitLine("del", oldNo, text);
+              newRows += splitBlank();
+              oldNo += 1;
+            } else {
+              oldRows += splitLine("ctx", oldNo, text);
+              newRows += splitLine("ctx", newNo, text);
+              oldNo += 1;
+              newNo += 1;
+            }
+          });
+        });
+        return `<div class="diff-split"><div class="pane"><div class="pane-head">旧文件</div>${oldRows}</div><div class="pane"><div class="pane-head">新文件</div>${newRows}</div></div>`;
+      }
+
+      function stepCommit(delta) {
+        const commits = filteredCommits();
+        const next = state.activeCommitIndex + delta;
+        if (next < 0 || next >= commits.length) return;
+        state.activeCommitIndex = next;
+        state.activeFile = 0;
+        renderReview();
+      }
+
+      function stepFile(delta) {
+        const item = currentCommit();
+        if (!item || !item.files.length) return;
+        const next = Math.max(0, Math.min(item.files.length - 1, state.activeFile + delta));
+        if (next === state.activeFile) return;
+        state.activeFile = next;
+        renderFiles(item);
+        renderDiff(item);
+      }
+
+      function setView(view) {
+        const item = currentCommit();
+        if (!item) return;
+        state.view = view;
+        renderDiff(item);
+      }
+
+      function toggleWrap() {
+        const item = currentCommit();
+        if (!item) return;
+        state.wrap = !state.wrap;
+        renderDiff(item);
+      }
+
+      /* ===== 交互 ===== */
+
+      function toast(message) {
+        els.toast.textContent = message;
+        els.toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => els.toast.classList.remove("show"), 1800);
+      }
+
+      function focusSearch() {
+        els.searchInput.focus();
+        els.searchInput.select();
+      }
+
+      function clearSearch() {
+        state.query = "";
+        els.searchInput.value = "";
+        els.searchClear.hidden = true;
+        state.activeCommitIndex = -1;
+        renderCommits();
+        focusSearch();
+      }
+
+      function moveFocus(delta) {
+        const rows = Array.from(els.commitScroll.querySelectorAll(".commit-row"));
+        if (!rows.length) return;
+        const current = rows.indexOf(document.activeElement);
+        let next = current === -1 ? (delta > 0 ? 0 : rows.length - 1) : current + delta;
+        next = Math.max(0, Math.min(rows.length - 1, next));
+        rows[next].focus();
+        rows[next].scrollIntoView({ block: "nearest" });
+      }
+
+      function updateRailButton() {
+        const rail = els.app.classList.contains("rail");
+        els.railToggle.setAttribute("aria-expanded", String(!rail));
+        els.railToggle.setAttribute("aria-label", rail ? "展开项目栏" : "折叠项目栏");
+        els.railToggle.title = rail ? "展开项目栏" : "折叠项目栏";
+      }
+
+      function syncRail() {
+        if (railUserSet) return;
+        els.app.classList.toggle("rail", window.innerWidth < 1100);
+        updateRailButton();
+      }
+
+      function trapTab(event) {
+        const focusables = Array.from(
+          els.reviewDialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')
+        ).filter((element) => element.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === els.reviewDialog)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      function handleModalKey(event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeReview();
+          return;
+        }
+        if (event.key === "Tab") {
+          trapTab(event);
+          return;
+        }
+        if (event.key === "[") {
+          event.preventDefault();
+          stepCommit(-1);
+          return;
+        }
+        if (event.key === "]") {
+          event.preventDefault();
+          stepCommit(1);
+          return;
+        }
+        const key = event.key.toLowerCase();
+        if (key === "n") {
+          event.preventDefault();
+          stepFile(1);
+        } else if (key === "p") {
+          event.preventDefault();
+          stepFile(-1);
+        } else if (key === "u") {
+          event.preventDefault();
+          setView("unified");
+        } else if (key === "s") {
+          event.preventDefault();
+          setView("split");
+        } else if (key === "w") {
+          event.preventDefault();
+          toggleWrap();
+        }
+      }
+
+      /* ===== 绑定 ===== */
+
+      els.projectList.addEventListener("click", (event) => {
+        const row = event.target.closest(".project");
+        if (!row) return;
+        selectProject(row.dataset.project);
+      });
+
+      els.projectList.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const row = event.target.closest(".project");
+        if (!row) return;
+        event.preventDefault();
+        selectProject(row.dataset.project);
+      });
+
+      els.projectSearch.addEventListener("input", filterProjects);
+
+      els.railToggle.addEventListener("click", () => {
+        railUserSet = true;
+        els.app.classList.toggle("rail");
+        updateRailButton();
+      });
+
+      els.addProject.addEventListener("click", () => toast("原型：接入文件夹选择器"));
+      els.settingsBtn.addEventListener("click", () => toast("原型：设置面板"));
+
+      els.projectTitle.addEventListener("dblclick", () => toast("原型：双击标题可最大化窗口"));
+
+      document.querySelectorAll("[data-window]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const action = button.dataset.window;
+          const label = action === "minimize" ? "最小化" : action === "maximize" ? "最大化" : "关闭";
+          toast(`原型：${label}窗口`);
+        });
+      });
+
+      els.branchBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleBranch();
+      });
+
+      els.branchPopover.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-branch]");
+        if (!item) return;
+        state.branch = item.dataset.branch;
+        state.activeCommitIndex = -1;
+        closeBranch();
+        renderHeader();
+        renderCommits();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (els.branchPopover.hidden) return;
+        if (!event.target.closest(".branch-wrap")) closeBranch();
+      });
+
+      els.searchInput.addEventListener("input", () => {
+        state.query = els.searchInput.value;
+        els.searchClear.hidden = !state.query;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          state.activeCommitIndex = -1;
+          renderCommits();
+        }, 160);
+      });
+
+      els.searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          clearTimeout(searchTimer);
+          state.activeCommitIndex = -1;
+          renderCommits();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          clearSearch();
+        }
+      });
+
+      els.searchClear.addEventListener("click", clearSearch);
+
+      els.commitScroll.addEventListener("click", (event) => {
+        const loadMore = event.target.closest(".load-more");
+        if (loadMore) {
+          loadMore.disabled = true;
+          loadMore.textContent = "已经是最早的提交";
+          return;
+        }
+        const clearButton = event.target.closest('[data-action="clear-search"]');
+        if (clearButton) {
+          clearSearch();
+          return;
+        }
+        const row = event.target.closest(".commit-row");
+        if (!row) return;
+        openReview(Number(row.dataset.index));
+      });
+
+      els.commitScroll.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const row = event.target.closest(".commit-row");
+        if (!row) return;
+        event.preventDefault();
+        openReview(Number(row.dataset.index));
+      });
+
+      els.closeReview.addEventListener("click", closeReview);
+
+      els.reviewBackdrop.addEventListener("click", (event) => {
+        if (event.target === els.reviewBackdrop) closeReview();
+      });
+
+      els.copyHash.addEventListener("click", async () => {
+        const item = currentCommit();
+        if (!item) return;
+        try {
+          await navigator.clipboard.writeText(item.hash);
+          toast("已复制完整哈希");
+        } catch {
+          toast("请手动选择哈希");
+        }
+      });
+
+      els.prevCommit.addEventListener("click", () => stepCommit(-1));
+      els.nextCommit.addEventListener("click", () => stepCommit(1));
+
+      els.fileList.addEventListener("click", (event) => {
+        const row = event.target.closest(".file-row");
+        if (!row) return;
+        state.activeFile = Number(row.dataset.file);
+        const item = currentCommit();
+        if (!item) return;
+        renderFiles(item);
+        renderDiff(item);
+      });
+
+      els.diffToolbar.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        if (button.dataset.view) {
+          setView(button.dataset.view);
+        } else if (button.dataset.wrap) {
+          toggleWrap();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (!els.reviewBackdrop.hidden) {
+          handleModalKey(event);
+          return;
+        }
+
+        const target = event.target;
+        const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          focusSearch();
+          return;
+        }
+
+        if (event.key === "/" && !inField) {
+          event.preventDefault();
+          focusSearch();
+          return;
+        }
+
+        if (inField) return;
+
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          moveFocus(event.key === "ArrowDown" ? 1 : -1);
+          return;
+        }
+
+        if (event.key === "Escape") {
+          closeBranch();
+        }
+      });
+
+      window.addEventListener("resize", syncRail);
+
+      /* ===== 启动 ===== */
+
+      renderProjects();
+      filterProjects();
+      renderHeader();
+      renderCommits();
+      syncRail();
+    })();
+  </script>
+</body>
+</html>

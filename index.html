@@ -5,16 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GitTrail</title>
     <script>
-      // 首帧主题：读取已保存主题（默认暗色），立即设置 data-theme，杜绝白屏闪烁
+      // 首帧主题：读取新主题 key，兼容旧 key；支持 system。
       (function () {
         try {
-          var t = localStorage.getItem("git-client-theme");
-          document.documentElement.setAttribute(
-            "data-theme",
-            t === "light" ? "light" : "dark"
-          );
+          var t = localStorage.getItem("gittrail-theme") || localStorage.getItem("git-client-theme") || "system";
+          var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+          var density = localStorage.getItem("gittrail-density");
+          if (density) document.documentElement.setAttribute("data-density", density);
         } catch (e) {
-          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-theme", "light");
         }
       })();
     </script>

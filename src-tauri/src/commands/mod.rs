@@ -278,6 +278,26 @@ pub async fn git_merge_branch(
         .map_err(|e| e.to_string())
 }
 
+/// 设置本地分支上游
+#[tauri::command]
+pub async fn git_set_upstream(
+    path: String,
+    branch: String,
+    upstream: String,
+) -> Result<BranchOperationResult, String> {
+    GitExecutor::set_upstream(&to_path(&path), &branch, &upstream)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 继续已解决冲突的合并/拉取（内部自动提交，无手工提交 UI）
+#[tauri::command]
+pub async fn git_merge_continue(path: String) -> Result<RemoteResult, String> {
+    GitExecutor::merge_continue(&to_path(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 比较两分支领先/落后（9.6）
 #[tauri::command]
 pub async fn git_compare_branches(
@@ -575,6 +595,8 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_delete_branch",
         "git_rename_branch",
         "git_merge_branch",
+        "git_set_upstream",
+        "git_merge_continue",
         "git_cherry_pick",
         "git_cherry_pick_continue",
         "git_cherry_pick_abort",

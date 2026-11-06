@@ -101,6 +101,35 @@ impl GitExecutor {
         }
     }
 
+    /// 继续已解决冲突的 merge/pull。
+    /// 使用 `core.editor=true` 关闭交互式编辑器，冲突已由外部编辑器解决并 git add；
+    /// 该命令会在内部自动生成合并提交，符合本次“不做手工提交 UI、允许内部 commit”的约定。
+    pub async fn merge_continue(repo_path: &Path) -> GitResult<RemoteResult> {
+        match Self::run_git(
+            repo_path,
+            &["-c", "core.editor=true", "merge", "--continue"],
+        )
+        .await
+        {
+            Ok(_) => Ok(RemoteResult {
+                success: true,
+                message: "合并已完成".to_string(),
+                has_conflict: false,
+                status: Self::get_status(repo_path).await.ok(),
+            }),
+            Err(e) => {
+                let message = e.to_string();
+                let has_conflict = Self::check_conflict(repo_path).await.unwrap_or(false);
+                Ok(RemoteResult {
+                    success: false,
+                    message,
+                    has_conflict,
+                    status: Self::get_status(repo_path).await.ok(),
+                })
+            }
+        }
+    }
+
     // ===== pull / push（2.8） =====
 
     /// 拉取远程更新（git pull）

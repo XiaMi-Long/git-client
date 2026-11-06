@@ -413,6 +413,29 @@ impl GitExecutor {
         }
     }
 
+    /// 设置本地分支的上游跟踪分支。
+    /// * `branch` - 本地分支名
+    /// * `upstream` - 远程分支引用，如 origin/main
+    pub async fn set_upstream(
+        repo_path: &Path,
+        branch: &str,
+        upstream: &str,
+    ) -> GitResult<BranchOperationResult> {
+        let target = format!("--set-upstream-to={upstream}");
+        match Self::run_git(repo_path, &["branch", &target, branch]).await {
+            Ok(_) => Ok(BranchOperationResult {
+                success: true,
+                message: format!("分支 '{branch}' 的上游已设为 '{upstream}'"),
+                current_branch: Self::get_current_branch(repo_path).await.ok().flatten(),
+            }),
+            Err(e) => Ok(BranchOperationResult {
+                success: false,
+                message: e.to_string(),
+                current_branch: None,
+            }),
+        }
+    }
+
     /// 比较两分支的领先/落后提交数（9.6）
     /// ahead = from 领先 to（to..from 的提交数），behind = from 落后 to（from..to 的提交数）
     pub async fn compare_branches(repo_path: &Path, from: &str, to: &str) -> GitResult<CompareResult> {

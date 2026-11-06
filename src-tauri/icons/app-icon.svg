@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    GitTrail 3.0 app icon source.
+    Warm clay field, cream commit-node trail with a destination ring.
+    Distinct from the old branch glyph.
+  -->
+  <rect width="1024" height="1024" rx="224" fill="#D95B36"/>
+  <path d="M258 300C470 208 662 356 520 510C390 650 438 764 766 724" fill="none" stroke="#F8EFE7" stroke-width="32" stroke-linecap="round"/>
+  <circle cx="258" cy="300" r="58" fill="#F8EFE7"/>
+  <circle cx="520" cy="510" r="58" fill="#F8EFE7"/>
+  <circle cx="766" cy="724" r="96" fill="#F8EFE7"/>
+  <circle cx="766" cy="724" r="36" fill="#D95B36"/>
+</svg>

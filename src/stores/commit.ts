@@ -21,6 +21,7 @@ export const useCommitStore = defineStore("commit", () => {
   const loading = ref(false);
   const loadingMore = ref(false);
   const hasMore = ref(true);
+  const error = ref<string | null>(null);
 
   // 6.5 分支范围：current 当前分支 / all 所有分支
   const scope = ref<"current" | "all">("current");
@@ -103,11 +104,13 @@ export const useCommitStore = defineStore("commit", () => {
       hasMore.value = false;
       loading.value = false;
       loadingMore.value = false;
+      error.value = null;
       return;
     }
     const path = repo.path;
     loading.value = true;
     loadingMore.value = false;
+    error.value = null;
     try {
       const query: LogQuery = {
         skip: 0,
@@ -119,12 +122,14 @@ export const useCommitStore = defineStore("commit", () => {
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
       if (requestSequence !== logRequestSequence || repo.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       commits.value = result;
+      error.value = null;
       // 搜索模式返回合并结果（固定上限），不触发分页加载
       hasMore.value = !search.value.trim() && result.length >= PAGE_SIZE;
-    } catch {
+    } catch (e) {
       if (requestSequence !== logRequestSequence || repo.id !== repoStore.activeRepo?.id || path !== repoStore.activeRepo?.path) return;
       commits.value = [];
       hasMore.value = false;
+      error.value = e instanceof Error ? e.message : String(e);
     } finally {
       if (requestSequence === logRequestSequence) loading.value = false;
     }
@@ -205,6 +210,7 @@ export const useCommitStore = defineStore("commit", () => {
     search.value = "";
     fileHistoryPath.value = "";
     scope.value = "current";
+    error.value = null;
     await loadCommits();
   }
 
@@ -213,6 +219,7 @@ export const useCommitStore = defineStore("commit", () => {
     loading,
     loadingMore,
     hasMore,
+    error,
     scope,
     browseBranch,
     search,

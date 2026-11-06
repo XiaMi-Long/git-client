@@ -1,7 +1,9 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
+import "./styles/fonts.css";
 import "./styles/main.css";
+import "./styles/rewrite.css";
 
 /**
  * 阻止正式环境显示 WebView 的原生浏览器右键菜单。
