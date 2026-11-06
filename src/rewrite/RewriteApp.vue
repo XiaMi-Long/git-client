@@ -13,6 +13,7 @@
 
   @changeLog
     - 2026-11-04: Created. 新应用壳与真实项目/提交/Review/设置/远程读取。
+    - 2026-11-06: Updated. 明确单个和批量添加的目录选择提示，并补充选择窗口的异常反馈。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -300,56 +301,78 @@ async function selectProject(repo: RepoTab): Promise<void> {
 
 /**
  * 添加项目：系统目录选择 -> Git 校验 -> 写入项目布局。
+ * @param multiple - 是否允许在系统窗口中多选项目目录；false 时只选择一个目录
  * @returns {Promise<void>}
  */
 async function addProject(multiple: boolean): Promise<void> {
-  if (addingProjects.value) return;
+  // 目录选择和添加过程共用互斥状态，避免两个入口同时发起添加。
+  if (addingProjects.value) {
+    return;
+  }
   addingMode.value = multiple ? "batch" : "single";
   addingProjects.value = true;
+
   try {
+    // 1. 根据入口启用单选或多选；取消选择时保留现有项目和激活状态。
     const selected = await open({
+      title: multiple ? "批量添加项目（按住 Ctrl 或 Shift 多选文件夹）" : "添加单个项目",
       directory: true,
       multiple,
       defaultPath: settingsStore.defaultOpenDir || undefined,
     });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
-    if (!paths.length) return;
+    if (!selected) {
+      return;
+    }
+    const selectedProjectPaths = Array.isArray(selected) ? selected : [selected];
+    if (!selectedProjectPaths.length) {
+      return;
+    }
 
-    const previousActive = repoStore.activeId;
-    const added: string[] = [];
-    let failed = 0;
+    // 2. 逐个复用仓库校验和打开流程；单个失败不阻断其余项目，已打开的目录不重复添加。
+    const previousActiveId = repoStore.activeId;
+    const addedProjectPaths: string[] = [];
+    let failedProjectCount = 0;
 
-    for (const path of paths) {
-      if (repoStore.repos.some((repo) => repo.path === path)) continue;
+    for (const projectPath of selectedProjectPaths) {
+      const isProjectAlreadyOpen = repoStore.repos.some((repo) => repo.path === projectPath);
+      if (isProjectAlreadyOpen) {
+        continue;
+      }
       try {
-        await repoStore.openRepo(path);
-        added.push(path);
+        await repoStore.openRepo(projectPath);
+        addedProjectPaths.push(projectPath);
       } catch {
-        failed += 1;
+        failedProjectCount += 1;
       }
     }
 
-    if (added.length) {
-      layout.saveOrder([...new Set([...layout.order.value, ...added])]);
-      const targetId = previousActive && repoStore.repos.some((repo) => repo.id === previousActive)
-        ? previousActive
-        : repoStore.repos.find((repo) => repo.path === added[0])?.id;
-      if (targetId) await repoStore.setActive(targetId);
+    // 3. 成功项目追加到现有顺序末尾，并沿用原来保留当前项目的行为。
+    if (addedProjectPaths.length) {
+      layout.saveOrder([...new Set([...layout.order.value, ...addedProjectPaths])]);
+      const targetId = previousActiveId && repoStore.repos.some((repo) => repo.id === previousActiveId)
+        ? previousActiveId
+        : repoStore.repos.find((repo) => repo.path === addedProjectPaths[0])?.id;
+      if (targetId) {
+        await repoStore.setActive(targetId);
+      }
       layout.setActivePath(repoStore.activeRepo?.path ?? null);
       view.value = "commits";
       closeFloatingPanels();
     }
 
-    if (added.length) {
+    // 4. 根据实际添加结果反馈，避免将部分失败或全部重复误报为全部成功。
+    if (addedProjectPaths.length) {
       showToast(multiple
-        ? `已添加 ${added.length} 个项目${failed ? `，${failed} 个失败` : ""}`
+        ? `已添加 ${addedProjectPaths.length} 个项目${failedProjectCount ? `，${failedProjectCount} 个失败` : ""}`
         : "项目已打开");
-    } else if (failed) {
+    } else if (failedProjectCount) {
       showToast("没有添加成功，请检查所选目录是否为 Git 仓库");
     } else {
       showToast("所选项目已在列表中");
     }
+  } catch (error) {
+    // 原生目录选择直接调用 Tauri，没有公共错误提示，需要在此反馈窗口打开失败等异常。
+    showToast(error instanceof Error ? error.message : String(error));
   } finally {
     addingProjects.value = false;
     addingMode.value = null;
@@ -1189,7 +1212,7 @@ onUnmounted(() => {
               <svg v-if="addingMode !== 'single'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
               <svg v-else class="add-spin" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/></svg>
             </button>
-            <button class="icon-btn batch-add-btn" type="button" :disabled="addingProjects" :aria-label="addingMode === 'batch' ? '正在批量添加项目' : '批量添加项目'" :title="addingMode === 'batch' ? '正在批量添加项目' : '批量添加项目（可多选）'" @click="addProject(true)">
+            <button class="icon-btn batch-add-btn" type="button" :disabled="addingProjects" :aria-label="addingMode === 'batch' ? '正在批量添加项目' : '批量添加项目'" :title="addingMode === 'batch' ? '正在批量添加项目' : '批量添加项目（按住 Ctrl 或 Shift 多选文件夹）'" @click="addProject(true)">
               <svg v-if="addingMode !== 'batch'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4H6l1.2 1.4H13a1 1 0 0 1 1 1V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12z"/><path d="M8 8v3M6.5 9.5h3"/></svg>
               <svg v-else class="add-spin" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/></svg>
             </button>

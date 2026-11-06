@@ -2,7 +2,7 @@
 
 - [x] 0.1 核对 proposal/ux-review/clarification 的 Q1-Q7 与用户答复，确认无阻塞项；读取 `ui-review.md` 的最终 UI 基准，确认报告结论允许进入实现
 - [x] 0.2 复核真实代码契约：`src/stores/*`、`src/types/git.ts`、`src-tauri/src/commands/mod.rs`、`branch.rs`、`remote.rs`、`stash.rs`、`diff.rs`、`log.rs`；确认不删除旧文件、不扩大旧 selectionStore working/squash 使用范围
-- [x] 0.3 确认本轮授权边界：仅代码修改与静态自检；不运行构建、类型检查、浏览器/自动化测试，不启动 dev server
+- [x] 0.3 确认当前授权边界：2026-11-06 用户要求启动、提交代码及完善项目单个/多个添加；复用已有桌面进程和开发服务，只做代码阅读与 Diff，不运行构建、类型检查、浏览器或测试
 
 ## 1. 增量实现
 
@@ -18,11 +18,13 @@
 
 ### 1.2 项目列表、别名、排序与持久化
 
-- [x] 1.2.1 修改 `src/stores/repo.ts`：`RepoTab` 增加 `alias`；持久化项目顺序/别名/当前项目，兼容旧 `git-client-recent-repos` 字符串数组并迁移
+- [x] 1.2.1 复用 `src/stores/repo.ts` 的仓库打开及旧路径数组持久化；项目顺序/别名/当前项目由 `useProjectLayout` 单独保存，不修改 `RepoTab` 或已有接口
 - [x] 1.2.2 新建 `src/rewrite/composables/useProjectLayout.ts` 或等价逻辑：读取/写入顺序、别名、activePath；路径失效回退
 - [x] 1.2.3 新建 `src/rewrite/components/ProjectRail.vue`：项目行、当前态、分支/状态、添加项目、移除项目、右键重命名、拖拽排序、项目搜索、折叠
 - [x] 1.2.4 接入 `@tauri-apps/plugin-dialog` 打开目录与 `repoStore.openRepo/closeRepo/setActive`；移除当前项目后监听与激活切换正确
 - [x] 1.2.5 项目右键菜单和重命名使用统一 `ActionMenu`/`ActionDialog`；别名空值/重复提示，真实路径不变
+- [x] 1.2.6 按用户 Q8 保留单个/批量两个入口，确认原生目录窗口按入口单选或多选，补充 Ctrl/Shift 多选提示和选择窗口异常反馈
+- [x] 1.2.7 代码阅读核对重复跳过、部分失败继续、取消、布局持久化、保留当前项目及共用禁用状态；真实目录选择与添加操作未执行，按 MF-02a 待人工验证
 - [ ] 完成依据：至少 2 个真实仓库可切换/添加/移除；拖拽和别名刷新后保留；路径不改变；旧项目本地存储可迁移
 
 ### 1.3 头部、提交列表与搜索

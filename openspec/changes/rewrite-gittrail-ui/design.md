@@ -7,7 +7,7 @@
 | `src/App.vue` | 挂载旧 `MainView` | 主题初始化、设置加载、恢复仓库 | 修改 | 改为挂载新应用壳；旧 MainView 不再从入口挂载 |
 | `src/views/MainView.vue` | 旧三栏布局 + 工作区 + 提交框 | 窗口/监听/布局经验 | 不复用挂载 | 旧 UI 下线；文件暂留不删除 |
 | `src/components/layout/TitleBar.vue` | 旧独立 32px 标题栏 | Tauri `getCurrentWindow` 最小化/最大化/关闭、拖拽区 | 逻辑复用，视觉重写 | 新头部整合窗口控制，避免双标题栏 |
-| `src/stores/repo.ts` | 多仓库、分支/标签/储藏/状态、路径持久化 | `repos`、`activeRepo`、`openRepo`、`refreshRepo`、`closeRepo`、`setActive`、`restoreRepos` | 修改 | 增加别名、顺序、当前项目持久化；移除当前项目保持监听正确 |
+| `src/stores/repo.ts` | 多仓库、分支/标签/储藏/状态、路径持久化 | `repos`、`activeRepo`、`openRepo`、`refreshRepo`、`closeRepo`、`setActive`、`restoreRepos` | 复用 | 单个和批量添加均调用现有 `openRepo`；别名、顺序和当前路径由 `useProjectLayout` 独立保存，不修改 store 契约 |
 | `src/stores/commit.ts` | 提交分页、搜索、范围、未推送 | `loadCommits`、`loadMore`、`setSearch`、`scope`、`commits` | 复用 | 新提交列表直接使用；不改查询契约 |
 | `src/stores/selection.ts` | 旧工作区/提交/分支/远程/冲突/压缩挑拣 | 旧组件仍在用；新 UI 不复用其 working/commit、squash 方法 | 不复用挂载 | 新 UI 不暴露 working/commit UI，避免其 `selectWorking` 副作用 |
 | `src/stores/settings.ts` | Git 路径/默认目录/远程保护/储藏模板/时间格式 | 字段和持久化 | 复用 + 设置页接入 | 保留旧设置能力；旧 SettingsDialog 不再挂载 |
@@ -35,6 +35,8 @@
 | 设置项 | settings store 字段 | string/boolean/enum | 缺失用默认值 | 路径/模板/时间格式校验 | settings.ts |
 
 ## 模块职责、组件拆分与数据流
+
+项目添加沿用 `RewriteApp.vue` 已有 `addProject(multiple)`：单个入口传 `false`，批量入口传 `true`；系统目录窗口启用 `directory: true`，根据入口切换 `multiple`，批量标题及按钮提示说明 Ctrl/Shift 多选。逐个调用 `repoStore.openRepo`，已打开路径跳过，单个失败继续；成功路径追加布局顺序，按已有逻辑恢复原激活项目或选择首个成功项目。选择取消不变更状态，原生窗口异常由当前 toast 提示，`finally` 释放两个入口共用的禁用状态。此次仅完善现有流程的提示与异常反馈，无新增 Hook、组件或后端接口。依据为用户 Q8。
 
 新增目录建议 `src/rewrite/`：
 
