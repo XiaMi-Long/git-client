@@ -6,7 +6,21 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::executor::GitExecutor;
-use super::types::GitResult;
+use super::types::{GitError, GitResult};
+
+/// 列表与单分支预览共用的 Git 字段。
+const BRANCH_FORMAT: &str = "--format=%(HEAD)%00%(refname)%00%(objectname)%00%(subject)%00%(upstream:short)%00%(upstream:track)";
+
+/// 本地分支所跟踪的远端及完整引用，用于精确限定远程命令的范围。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct BranchUpstreamTarget {
+    /// 已配置的远程名称。
+    pub remote: String,
+    /// 远程仓库中的分支引用。
+    pub remote_ref: String,
+    /// 本机保存的远程跟踪引用。
+    pub tracking_ref: String,
+}
 
 /// 分支信息
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +43,17 @@ pub struct BranchInfo {
     pub ahead: u32,
     /// 落后上游提交数
     pub behind: u32,
+}
+
+/// 单分支预览额外读取实际远程目标，分支列表仍使用原有数据格式。
+#[derive(Debug, Clone, Serialize)]
+pub struct BranchPreviewInfo {
+    #[serde(flatten)]
+    pub branch: BranchInfo,
+    /// 可用于远程操作的上游目标，本地上游和未配置上游时为空。
+    pub upstream_target: Option<BranchUpstreamTarget>,
+    /// 已配置上游，但本机缺少其跟踪引用，领先和落后数量未知。
+    pub upstream_gone: bool,
 }
 
 /// 标签信息
@@ -73,7 +98,7 @@ impl GitExecutor {
             repo_path,
             &[
                 "for-each-ref",
-                "--format=%(HEAD)%00%(refname)%00%(objectname)%00%(subject)%00%(upstream:short)%00%(upstream:track)",
+                BRANCH_FORMAT,
                 "refs/heads/",
                 "refs/remotes/",
             ],
@@ -83,60 +108,77 @@ impl GitExecutor {
         Self::parse_branches(&output)
     }
 
+    /// 按完整引用读取单个本地或远程分支，避免同名标签及其他引用混入预览。
+    pub async fn get_branch_info(repo_path: &Path, branch_ref: &str) -> GitResult<BranchPreviewInfo> {
+        let missing_branch = || GitError::CommandFailed {
+            stderr: format!("找不到分支 {branch_ref}，请刷新分支列表"),
+            exit_code: None,
+        };
+        // 只允许查询分支引用，避免将标签或其他对象用作远程操作目标。
+        if !branch_ref.starts_with("refs/heads/") && !branch_ref.starts_with("refs/remotes/") {
+            return Err(missing_branch());
+        }
+        let format = format!("{BRANCH_FORMAT}%00%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)");
+        let output = Self::run_git(repo_path, &["for-each-ref", &format, "--", branch_ref]).await?;
+
+        for line in output.lines() {
+            let fields: Vec<&str> = line.split('\0').collect();
+            // for-each-ref 的过滤条件也能匹配路径前缀，只接受所选分支的完整引用。
+            if fields.len() < 9 || fields[1] != branch_ref {
+                continue;
+            }
+            let tracking_ref = fields[6];
+            let remote = fields[7];
+            let remote_ref = fields[8];
+            // 获取远程时只写远程跟踪引用，拒绝本地上游或映射到本地工作分支的配置。
+            let has_remote_upstream = tracking_ref.starts_with("refs/remotes/")
+                && remote_ref.starts_with("refs/heads/")
+                && !remote.is_empty()
+                && remote != ".";
+            let upstream_target = has_remote_upstream.then(|| BranchUpstreamTarget {
+                remote: remote.to_string(),
+                remote_ref: remote_ref.to_string(),
+                tracking_ref: tracking_ref.to_string(),
+            });
+            return Ok(BranchPreviewInfo {
+                branch: Self::parse_branch_fields(&fields),
+                upstream_target,
+                upstream_gone: fields[5] == "[gone]",
+            });
+        }
+        Err(missing_branch())
+    }
+
     /// 解析分支列表
     fn parse_branches(raw: &str) -> GitResult<Vec<BranchInfo>> {
         let mut branches = Vec::new();
-
         for line in raw.lines() {
-            if line.is_empty() {
-                continue;
-            }
-
             let fields: Vec<&str> = line.split('\0').collect();
-            if fields.len() < 6 {
-                continue;
+            if fields.len() >= 6 {
+                branches.push(Self::parse_branch_fields(&fields));
             }
-
-            let head_marker = fields[0]; // "*" 表示当前分支，" " 表示非当前
-            let full_name = fields[1].to_string();
-            let commit_hash = fields[2].to_string();
-            let subject = fields[3].to_string();
-            let upstream = fields[4].to_string();
-            let track = fields[5].to_string();
-
-            let is_current = head_marker == "*";
-            let is_remote = full_name.starts_with("refs/remotes/");
-
-            // 从完整 ref 名提取短名
-            let name = if is_remote {
-                full_name
-                    .strip_prefix("refs/remotes/")
-                    .unwrap_or(&full_name)
-                    .to_string()
-            } else {
-                full_name
-                    .strip_prefix("refs/heads/")
-                    .unwrap_or(&full_name)
-                    .to_string()
-            };
-
-            // 解析 ahead/behind
-            let (ahead, behind) = Self::parse_track(&track);
-
-            branches.push(BranchInfo {
-                name,
-                full_name,
-                commit_hash,
-                subject,
-                is_current,
-                is_remote,
-                upstream: if upstream.is_empty() { None } else { Some(upstream) },
-                ahead,
-                behind,
-            });
         }
-
         Ok(branches)
+    }
+
+    /// 从已校验的六个基础字段读取分支，扩展字段由预览单独处理。
+    fn parse_branch_fields(fields: &[&str]) -> BranchInfo {
+        let full_name = fields[1];
+        let upstream = fields[4];
+        let is_remote = full_name.starts_with("refs/remotes/");
+        let prefix = if is_remote { "refs/remotes/" } else { "refs/heads/" };
+        let (ahead, behind) = Self::parse_track(fields[5]);
+        BranchInfo {
+            name: full_name.strip_prefix(prefix).unwrap_or(full_name).to_string(),
+            full_name: full_name.to_string(),
+            commit_hash: fields[2].to_string(),
+            subject: fields[3].to_string(),
+            is_current: fields[0] == "*",
+            is_remote,
+            upstream: (!upstream.is_empty()).then(|| upstream.to_string()),
+            ahead,
+            behind,
+        }
     }
 
     /// 解析 upstream:track 输出，如 "ahead 2, behind 1"

@@ -5,6 +5,7 @@
  *
  * @changeLog
  *   - 2026-11-04: Created. 分支/远程/冲突/储藏/cherry-pick 真实命令与刷新。
+ *   - 2026-11-06: Updated. 与顶栏远程同步共享互斥器，并隔离过期的冲突状态请求。
  */
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -28,6 +29,8 @@ const busy = ref<string | null>(null);
 const operation = ref<OperationState>("normal");
 const conflictedFiles = ref<string[]>([]);
 const lastError = ref<string | null>(null);
+// 多个入口都可能刷新冲突状态，只采纳仍属于当前项目的最新请求。
+let operationRequestSequence = 0;
 
 /**
  * 归一化 Tauri/Git 错误为可展示文案。
@@ -64,6 +67,7 @@ function focusCurrentBranch(): void {
  * @returns {Promise<void>}
  */
 async function refreshOperation(): Promise<void> {
+  const requestSequence = ++operationRequestSequence;
   const path = useRepoStore().activeRepo?.path;
   if (!path) {
     operation.value = "normal";
@@ -71,13 +75,20 @@ async function refreshOperation(): Promise<void> {
     return;
   }
   try {
+    // 1. 先读取完整的操作状态和冲突文件，避免中途只更新部分状态。
     const state = await invoke<OperationState>("git_get_operation_state", { path });
-    operation.value = state;
-    if (state === "normal") {
-      conflictedFiles.value = [];
-    } else {
-      conflictedFiles.value = await invoke<string[]>("git_list_conflicted_files", { path }).catch(() => []);
+    const conflicted = state === "normal"
+      ? []
+      : await invoke<string[]>("git_list_conflicted_files", { path }).catch(() => []);
+
+    // 2. 两次请求期间都可能切换项目，只提交当前项目的最新结果。
+    const isStaleRequest = requestSequence !== operationRequestSequence || path !== useRepoStore().activeRepo?.path;
+    // 请求返回时可能已切换项目，不能把旧项目的冲突提示覆盖到新项目。
+    if (isStaleRequest) {
+      return;
     }
+    operation.value = state;
+    conflictedFiles.value = conflicted;
   } catch {
     // 检测失败时保留旧状态，避免误报正常
   }
@@ -494,6 +505,7 @@ export function useGitActions() {
     operation,
     conflictedFiles,
     lastError,
+    runExclusive: run,
     refreshOperation,
     checkoutBranch,
     createBranch,

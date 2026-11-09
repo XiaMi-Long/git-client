@@ -1,0 +1,116 @@
+/*
+  @description 为设置预览、提交审查和储藏对比提供独立配色。跟随界面时使用原有代码颜色。
+  @dataFormat 根元素 data-code-theme 选定预设，统一视图和双栏视图共用 --code-* 变量。
+  @changeLog
+    - 2026-11-07: Created. 接入五套固定配色，适配语法高亮、行号与增删行。
+*/
+
+/* GitHub 预设参考 Primer 的主题与差异色值。行号和注释使用在增删行上也清晰的灰阶。
+   https://github.com/primer/github-vscode-theme/blob/main/src/colors.js */
+:root[data-code-theme="github-light"] {
+  --code-bg: #ffffff;
+  --code-text: #1f2328;
+  --code-gutter: #57606a;
+  --code-comment: #57606a;
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-tag: #116329;
+  --code-fn: #8250df;
+  --code-hunk: #f6f8fa;
+  --code-border: #d0d7de;
+  --code-add-bg: #e6ffec;
+  --code-add-sign: #116329;
+  --code-del-bg: #ffebe9;
+  --code-del-sign: #82071e;
+}
+
+:root[data-code-theme="github-dark"] {
+  --code-bg: #0d1117;
+  --code-text: #e6edf3;
+  --code-gutter: #8b949e;
+  --code-comment: #8b949e;
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-tag: #7ee787;
+  --code-fn: #d2a8ff;
+  --code-hunk: #161b22;
+  --code-border: #30363d;
+  --code-add-bg: #12261e;
+  --code-add-sign: #7ee787;
+  --code-del-bg: #301b1e;
+  --code-del-sign: #ff7b72;
+}
+
+/* One Dark 参考 Atom 配色，并为差异底色上的小字号文字适当提亮。
+   https://github.com/atom/atom/blob/master/packages/one-dark-syntax/styles/colors.less */
+:root[data-code-theme="one-dark"] {
+  --code-bg: #282c34;
+  --code-text: #abb2bf;
+  --code-gutter: #939eae;
+  --code-comment: #9ba4b4;
+  --code-keyword: #d590e9;
+  --code-string: #98c379;
+  --code-number: #d19a66;
+  --code-tag: #e58a94;
+  --code-fn: #61afef;
+  --code-hunk: #323842;
+  --code-border: #414956;
+  --code-add-bg: #2a3a32;
+  --code-add-sign: #98c379;
+  --code-del-bg: #3d2d37;
+  --code-del-sign: #f08c96;
+}
+
+/* Dracula 按原主题的语法颜色映射，行号及注释使用提亮后的蓝灰色。
+   https://spec.draculatheme.com/ */
+:root[data-code-theme="dracula"] {
+  --code-bg: #282a36;
+  --code-text: #f8f8f2;
+  --code-gutter: #9ea8c8;
+  --code-comment: #9ea8c8;
+  --code-keyword: #ff79c6;
+  --code-string: #f1fa8c;
+  --code-number: #bd93f9;
+  --code-tag: #ff79c6;
+  --code-fn: #50fa7b;
+  --code-hunk: #343746;
+  --code-border: #44475a;
+  --code-add-bg: #253c35;
+  --code-add-sign: #50fa7b;
+  --code-del-bg: #432f3c;
+  --code-del-sign: #ff9292;
+}
+
+/* Nord 使用 Polar Night 底色及 Frost 和 Aurora 的语法色，提升差异行文字的亮度。
+   https://www.nordtheme.com/docs/colors-and-palettes/ */
+:root[data-code-theme="nord"] {
+  --code-bg: #2e3440;
+  --code-text: #d8dee9;
+  --code-gutter: #9daac1;
+  --code-comment: #a0aec2;
+  --code-keyword: #91b2d2;
+  --code-string: #a3be8c;
+  --code-number: #c0a1bd;
+  --code-tag: #91b2d2;
+  --code-fn: #88c0d0;
+  --code-hunk: #3b4252;
+  --code-border: #4c566a;
+  --code-add-bg: #334136;
+  --code-add-sign: #a3be8c;
+  --code-del-bg: #423442;
+  --code-del-sign: #e29ca4;
+}
+
+/* 差异块与双栏的分隔线使用预设的边框颜色，跟随界面时使用原有边框。 */
+.diff-scroll .hunk,
+.diff-split .hunk,
+.diff-split .pane + .pane {
+  border-color: var(--code-border, var(--border));
+}
+
+/* 读取提示与空状态位于代码底色上，选用预设中的行号色保持可读。 */
+:root[data-code-theme]:not([data-code-theme="follow"]) .diff .diff-empty {
+  color: var(--code-gutter);
+}

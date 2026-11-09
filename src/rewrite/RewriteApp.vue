@@ -8,12 +8,25 @@
     1. 启动恢复项目，应用项目顺序/别名/上次激活项，加载真实分支、储藏和提交。
     2. 项目点击切换；拖拽排序；右键重命名/移除；真实路径不改。
     3. 提交列表按日期分组；搜索/分页/错误态；点击打开真实 Review。
-    4. 头部切换分支浏览范围、fetch/pull/push、储藏列表、设置页；窗口控制走 Tauri。
+    4. 头部切换当前和所有分支的范围，其他分支使用独立预览。同步、储藏和设置仍从头部进入。窗口控制走 Tauri。
     5. 分支完整操作、冲突、储藏写操作在后续任务接入本壳。
 
   @changeLog
     - 2026-11-04: Created. 新应用壳与真实项目/提交/Review/设置/远程读取。
     - 2026-11-06: Updated. 明确单个和批量添加的目录选择提示，并补充选择窗口的异常反馈。
+    - 2026-11-06: Updated. 补齐顶部内边距和窗口按钮间隙的拖动区域，保留按钮的普通点击行为。
+    - 2026-11-06: Updated. 顶栏常驻拉取和推送数量，接入过程反馈及进入项目、窗口回焦时的自动获取。
+    - 2026-11-07: Updated. 顶部标题同时展示软件内别名和原始目录名，补充长名称提示与拖动区域。
+    - 2026-11-07: Updated. 分支菜单支持标记和取消标记，星标按项目保存。
+    - 2026-11-07: Updated. 项目右键菜单支持复制仓库目录的绝对路径。
+    - 2026-11-07: Updated. 提交搜索框支持近半年作者快捷筛选，并保留关键词。
+    - 2026-11-07: Updated. 提交右键菜单支持复制提交信息。
+    - 2026-11-07: Updated. 首屏恢复项目行，优先加载上次项目，再补齐其他项目的分支摘要。
+    - 2026-11-07: Updated. 提交区只在应用首次加载时显示等待提示，切换时直接等查询结果。
+    - 2026-11-07: Updated. 远程获取改为手动触发，更多菜单对长上游名称提供悬停提示。
+    - 2026-11-07: Updated. 提交列表根据时间格式分配列宽，长时间文案可悬停查看。
+    - 2026-11-07: Updated. 非当前分支通过独立弹窗查看历史和执行手动同步。
+    - 2026-11-07: Updated. 共用提交搜索组件，并让搜索框换行后从左侧开始。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -26,11 +39,16 @@ import { useCommitStore } from "@/stores/commit";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
+import type { BranchPreviewTarget } from "./composables/useBranchPreview";
 import { useGitActions, type GitActionResult } from "./composables/useGitActions";
-import type { BranchInfo, CommitInfo, FileDiff, RemoteResult, StashInfo } from "@/types/git";
+import type { BranchInfo, CommitInfo, FileDiff, StashInfo } from "@/types/git";
+import { useCommitSearch } from "./composables/useCommitSearch";
 import { useProjectLayout } from "./composables/useProjectLayout";
+import { useRemoteSync, type RemoteSyncAction } from "./composables/useRemoteSync";
 import { authorMark, authorTone } from "./utils/author";
 import { dateKey, formatTime, groupLabel } from "./utils/date";
+import BranchPreviewDialog from "./components/BranchPreviewDialog.vue";
+import CommitSearchBox from "./components/CommitSearchBox.vue";
 import ReviewDialog from "./components/ReviewDialog.vue";
 import SettingsView from "./components/SettingsView.vue";
 import ConflictDialog from "./components/ConflictDialog.vue";
@@ -41,6 +59,9 @@ const commitStore = useCommitStore();
 const settingsStore = useSettingsStore();
 const themeStore = useThemeStore();
 const layout = useProjectLayout();
+// 在首屏渲染前恢复项目行和显示偏好，Git 读取留到挂载后。
+repoStore.restoreRepos();
+const startupProjectPath = layout.hydrate(repoStore.repos, repoStore.activeRepo?.path ?? null);
 const actions = useGitActions();
 const actionBusy = actions.busy;
 const gitOperation = actions.operation;
@@ -51,21 +72,38 @@ const isMaximized = ref(false);
 let unlistenResized: (() => void) | null = null;
 
 const booting = ref(true);
+// 提交区的大提示只用于首屏，用户切换项目或分支后便收起。
+const showStartupHistoryNotice = ref(true);
 const view = ref<"commits" | "settings">("commits");
 const railCollapsed = ref(false);
 let railUserSet = false;
 const projectQuery = ref("");
 const addingProjects = ref(false);
 const addingMode = ref<"single" | "batch" | null>(null);
-const localSearch = ref("");
-let searchTimer: ReturnType<typeof setTimeout> | null = null;
+const commitSearch = useCommitSearch({
+  scope: () => {
+    const repo = repoStore.activeRepo;
+    return repo ? {
+      repoId: repo.id,
+      path: repo.path,
+      branch: commitStore.queryBranch,
+      allBranches: commitStore.queryAllBranches,
+      headRef: commitStore.currentBranch?.full_name,
+    } : null;
+  },
+  selectedAuthor: () => repoStore.activeRepo ? commitStore.authorFilter : null,
+  setKeyword: commitStore.setSearch,
+  setAuthor: commitStore.setAuthorFilter,
+});
+const { searchInput, authorOptionsOpen, openAuthorOptions, closeAuthorOptions, clearCommitFilters } = commitSearch;
 const dragPath = ref<string | null>(null);
 const dragOverPath = ref<string | null>(null);
 
 const branchOpen = ref(false);
+const branchButton = ref<HTMLButtonElement | null>(null);
+const branchPreview = ref<BranchPreviewTarget | null>(null);
 const syncOpen = ref(false);
 const stashOpen = ref(false);
-const syncBusy = ref(false);
 
 const projectMenu = ref<{ x: number; y: number; repo: RepoTab } | null>(null);
 const commitMenu = ref<{ x: number; y: number; commit: CommitInfo; index: number } | null>(null);
@@ -109,6 +147,14 @@ const toastVisible = ref(false);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeRepo = computed(() => repoStore.activeRepo);
+const activeProjectLoading = computed(() => {
+  const waitingForSelection = !activeRepo.value && Boolean(repoStore.pendingActivationId);
+  return booting.value || waitingForSelection || Boolean(activeRepo.value?.loading);
+});
+const waitingForCommitContent = computed(() => activeRepo.value
+  ? commitStore.loading && !commitStore.commits.length
+  : activeProjectLoading.value);
+const hasCommitFilters = computed(() => Boolean(commitStore.authorFilter || commitStore.search.trim()));
 const sortedProjects = computed(() => layout.sortProjects(repoStore.repos));
 const visibleProjects = computed(() => {
   const query = projectQuery.value.trim().toLowerCase();
@@ -124,7 +170,22 @@ const currentBranch = computed<BranchInfo | null>(
 );
 const localBranches = computed(() => (activeRepo.value?.branches ?? []).filter((branch) => !branch.is_remote));
 const remoteBranches = computed(() => (activeRepo.value?.branches ?? []).filter((branch) => branch.is_remote));
+const markedBranchRefs = computed(() => {
+  const repoPath = activeRepo.value?.path;
+  return new Set(repoPath ? layout.getMarkedBranchRefs(repoPath) : []);
+});
+const remoteSync = useRemoteSync(showToast);
+const syncBusy = remoteSync.busy;
+const syncAction = remoteSync.currentAction;
+const syncFeedback = remoteSync.feedback;
+const syncFeedbackTitle = remoteSync.feedbackTitle;
+const syncError = remoteSync.error;
+const syncDisabled = computed(() => !activeRepo.value || activeProjectLoading.value || syncBusy.value || !!actionBusy.value);
+const showSyncFeedback = computed(() => !activeProjectLoading.value || syncBusy.value || Boolean(actionBusy.value));
 const branchLabel = computed(() => {
+  if (activeProjectLoading.value && !activeRepo.value?.branchSummaryReady) {
+    return "正在读取分支…";
+  }
   if (commitStore.scope === "all") return "所有分支";
   return commitStore.browseBranch || currentBranch.value?.name || "未检出";
 });
@@ -149,18 +210,14 @@ const conflictLabel = computed(() => {
   if (gitOperation.value === "conflict") return "冲突";
   return "";
 });
+// 领先/落后数量由常驻按钮展示，此处仅保留独立的工作区状态。
 const statusText = computed(() => {
-  const branch = currentBranch.value;
   const status = activeRepo.value?.status;
-  const bits: string[] = [];
-  if (branch?.ahead) bits.push(`${branch.ahead} 未推送`);
-  if (branch?.behind) bits.push(`${branch.behind} 待拉取`);
-  if (!bits.length) bits.push("已同步");
-  if (status) {
-    const changed = status.staged.length + status.unstaged.length + status.untracked.length + status.conflicted.length;
-    bits.push(changed ? `${changed} 个改动` : "工作区干净");
+  if (!status) {
+    return "正在读取工作区";
   }
-  return bits.join(" · ");
+  const changedFileCount = status.staged.length + status.unstaged.length + status.untracked.length + status.conflicted.length;
+  return changedFileCount ? `${changedFileCount} 个改动` : "工作区干净";
 });
 
 interface GroupedCommit {
@@ -182,6 +239,15 @@ const groupedCommits = computed<GroupedCommit[]>(() => {
 const displayTitle = computed(() => {
   if (view.value === "settings") return "设置";
   return activeRepo.value ? layout.displayName(activeRepo.value) : "GitTrail";
+});
+
+// 项目设置别名后保留原目录名作为辅助标识，方便在多个相似项目间辨认。
+const originalProjectName = computed(() => {
+  const repo = activeRepo.value;
+  if (!repo || view.value === "settings") {
+    return "";
+  }
+  return displayTitle.value === repo.name ? "" : repo.name;
 });
 
 /**
@@ -228,12 +294,30 @@ function projectInitials(repo: RepoTab): string {
  * @returns 文案
  */
 function projectMeta(repo: RepoTab): string {
+  // 首屏项目尚未读取分支时，避免把占位数据当成未检出或已同步。
+  if (!repo.branchSummaryReady) {
+    if (repo.loading || repoStore.pendingActivationId === repo.id) {
+      return "正在读取…";
+    }
+    return repo.error ? "读取失败" : "待加载";
+  }
   const branch = repo.branches.find((item) => item.is_current);
-  const bits = [branch?.name ?? "未检出"];
-  if (branch?.ahead) bits.push(`${branch.ahead} 未推送`);
-  if (branch?.behind) bits.push(`${branch.behind} 待拉取`);
-  if (!branch?.ahead && !branch?.behind && branch) bits.push("已同步");
-  return bits.join(" · ");
+  const projectLabels = [branch?.name ?? "未检出"];
+  if (branch?.ahead) {
+    projectLabels.push(`${branch.ahead} 未推送`);
+  }
+  if (branch?.behind) {
+    projectLabels.push(`${branch.behind} 待拉取`);
+  }
+
+  // 侧栏依赖本地远程引用，零差异不代表刚刚检查过远程，未配置上游时也不能宣称已同步。
+  const hasNoKnownDifference = !!branch && !branch.ahead && !branch.behind;
+  if (branch && !branch.upstream) {
+    projectLabels.push("未设置上游");
+  } else if (hasNoKnownDifference) {
+    projectLabels.push("无已知差异");
+  }
+  return projectLabels.join(" · ");
 }
 
 /**
@@ -256,27 +340,24 @@ function closeFloatingPanels(): void {
   branchOpen.value = false;
   syncOpen.value = false;
   stashOpen.value = false;
+  closeAuthorOptions();
   projectMenu.value = null;
   commitMenu.value = null;
   branchMenu.value = null;
 }
 
 /**
- * 启动恢复项目与提交。
+ * 优先激活上次打开的项目，失效时按项目栏顺序寻找可用仓库。
  * @returns {Promise<void>}
  */
 async function boot(): Promise<void> {
-  booting.value = true;
   try {
-    await repoStore.restoreRepos();
-    const activePath = layout.hydrate(repoStore.repos, repoStore.activeRepo?.path ?? null);
-    const target = repoStore.repos.find((repo) => repo.path === activePath);
-    if (target && target.id !== repoStore.activeId) {
-      await repoStore.setActive(target.id);
+    const projects = sortedProjects.value;
+    const target = projects.find((repo) => repo.path === startupProjectPath) ?? projects[0];
+    if (target) {
+      const fallbackIds = projects.filter((repo) => repo.id !== target.id).map((repo) => repo.id);
+      await repoStore.setActive(target.id, fallbackIds);
     }
-    await commitStore.switchRepo();
-    layout.setActivePath(repoStore.activeRepo?.path ?? null);
-    await actions.refreshOperation();
   } catch (e) {
     showToast(e instanceof Error ? e.message : String(e));
   } finally {
@@ -290,13 +371,14 @@ async function boot(): Promise<void> {
  * @returns {Promise<void>}
  */
 async function selectProject(repo: RepoTab): Promise<void> {
-  if (repo.id === repoStore.activeId) {
-    view.value = "commits";
-    return;
-  }
+  showStartupHistoryNotice.value = false;
   closeFloatingPanels();
-  await repoStore.setActive(repo.id);
   view.value = "commits";
+  // 首次打开时若点击了失效项目，仍可从其余项目中找到可用仓库。
+  const fallbackIds = activeRepo.value
+    ? []
+    : sortedProjects.value.filter((item) => item.id !== repo.id).map((item) => item.id);
+  await repoStore.setActive(repo.id, fallbackIds);
 }
 
 /**
@@ -452,11 +534,11 @@ async function confirmProjectDialog(): Promise<void> {
 
 /**
  * 项目拖拽排序。
- * @param fromPath - 拖拽项目路径
+ * @param fromPath - 拖拽项目路径，未从项目行开始拖动时为空
  * @param toPath - 目标项目路径
  * @returns {void}
  */
-function moveProject(fromPath: string, toPath: string): void {
+function moveProject(fromPath: string | null, toPath: string): void {
   if (!fromPath || !toPath || fromPath === toPath) return;
   const list = sortedProjects.value.map((repo) => repo.path);
   const fromIndex = list.indexOf(fromPath);
@@ -478,6 +560,22 @@ function openBranchMenu(event: MouseEvent, branch: BranchInfo, remote: boolean):
   projectMenu.value = null;
   commitMenu.value = null;
   branchMenu.value = { x: event.clientX, y: event.clientY, branch, remote };
+}
+
+/**
+ * 切换当前项目下指定分支的星标，并收起分支操作菜单。
+ * @param branch - 用户打开操作菜单的分支
+ * @returns {void}
+ */
+function toggleBranchMark(branch: BranchInfo): void {
+  const repoPath = activeRepo.value?.path;
+  // 等待启动恢复结束，避免用尚未恢复的布局覆盖已有偏好。
+  if (booting.value || !repoPath) {
+    return;
+  }
+
+  layout.toggleBranchMark(repoPath, branch.full_name);
+  branchMenu.value = null;
 }
 
 /**
@@ -899,6 +997,17 @@ function openCommitContext(event: MouseEvent, commit: CommitInfo, index: number)
 }
 
 /**
+ * 按提交消息格式复制标题和可选正文，然后收起菜单。
+ * @param commit - 右键菜单关联的提交
+ * @returns {void}
+ */
+function copyCommitMessage(commit: CommitInfo): void {
+  const commitMessage = commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject;
+  void copyText(commitMessage, "已复制提交信息");
+  commitMenu.value = null;
+}
+
+/**
  * 打开 Review；记录触发元素用于关闭后恢复焦点。
  * @param index - 提交列表索引
  * @param trigger - 触发行
@@ -939,53 +1048,45 @@ function stepReview(delta: number): void {
 }
 
 /**
- * 分支浏览选择：本地/远程分支浏览历史；所有分支切换范围。
- * @param branch - 分支信息或 all
+ * 在主列表选择当前或所有分支，其他分支单独打开预览。
+ * @param branch - 分支信息或主列表的范围选项
  * @returns {void}
  */
 function selectBranch(branch: BranchInfo | "all" | null): void {
   branchOpen.value = false;
   if (branch === "all") {
+    showStartupHistoryNotice.value = false;
     commitStore.setScope("all");
     return;
   }
   if (!branch || branch.is_current) {
+    showStartupHistoryNotice.value = false;
     commitStore.browseTo(null);
     return;
   }
-  commitStore.browseTo(branch.name);
-}
 
-/**
- * 提交搜索防抖；回车立即查询。
- * @returns {void}
- */
-function onSearchInput(): void {
-  if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    commitStore.setSearch(localSearch.value);
-  }, 300);
-}
-
-/**
- * 提交搜索回车，跳过防抖。
- * @returns {void}
- */
-function applySearch(): void {
-  if (searchTimer) {
-    clearTimeout(searchTimer);
-    searchTimer = null;
+  const repo = repoStore.activeRepo;
+  // 项目失效时不能将旧分支关联到其他仓库。
+  if (!repo) {
+    return;
   }
-  commitStore.setSearch(localSearch.value);
+  closeFloatingPanels();
+  branchPreview.value = {
+    repoId: repo.id,
+    repoPath: repo.path,
+    repoName: layout.displayName(repo),
+    branch,
+  };
 }
 
 /**
- * 清除提交搜索。
- * @returns {void}
+ * 关闭分支预览，并把键盘焦点交还给分支入口。
+ * @returns 焦点恢复后结束
  */
-function clearSearch(): void {
-  localSearch.value = "";
-  commitStore.setSearch("");
+async function closeBranchPreview(): Promise<void> {
+  branchPreview.value = null;
+  await nextTick();
+  branchButton.value?.focus();
 }
 
 /**
@@ -1003,31 +1104,13 @@ function onCommitScroll(event: Event): void {
 }
 
 /**
- * 远程快捷操作：fetch/pull/push。
- * @param action - 操作
+ * 收起菜单并执行远程操作，过程、结果和目标隔离由同步 Hook 管理。
+ * @param action - 获取远程、拉取或推送当前检出分支
  * @returns {Promise<void>}
  */
-async function runRemote(action: "fetch" | "pull" | "push"): Promise<void> {
-  const repo = activeRepo.value;
-  if (!repo || syncBusy.value || actionBusy.value) return;
+async function runRemote(action: RemoteSyncAction): Promise<void> {
   syncOpen.value = false;
-  syncBusy.value = true;
-  try {
-    if (action === "fetch") {
-      await invoke("git_fetch", { path: repo.path });
-      showToast("远程引用已更新");
-    } else {
-      const result = await invoke<RemoteResult>(action === "pull" ? "git_pull" : "git_push", { path: repo.path });
-      showToast(result.message);
-    }
-    await repoStore.refreshActive();
-    await commitStore.loadCommits();
-    await actions.refreshOperation();
-  } catch (e) {
-    showToast(e instanceof Error ? e.message : String(e));
-  } finally {
-    syncBusy.value = false;
-  }
+  await remoteSync.execute(action);
 }
 
 /**
@@ -1087,13 +1170,17 @@ function onDocumentMouseDown(event: MouseEvent): void {
  * @returns {void}
  */
 function onDocumentKeydown(event: KeyboardEvent): void {
+  // 预览和提交审查各自处理键盘，避免快捷键将焦点移到弹窗外。
+  if (branchPreview.value) {
+    return;
+  }
   if (event.key === "Escape") {
     if (projectDialog.value || projectMenu.value || commitMenu.value) {
       projectDialog.value = null;
       closeContextMenus();
       return;
     }
-    if (branchOpen.value || syncOpen.value || stashOpen.value) {
+    if (branchOpen.value || syncOpen.value || stashOpen.value || authorOptionsOpen.value) {
       closeFloatingPanels();
       return;
     }
@@ -1105,7 +1192,11 @@ function onDocumentKeydown(event: KeyboardEvent): void {
 
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
-    document.querySelector<HTMLInputElement>(".search-input")?.focus();
+    if (searchInput.value) {
+      closeFloatingPanels();
+      searchInput.value.focus();
+      openAuthorOptions();
+    }
   }
 }
 
@@ -1152,18 +1243,40 @@ const { start: startWatcher } = useRepoWatcher(() => {
   void actions.refreshOperation();
 });
 
-watch(() => repoStore.activeId, async (id, previous) => {
-  if (booting.value || !id || id === previous) return;
-  view.value = "commits";
-  localSearch.value = "";
+watch(() => repoStore.activeId, async (id) => {
+  branchPreview.value = null;
+  if (!id) {
+    showStartupHistoryNotice.value = false;
+    return;
+  }
+  if (!booting.value) {
+    view.value = "commits";
+    showStartupHistoryNotice.value = false;
+  }
+  booting.value = false;
   selectedStashes.value = new Set();
   closeFloatingPanels();
   reviewOpen.value = false;
   conflictDialogOpen.value = false;
-  await commitStore.switchRepo();
   layout.setActivePath(repoStore.activeRepo?.path ?? null);
-  await actions.refreshOperation();
+  const historyLoad = commitStore.switchRepo().finally(() => {
+    showStartupHistoryNotice.value = false;
+  });
+  await Promise.all([historyLoad, actions.refreshOperation()]);
 });
+
+// 当前项目的本地数据与首屏提交准备完后，再启动一次后台摘要补齐。
+let projectSummariesStarted = false;
+const canLoadProjectSummaries = computed(() => {
+  return !activeProjectLoading.value && !repoStore.pendingActivationId && !commitStore.loading && !addingProjects.value;
+});
+watch(canLoadProjectSummaries, (ready) => {
+  if (!ready || projectSummariesStarted) {
+    return;
+  }
+  projectSummariesStarted = true;
+  void repoStore.loadProjectSummaries();
+}, { flush: "post" });
 
 watch(stashes, (list) => {
   const valid = new Set([...selectedStashes.value].filter((index) => list.some((stash) => stash.index === index)));
@@ -1171,8 +1284,11 @@ watch(stashes, (list) => {
 }, { deep: true });
 
 onMounted(async () => {
-  await boot();
-  await nextTick();
+  syncRail();
+  window.addEventListener("resize", syncRail);
+  document.addEventListener("mousedown", onDocumentMouseDown);
+  document.addEventListener("keydown", onDocumentKeydown);
+  void boot();
   await startWatcher();
   await refreshMaximized();
   try {
@@ -1180,10 +1296,6 @@ onMounted(async () => {
   } catch {
     // 非 Tauri 环境忽略
   }
-  syncRail();
-  window.addEventListener("resize", syncRail);
-  document.addEventListener("mousedown", onDocumentMouseDown);
-  document.addEventListener("keydown", onDocumentKeydown);
 });
 
 onUnmounted(() => {
@@ -1191,7 +1303,6 @@ onUnmounted(() => {
   window.removeEventListener("resize", syncRail);
   document.removeEventListener("mousedown", onDocumentMouseDown);
   document.removeEventListener("keydown", onDocumentKeydown);
-  if (searchTimer) clearTimeout(searchTimer);
   if (toastTimer) clearTimeout(toastTimer);
 });
 </script>
@@ -1270,11 +1381,21 @@ onUnmounted(() => {
     </aside>
 
     <main class="main">
-      <header class="main-header">
+      <!-- Tauri 的裸拖动标记只响应直接命中的元素，外层内边距也需要标记，才能覆盖顶部空白。 -->
+      <header class="main-header" data-tauri-drag-region>
         <div class="header-top" data-tauri-drag-region>
-          <h1 class="project-title" data-tauri-drag-region>{{ displayTitle }}</h1>
+          <div class="project-heading" data-tauri-drag-region>
+            <h1 class="project-title" :title="displayTitle" data-tauri-drag-region>{{ displayTitle }}</h1>
+            <span
+              v-if="originalProjectName"
+              class="project-original-name"
+              :title="`原始目录名 ${originalProjectName}\n${activeRepo?.path}`"
+              data-tauri-drag-region
+            >{{ originalProjectName }}</span>
+          </div>
           <div class="header-drag" data-tauri-drag-region aria-hidden="true"></div>
-          <div class="window-controls" aria-label="窗口控制">
+          <!-- 标记按钮组本身，使按钮间隙可以拖动；按钮自身未标记，仍按原来的点击行为处理。 -->
+          <div class="window-controls" data-tauri-drag-region aria-label="窗口控制">
             <button class="window-btn theme-btn" type="button" aria-label="切换主题" title="切换主题" @click="themeStore.toggleTheme()">
               <svg class="icon-sun" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>
               <svg class="icon-moon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg>
@@ -1293,138 +1414,173 @@ onUnmounted(() => {
         </div>
 
         <div v-if="view === 'commits'" class="header-bottom">
-          <div class="branch-wrap">
-            <button class="branch-btn" type="button" aria-haspopup="menu" :aria-expanded="branchOpen" title="切换分支" @click.stop="branchOpen = !branchOpen; syncOpen = false; stashOpen = false">
-              <span>{{ branchLabel }}</span>
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
-            </button>
-            <div v-if="branchOpen" class="popover" role="menu">
-              <div class="popover-head branch-head">
-                <span>本地分支</span>
-                <button class="branch-create" type="button" title="新建分支" @click.stop="openCreateBranch">新建</button>
-              </div>
-              <div class="popover-row" :class="{ 'active-row': commitStore.scope === 'current' && branchLabel === branch.name }" v-for="branch in localBranches" :key="branch.full_name">
-                <button
-                  type="button"
-                  class="popover-item"
-                  :class="{ active: commitStore.scope === 'current' && branchLabel === branch.name }"
-                  :title="branch.upstream ? `上游 ${branch.upstream}` : '未设置上游'"
-                  @click="selectBranch(branch)"
-                >
-                  <span>{{ branch.name }}</span>
-                  <span v-if="branch.is_current" class="check" aria-hidden="true">✓</span>
-                </button>
-                <div class="popover-actions">
-                  <button class="branch-action" type="button" :disabled="!!actionBusy" title="拉取" aria-label="拉取" @click.stop="pullBranch(branch)">
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7"/><path d="M3 13.5h10"/></svg>
-                  </button>
-                  <button class="branch-action" type="button" :disabled="!!actionBusy" title="分支操作" aria-label="分支操作" @click.stop="openBranchMenu($event, branch, false)">
-                    <span class="branch-more" aria-hidden="true">⋯</span>
-                  </button>
-                </div>
-              </div>
-              <div v-if="remoteBranches.length" class="popover-subhead">远程分支</div>
-              <div class="popover-row" v-for="branch in remoteBranches" :key="branch.full_name">
-                <button type="button" class="popover-item remote" :class="{ active: branchLabel === branch.name }" @click="selectBranch(branch)">
-                  <span>{{ branch.name }}</span>
-                </button>
-                <div class="popover-actions">
-                  <button class="branch-action" type="button" :disabled="!!actionBusy" title="远程分支操作" aria-label="远程分支操作" @click.stop="openBranchMenu($event, branch, true)">
-                    <span class="branch-more" aria-hidden="true">⋯</span>
-                  </button>
-                </div>
-              </div>
-              <div class="popover-subhead">范围</div>
-              <div class="popover-row">
-                <button type="button" class="popover-item" :class="{ active: commitStore.scope === 'all' }" @click="selectBranch('all')">
-                  <span>所有分支</span>
-                  <span v-if="commitStore.scope === 'all'" class="check" aria-hidden="true">✓</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <span class="status">{{ statusText }}</span>
-
-          <div class="tool-wrap">
-            <div class="sync-wrap">
-              <button class="icon-control" type="button" :aria-expanded="syncOpen" :disabled="syncBusy || !!actionBusy" title="远程操作" @click.stop="syncOpen = !syncOpen; branchOpen = false; stashOpen = false">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/><path d="M11.5 2v3h-3"/><path d="M4.5 14v-3h3"/></svg>
+          <div class="header-tools">
+            <div class="branch-wrap">
+              <button ref="branchButton" class="branch-btn" type="button" :disabled="activeProjectLoading" aria-haspopup="menu" :aria-expanded="branchOpen" title="浏览分支" @click.stop="branchOpen = !branchOpen; syncOpen = false; stashOpen = false">
+                <span>{{ branchLabel }}</span>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
               </button>
-              <div v-if="syncOpen" class="popover sync-popover" role="menu">
-                <button class="menu-item" type="button" :disabled="syncBusy" @click="runRemote('fetch')"><span>获取远程</span><span class="hint">fetch</span></button>
-                <button class="menu-item" type="button" :disabled="syncBusy" @click="runRemote('pull')"><span>拉取当前分支</span><span class="hint">pull</span></button>
-                <button class="menu-item" type="button" :disabled="syncBusy" @click="runRemote('push')"><span>推送当前分支</span><span class="hint">push</span></button>
-                <div class="menu-sep"></div>
-                <button class="menu-item" type="button" @click="syncOpen = false; openCurrentUpstream()"><span>设置当前分支上游…</span><span class="hint">{{ currentBranch?.upstream || "未设置" }}</span></button>
-              </div>
-            </div>
-
-            <div class="stash-wrap">
-              <button class="icon-control stash-btn" type="button" :aria-expanded="stashOpen" title="储藏" @click.stop="stashOpen = !stashOpen; branchOpen = false; syncOpen = false">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h11v8h-11z"/><path d="M2 2.5h12v2.5H2z"/><path d="M6 8.5h4"/></svg>
-                <span class="stash-count">{{ stashCount }}</span>
-              </button>
-              <div v-if="stashOpen" class="popover stash-popover">
-                <div class="stash-head">
-                  <span class="stash-title">储藏 · {{ stashCount }}</span>
-                  <button class="stash-create" type="button" @click="openCreateStash">新建储藏</button>
+              <div v-if="branchOpen" class="popover" role="menu">
+                <div class="popover-head branch-head">
+                  <span>本地分支</span>
+                  <button class="branch-create" type="button" title="新建分支" @click.stop="openCreateBranch">新建</button>
                 </div>
-                <div v-if="stashes.length" class="stash-toolbar">
-                  <label class="stash-select-all">
-                    <input type="checkbox" :checked="allStashesSelected" @change="toggleAllStashes(($event.target as HTMLInputElement).checked)">
-                    <span>全选</span>
-                  </label>
-                  <button class="stash-batch-delete" type="button" :disabled="!selectedStashCount" @click="openBatchDropStashes">
-                    {{ selectedStashCount ? `删除 ${selectedStashCount}` : "删除选中" }}
+                <div class="popover-row" :class="{ 'active-row': commitStore.scope === 'current' && branchLabel === branch.name }" v-for="branch in localBranches" :key="branch.full_name">
+                  <button
+                    type="button"
+                    class="popover-item"
+                    :class="{ active: commitStore.scope === 'current' && branchLabel === branch.name }"
+                    :title="branch.upstream ? `上游 ${branch.upstream}` : '未设置上游'"
+                    @click="selectBranch(branch)"
+                  >
+                    <span class="branch-label">
+                      <span class="branch-name">{{ branch.name }}</span>
+                      <span v-if="markedBranchRefs.has(branch.full_name)" class="branch-mark" role="img" aria-label="已标记" title="已标记">★</span>
+                    </span>
+                    <span v-if="branch.is_current" class="check" aria-hidden="true">✓</span>
                   </button>
-                </div>
-                <div v-if="!stashes.length" class="stash-empty">这个项目还没有储藏</div>
-                <div v-for="stash in stashes" :key="stash.index" class="stash-row">
-                  <label class="stash-check">
-                    <input
-                      type="checkbox"
-                      :checked="selectedStashes.has(stash.index)"
-                      :aria-label="`选择储藏 ${stash.message}`"
-                      @change="toggleStash(stash.index, ($event.target as HTMLInputElement).checked)"
-                    >
-                  </label>
-                  <div class="stash-main">
-                    <div class="stash-message" :title="stash.message">{{ stash.message }}</div>
-                    <div class="stash-meta">{{ stash.branch }} · {{ stash.hash }}</div>
-                  </div>
-                  <div class="stash-actions">
-                    <button class="stash-action" type="button" title="应用" aria-label="应用储藏" :disabled="!!actionBusy" @click.stop="applyStash(stash)">
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7M5 6.5 8 9.5l3-3"/><path d="M3 13.5h10"/></svg>
+                  <div class="popover-actions">
+                    <button class="branch-action" type="button" :disabled="!!actionBusy" title="拉取" aria-label="拉取" @click.stop="pullBranch(branch)">
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7"/><path d="M3 13.5h10"/></svg>
                     </button>
-                    <button class="stash-action" type="button" title="查看" aria-label="查看储藏" :disabled="!!actionBusy" @click.stop="openStashView(stash)">
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4Z"/><circle cx="8" cy="8" r="1.8"/></svg>
-                    </button>
-                    <button class="stash-action" type="button" title="删除" aria-label="删除储藏" :disabled="!!actionBusy" @click.stop="openDropStash(stash)">
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.6 9h5.8l.6-9"/><path d="M6.5 7v4M9.5 7v4"/></svg>
+                    <button class="branch-action" type="button" :disabled="!!actionBusy" title="分支操作" aria-label="分支操作" @click.stop="openBranchMenu($event, branch, false)">
+                      <span class="branch-more" aria-hidden="true">⋯</span>
                     </button>
                   </div>
                 </div>
+                <div v-if="remoteBranches.length" class="popover-subhead">远程分支</div>
+                <div class="popover-row" v-for="branch in remoteBranches" :key="branch.full_name">
+                  <button type="button" class="popover-item remote" :class="{ active: branchLabel === branch.name }" @click="selectBranch(branch)">
+                    <span class="branch-label">
+                      <span class="branch-name">{{ branch.name }}</span>
+                      <span v-if="markedBranchRefs.has(branch.full_name)" class="branch-mark" role="img" aria-label="已标记" title="已标记">★</span>
+                    </span>
+                  </button>
+                  <div class="popover-actions">
+                    <button class="branch-action" type="button" :disabled="!!actionBusy" title="远程分支操作" aria-label="远程分支操作" @click.stop="openBranchMenu($event, branch, true)">
+                      <span class="branch-more" aria-hidden="true">⋯</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="popover-subhead">范围</div>
+                <div class="popover-row">
+                  <button type="button" class="popover-item" :class="{ active: commitStore.scope === 'all' }" @click="selectBranch('all')">
+                    <span>所有分支</span>
+                    <span v-if="commitStore.scope === 'all'" class="check" aria-hidden="true">✓</span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            <!-- 同步操作和数量保持常驻，菜单收起后仍能看到进行中状态。 -->
+            <div class="tool-wrap">
+              <button
+                class="icon-control sync-action"
+                :class="{ 'has-updates': !!currentBranch?.behind }"
+                type="button"
+                :disabled="syncDisabled || !currentBranch?.upstream"
+                :aria-busy="syncAction === 'pull'"
+                :title="currentBranch?.upstream ? `拉取当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在更多菜单中设置当前分支上游'"
+                @click="runRemote('pull')"
+              >
+                <svg v-if="syncAction === 'pull'" class="sync-spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5M3 8a5 5 0 0 1 8.5-3.5"/></svg>
+                <svg v-else width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>
+                <span>{{ syncAction === 'pull' ? '拉取中…' : '拉取' }}</span>
+                <span v-if="syncAction !== 'pull'" class="sync-count">{{ currentBranch?.upstream ? currentBranch.behind : '—' }}</span>
+              </button>
+              <button
+                class="icon-control sync-action"
+                :class="{ 'has-updates': !!currentBranch?.ahead }"
+                type="button"
+                :disabled="syncDisabled || !currentBranch?.upstream"
+                :aria-busy="syncAction === 'push'"
+                :title="currentBranch?.upstream ? `推送当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在更多菜单中设置当前分支上游'"
+                @click="runRemote('push')"
+              >
+                <svg v-if="syncAction === 'push'" class="sync-spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5M3 8a5 5 0 0 1 8.5-3.5"/></svg>
+                <svg v-else width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M3 13.5h10"/></svg>
+                <span>{{ syncAction === 'push' ? '推送中…' : '推送' }}</span>
+                <span v-if="syncAction !== 'push'" class="sync-count">{{ currentBranch?.upstream ? currentBranch.ahead : '—' }}</span>
+              </button>
+              <div class="sync-wrap">
+                <button class="icon-control" type="button" :aria-expanded="syncOpen" :aria-busy="syncAction === 'fetch'" :disabled="syncDisabled" title="更多远程操作" @click.stop="syncOpen = !syncOpen; branchOpen = false; stashOpen = false">
+                  <svg :class="{ 'sync-spinner': syncAction === 'fetch' }" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/><path d="M11.5 2v3h-3"/><path d="M4.5 14v-3h3"/></svg>
+                  <span>更多</span>
+                </button>
+                <div v-if="syncOpen" class="popover sync-popover" role="menu">
+                  <button class="menu-item" type="button" :disabled="syncDisabled" @click="runRemote('fetch')"><span>获取远程</span><span class="hint">fetch</span></button>
+                  <div class="menu-sep"></div>
+                  <button
+                    class="menu-item"
+                    type="button"
+                    :disabled="syncDisabled"
+                    :title="currentBranch?.upstream || undefined"
+                    @click="syncOpen = false; openCurrentUpstream()"
+                  >
+                    <span>设置当前分支上游…</span>
+                    <span class="hint">{{ currentBranch?.upstream || "未设置" }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="stash-wrap">
+                <button class="icon-control stash-btn" type="button" :disabled="activeProjectLoading" :aria-expanded="stashOpen" title="储藏" @click.stop="stashOpen = !stashOpen; branchOpen = false; syncOpen = false">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h11v8h-11z"/><path d="M2 2.5h12v2.5H2z"/><path d="M6 8.5h4"/></svg>
+                  <span class="stash-count">{{ activeProjectLoading ? '—' : stashCount }}</span>
+                </button>
+                <div v-if="stashOpen" class="popover stash-popover">
+                  <div class="stash-head">
+                    <span class="stash-title">储藏 · {{ stashCount }}</span>
+                    <button class="stash-create" type="button" @click="openCreateStash">新建储藏</button>
+                  </div>
+                  <div v-if="stashes.length" class="stash-toolbar">
+                    <label class="stash-select-all">
+                      <input type="checkbox" :checked="allStashesSelected" @change="toggleAllStashes(($event.target as HTMLInputElement).checked)">
+                      <span>全选</span>
+                    </label>
+                    <button class="stash-batch-delete" type="button" :disabled="!selectedStashCount" @click="openBatchDropStashes">
+                      {{ selectedStashCount ? `删除 ${selectedStashCount}` : "删除选中" }}
+                    </button>
+                  </div>
+                  <div v-if="!stashes.length" class="stash-empty">这个项目还没有储藏</div>
+                  <div v-for="stash in stashes" :key="stash.index" class="stash-row">
+                    <label class="stash-check">
+                      <input
+                        type="checkbox"
+                        :checked="selectedStashes.has(stash.index)"
+                        :aria-label="`选择储藏 ${stash.message}`"
+                        @change="toggleStash(stash.index, ($event.target as HTMLInputElement).checked)"
+                      >
+                    </label>
+                    <div class="stash-main">
+                      <div class="stash-message" :title="stash.message">{{ stash.message }}</div>
+                      <div class="stash-meta">{{ stash.branch }} · {{ stash.hash }}</div>
+                    </div>
+                    <div class="stash-actions">
+                      <button class="stash-action" type="button" title="应用" aria-label="应用储藏" :disabled="!!actionBusy" @click.stop="applyStash(stash)">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7M5 6.5 8 9.5l3-3"/><path d="M3 13.5h10"/></svg>
+                      </button>
+                      <button class="stash-action" type="button" title="查看" aria-label="查看储藏" :disabled="!!actionBusy" @click.stop="openStashView(stash)">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4Z"/><circle cx="8" cy="8" r="1.8"/></svg>
+                      </button>
+                      <button class="stash-action" type="button" title="删除" aria-label="删除储藏" :disabled="!!actionBusy" @click.stop="openDropStash(stash)">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.6 9h5.8l.6-9"/><path d="M6.5 7v4M9.5 7v4"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="showSyncFeedback" class="sync-feedback" :class="{ error: syncError && !actionBusy }" role="status" aria-live="polite" :title="syncFeedbackTitle">
+              <span>{{ syncFeedback }}</span>
+              <button v-if="syncError && !syncDisabled" class="sync-retry" type="button" @click="runRemote('fetch')">重新检查</button>
+              <button v-else-if="currentBranch && !currentBranch.upstream && !syncDisabled" class="sync-retry" type="button" @click="openCurrentUpstream()">设置上游</button>
+            </div>
+            <span class="status">{{ statusText }}</span>
           </div>
 
-          <div class="search-wrap">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
-            <input
-              v-model="localSearch"
-              class="search-input"
-              type="search"
-              placeholder="搜索提交、作者或哈希"
-              aria-label="搜索提交"
-              autocomplete="off"
-              spellcheck="false"
-              @input="onSearchInput"
-              @keydown.enter.prevent="applySearch"
-              @keydown.esc.prevent="clearSearch"
-            >
-            <button v-if="localSearch" class="search-clear" type="button" aria-label="清除搜索" @click="clearSearch">×</button>
-          </div>
+          <CommitSearchBox :controller="commitSearch" />
         </div>
       </header>
 
@@ -1438,24 +1594,32 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="view === 'commits'" class="commit-scroll" @scroll="onCommitScroll">
-        <div v-if="!activeRepo && !booting" class="empty">
-          <h2>还没有打开项目</h2>
-          <p>从左侧打开一个 Git 仓库开始。</p>
+      <div
+        v-if="view === 'commits'"
+        class="commit-scroll"
+        :class="{ 'relative-time': settingsStore.timeFormat === 'relative' }"
+        :aria-busy="waitingForCommitContent"
+        @scroll="onCommitScroll"
+      >
+        <div v-if="!activeRepo && !activeProjectLoading" class="empty">
+          <h2>{{ repoStore.repos.length ? "请选择一个项目" : "还没有打开项目" }}</h2>
+          <p>{{ repoStore.repos.length ? "点击左侧项目读取仓库内容。" : "从左侧打开一个 Git 仓库开始。" }}</p>
         </div>
-        <div v-else-if="booting || (commitStore.loading && !commitStore.commits.length)" class="empty">
-          <h2>正在加载提交…</h2>
-          <p>正在读取当前仓库的 Git 历史。</p>
-        </div>
+        <template v-else-if="waitingForCommitContent">
+          <div v-if="showStartupHistoryNotice && !hasCommitFilters" class="empty">
+            <h2>正在加载提交…</h2>
+            <p>正在读取当前仓库的 Git 历史。</p>
+          </div>
+        </template>
         <div v-else-if="commitStore.error && !commitStore.commits.length" class="empty">
           <h2>提交读取失败</h2>
           <p>{{ commitStore.error }}</p>
           <button class="empty-action" type="button" @click="commitStore.loadCommits()">重试</button>
         </div>
         <div v-else-if="!commitStore.commits.length" class="empty">
-          <h2>{{ commitStore.search ? "没有匹配的提交" : "这个分支还没有提交" }}</h2>
-          <p>{{ commitStore.search ? "换一个关键词，或清除搜索。" : "换一个项目，或切换到其他分支。" }}</p>
-          <button v-if="commitStore.search" class="empty-action" type="button" @click="clearSearch">清除搜索</button>
+          <h2>{{ hasCommitFilters ? "没有匹配的提交" : "这个分支还没有提交" }}</h2>
+          <p>{{ hasCommitFilters ? "换一个关键词，或清除筛选条件。" : "换一个项目，或切换到其他分支。" }}</p>
+          <button v-if="hasCommitFilters" class="empty-action" type="button" @click="clearCommitFilters">清除筛选</button>
         </div>
         <template v-else>
           <section v-for="group in groupedCommits" :key="group.key" class="date-group">
@@ -1475,7 +1639,7 @@ onUnmounted(() => {
               @keydown.enter.prevent="openReview(entry.index, $event.currentTarget as HTMLElement)"
               @contextmenu.prevent="openCommitContext($event, entry.commit, entry.index)"
             >
-              <span class="commit-time">{{ commitTime(entry.commit) }}</span>
+              <span class="commit-time" :title="commitTime(entry.commit)">{{ commitTime(entry.commit) }}</span>
               <span class="avatar" :class="`tone-${authorTone(entry.commit.author_name)}`" aria-hidden="true" :title="entry.commit.author_name">
                 {{ authorMark(entry.commit.author_name) }}
               </span>
@@ -1513,6 +1677,9 @@ onUnmounted(() => {
 
     <div v-if="projectMenu" class="context-menu" :style="{ left: `${projectMenu.x}px`, top: `${projectMenu.y}px` }" role="menu">
       <div class="menu-header"><div class="menu-hash">{{ layout.displayName(projectMenu.repo) }}</div></div>
+      <button class="menu-item" type="button" @click="copyText(projectMenu.repo.path, '已复制绝对路径'); projectMenu = null">
+        <span>复制绝对路径</span>
+      </button>
       <button class="menu-item" type="button" @click="openRenameDialog(projectMenu.repo)"><span>重命名显示名…</span><span class="hint">只改显示</span></button>
       <div class="menu-sep"></div>
       <button class="menu-item danger" type="button" @click="openRemoveDialog(projectMenu.repo)"><span>从列表移除</span></button>
@@ -1523,6 +1690,7 @@ onUnmounted(() => {
       <button class="menu-item" type="button" @click="openReview(commitMenu.index); commitMenu = null"><span>查看改动</span><span class="hint">Enter</span></button>
       <button class="menu-item" type="button" @click="cherryPickCommit(commitMenu.commit)"><span>Cherry-pick 到当前分支</span></button>
       <div class="menu-sep"></div>
+      <button class="menu-item" type="button" @click="copyCommitMessage(commitMenu.commit)"><span>复制提交信息</span></button>
       <button class="menu-item" type="button" @click="copyText(commitMenu.commit.short_hash, '已复制短哈希'); commitMenu = null"><span>复制短哈希</span></button>
       <button class="menu-item" type="button" @click="copyText(commitMenu.commit.hash, '已复制完整哈希'); commitMenu = null"><span>复制完整哈希</span></button>
     </div>
@@ -1532,6 +1700,11 @@ onUnmounted(() => {
         <div class="menu-hash">{{ branchMenu.remote ? "远程" : "本地" }} · {{ branchMenu.branch.name }}</div>
         <div v-if="branchMenu.branch.upstream" class="menu-subject">上游 {{ branchMenu.branch.upstream }}</div>
       </div>
+      <!-- 标记后保留分支列表，让用户看到星标即时更新。 -->
+      <button class="menu-item" type="button" :disabled="booting" @mousedown.stop @click="toggleBranchMark(branchMenu.branch)">
+        <span>{{ markedBranchRefs.has(branchMenu.branch.full_name) ? "取消标记" : "标记分支" }}</span>
+      </button>
+      <div class="menu-sep"></div>
       <template v-if="!branchMenu.remote">
         <button class="menu-item" type="button" :disabled="branchMenu.branch.is_current" @click="checkoutBranch(branchMenu.branch); branchMenu = null">
           <span>检出</span><span v-if="branchMenu.branch.is_current" class="hint">当前</span>
@@ -1624,6 +1797,8 @@ onUnmounted(() => {
         </div>
       </section>
     </div>
+
+    <BranchPreviewDialog v-if="branchPreview" :target="branchPreview" @close="closeBranchPreview" />
 
     <ReviewDialog
       v-if="reviewOpen && reviewCommit && activeRepo"

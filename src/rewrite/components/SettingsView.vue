@@ -1,7 +1,7 @@
 <!--
   @component SettingsView
   @description
-    新 UI 设置页：外观（system/light/dark + 密度 + 代码预览）并保留旧版 Git 路径、
+    新 UI 设置页：外观（界面主题、代码对比主题、密度与代码预览）并保留旧版 Git 路径、
     默认目录、远程保护、储藏名模板和时间格式设置。
 
   @usage
@@ -9,10 +9,11 @@
 
   @changeLog
     - 2026-11-04: Created. 原型设置页生产化，保留旧设置能力。
+    - 2026-11-07: Updated. 增加代码对比主题选择和即时配色预览。
 -->
 <script setup lang="ts">
 import { useSettingsStore } from "@/stores/settings";
-import { useThemeStore, type Density, type ThemeMode } from "@/stores/theme";
+import { CODE_THEME_OPTIONS, useThemeStore, type Density, type ThemeMode } from "@/stores/theme";
 import { highlightCode } from "../utils/highlight";
 
 const themeStore = useThemeStore();
@@ -30,10 +31,12 @@ const densityOptions: Array<{ value: Density; label: string }> = [
 ];
 
 const previewLines = [
-  { type: "hunk", text: "@@ -12,7 +12,9 @@" },
-  { type: "del", no: 12, text: "const rows = computed(() => commits.value)" },
-  { type: "add", no: 12, text: "const rows = computed(() => visibleCommits.value)" },
-  { type: "add", no: 13, text: "const reviewOpen = ref(false)" },
+  { type: "hunk", text: "@@ -12,3 +12,4 @@" },
+  { type: "ctx", no: 12, text: "// 按选定范围展示提交" },
+  { type: "del", no: 13, text: 'const scope = "current"' },
+  { type: "add", no: 13, text: 'const scope = "all"' },
+  { type: "add", no: 14, text: "const pageSize = 100" },
+  { type: "ctx", no: 15, text: "const rows = computed(() => commits.value)" },
 ];
 
 /**
@@ -95,13 +98,20 @@ function persistTimeFormat(event: Event): void {
         <div class="setting-row">
           <div class="setting-copy">
             <div class="setting-title">代码对比</div>
-            <div class="setting-desc">语法高亮和差异底色跟随界面主题，使用暖色代码配色。</div>
+            <div class="setting-desc">独立设置代码高亮和增删行底色，预览与对比视图即时更新。</div>
           </div>
-          <span class="setting-value">跟随主题</span>
+          <select
+            class="settings-input compact"
+            :value="themeStore.codeTheme"
+            aria-label="代码对比主题"
+            @change="persistInput(themeStore.setCodeTheme, $event)"
+          >
+            <option v-for="option in CODE_THEME_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
         </div>
         <div class="code-preview">
           <div class="preview-bar">
-            <span>对比视图 · 跟随主题</span>
+            <span>对比视图 · {{ themeStore.codeThemeLabel }}</span>
             <span class="preview-meta">src/components/CommitList.vue</span>
           </div>
           <div class="preview-code">
@@ -109,7 +119,7 @@ function persistTimeFormat(event: Event): void {
               <div v-if="line.type === 'hunk'" class="preview-line hunk">{{ line.text }}</div>
               <div v-else class="preview-line" :class="line.type">
                 <span class="ln">{{ line.no }}</span>
-                <span class="sign">{{ line.type === "add" ? "+" : "-" }}</span>
+                <span class="sign">{{ line.type === "add" ? "+" : line.type === "del" ? "-" : "" }}</span>
                 <span class="code" v-html="highlightCode(line.text)"></span>
               </div>
             </template>

@@ -38,6 +38,13 @@ export interface WorkingAreaStatus {
   behind: number;
 }
 
+/** 分支对应的实际远程、远端分支和本地跟踪引用。 */
+export interface BranchUpstreamTarget {
+  remote: string;
+  remote_ref: string;
+  tracking_ref: string;
+}
+
 /** 分支信息 */
 export interface BranchInfo {
   name: string;
@@ -49,6 +56,14 @@ export interface BranchInfo {
   upstream: string | null;
   ahead: number;
   behind: number;
+}
+
+/** 预览额外读取上游操作所需的完整引用，分支列表仍使用 BranchInfo。 */
+export interface BranchPreviewInfo extends BranchInfo {
+  /** 供手动同步校验的远程目标，未配置远程上游时为空。 */
+  upstream_target: BranchUpstreamTarget | null;
+  /** 本机缺少配置的上游引用，领先和落后数量未知。 */
+  upstream_gone: boolean;
 }
 
 /** 存储（stash）条目 */
@@ -94,12 +109,22 @@ export interface CommitInfo {
   refs: string[];
 }
 
+/** Git 提交作者的原始身份，姓名与邮箱共同用于精确筛选。 */
+export interface CommitAuthor {
+  name: string;
+  email: string;
+  /** 代表提交用于复用 Git 对作者关键词的匹配。 */
+  sample_hash: string;
+}
+
 /** 日志查询参数（对应后端 LogQuery） */
 export interface LogQuery {
   skip: number;
   limit: number;
   branch: string | null;
   search: string | null;
+  /** 选中的精确作者，未选时沿用原有查询。 */
+  author?: CommitAuthor | null;
   /** 是否查询所有分支（--all），为 true 时忽略 branch */
   all_branches: boolean;
   /** 可选的仓库相对路径或目录 pathspec */

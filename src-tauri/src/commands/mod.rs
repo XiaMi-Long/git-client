@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use crate::git::{
-    BranchOperationResult, BranchInfo, CommitActivityDay, CommitInfo, CompareResult, FileDiff, GitExecutor,
+    BranchInfo, BranchOperationResult, BranchPreviewInfo, BranchSyncAction, BranchUpstreamTarget,
+    CommitActivityDay, CommitAuthor, CommitInfo, CompareResult, FileDiff, GitExecutor,
     GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
 
@@ -72,6 +73,18 @@ pub async fn git_get_log(path: String, query: LogQuery) -> Result<Vec<CommitInfo
     GitExecutor::get_log(&to_path(&path), &query)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 获取当前分支范围内近半年的提交作者，供搜索框快捷选择。
+#[tauri::command]
+pub async fn git_list_recent_commit_authors(
+    path: String,
+    branch: Option<String>,
+    all_branches: bool,
+) -> Result<Vec<CommitAuthor>, String> {
+    GitExecutor::list_recent_commit_authors(&to_path(&path), branch.as_deref(), all_branches)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// 获取指定分支范围内最近一段时间的每日提交数量
@@ -141,6 +154,14 @@ pub async fn git_list_branches(path: String) -> Result<Vec<BranchInfo>, String> 
     GitExecutor::list_branches(&to_path(&path))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 读取分支预览对应的完整引用及上游状态。
+#[tauri::command]
+pub async fn git_get_branch_info(path: String, branch_ref: String) -> Result<BranchPreviewInfo, String> {
+    GitExecutor::get_branch_info(&to_path(&path), &branch_ref)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// 获取所有标签
@@ -396,6 +417,19 @@ pub async fn git_fetch_branch_ff(
         .map_err(|e| e.to_string())
 }
 
+/// 对预览中的本地分支执行手动远程操作，实际目标必须与弹窗中展示的上游一致。
+#[tauri::command]
+pub async fn git_sync_branch_upstream(
+    path: String,
+    branch_ref: String,
+    expected_target: BranchUpstreamTarget,
+    action: BranchSyncAction,
+) -> Result<String, String> {
+    GitExecutor::sync_branch_upstream(&to_path(&path), &branch_ref, &expected_target, action)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// 检测冲突状态（2.9）
 #[tauri::command]
 pub async fn git_check_conflict(path: String) -> Result<bool, String> {
@@ -575,12 +609,14 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_is_valid_repo",
         "git_get_status",
         "git_get_log",
+        "git_list_recent_commit_authors",
         "git_get_commit_activity",
         "git_get_commit_count",
         "git_get_working_diff",
         "git_get_staged_diff",
         "git_get_commit_diff",
         "git_list_branches",
+        "git_get_branch_info",
         "git_list_tags",
         "git_get_current_branch",
         "git_create_branch",
@@ -606,6 +642,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_push_upstream",
         "git_push_delete_remote",
         "git_fetch_branch_ff",
+        "git_sync_branch_upstream",
         "git_check_conflict",
         "git_list_conflicted_files",
         "git_mark_resolved",

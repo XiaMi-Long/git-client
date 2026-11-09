@@ -18,10 +18,10 @@ use types::GitError;
 
 pub use executor::GitExecutor;
 pub use status::{FileStatus, WorkingAreaStatus, FileChangeType, StageStatus};
-pub use log::{CommitActivityDay, CommitInfo, LogQuery, PAGE_SIZE};
+pub use log::{CommitActivityDay, CommitAuthor, CommitInfo, LogQuery, PAGE_SIZE};
 pub use diff::{DiffHunk, DiffLine, DiffLineType, FileDiff};
-pub use branch::{BranchInfo, TagInfo, BranchOperationResult, CompareResult};
-pub use remote::{RemoteResult, OperationState};
+pub use branch::{BranchInfo, TagInfo, BranchOperationResult, BranchPreviewInfo, BranchUpstreamTarget, CompareResult};
+pub use remote::{BranchSyncAction, RemoteResult, OperationState};
 pub use stash::StashInfo;
 
 /// git 版本检测结果

@@ -5,6 +5,15 @@
   @changeLog
     - 2026-11-04: Created. 圆角化、主题切换、代码配色与设置页。
     - 2026-11-04: Migrated. 从 prototype/style.css 迁移到生产新 UI，保留已确认视觉。
+    - 2026-11-06: Updated. 解除主内容区对顶部弹层的裁剪，保留提交列表的独立滚动。
+    - 2026-11-06: Updated. 增加常驻同步按钮、进度和错误反馈，头部空间不足时允许自然换行。
+    - 2026-11-07: Updated. 为项目标题建立别名与原始目录名的主次层级，并处理长名称截断。
+    - 2026-11-07: Updated. 在分支名称旁展示星标，长名称截断时仍保留星标。
+    - 2026-11-07: Updated. 提交搜索框展示作者条件和快捷浮层，沿用界面明暗配色。
+    - 2026-11-07: Updated. 为提交行的未推送徽标增加底色、描边与粗体。
+    - 2026-11-07: Updated. 远程菜单的操作文字保持单行，长上游名称在提示列截断。
+    - 2026-11-07: Updated. 为相对时间分配更宽的列，提交时间保持单行。
+    - 2026-11-07: Updated. 顶栏搜索换行时与操作区左边缘对齐。
 */
 
 /* ===== 主题 token ===== */
@@ -434,7 +443,16 @@ svg { display: block; }
   min-height: 30px;
 }
 
+.project-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .project-title {
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   color: var(--text-strong);
@@ -442,6 +460,21 @@ svg { display: block; }
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 30px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-original-name {
+  flex-shrink: 2;
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -485,11 +518,18 @@ html.theme-transition *::after {
   transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease, fill 220ms ease, stroke 220ms ease;
 }
 
-.header-bottom {
+.header-bottom,
+.header-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+/* 操作区和搜索框在同排时分居两侧，搜索框独占一排时从左侧开始。 */
+.header-bottom {
+  justify-content: space-between;
   margin-top: 10px;
 }
 
@@ -533,45 +573,50 @@ html.theme-transition *::after {
   position: relative;
   flex-shrink: 0;
   width: 300px;
-  margin-left: auto;
+  max-width: 100%;
 }
 
-.search-wrap > svg {
-  position: absolute;
-  top: 50%;
-  left: 10px;
-  color: var(--muted);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.search-input {
-  width: 100%;
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   height: 34px;
-  padding: 0 30px 0 32px;
+  padding: 0 6px 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  outline: none;
   background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.search-input::placeholder { color: var(--muted); }
-
-.search-input:focus {
+.search-field:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+.search-field > svg {
+  flex: none;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.search-input::placeholder { color: var(--muted); }
 .search-input::-webkit-search-cancel-button { display: none; }
 
 .search-clear {
-  position: absolute;
-  top: 50%;
-  right: 6px;
   display: grid;
+  flex: none;
   place-items: center;
   width: 22px;
   height: 22px;
@@ -579,11 +624,79 @@ html.theme-transition *::after {
   color: var(--muted);
   font-size: 15px;
   line-height: 1;
-  transform: translateY(-50%);
 }
 
 .search-clear:hover { background: var(--hover); color: var(--text); }
 .search-clear[hidden] { display: none; }
+
+.search-author-filter {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  max-width: 42%;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.search-author-filter > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-author-filter:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.popover.author-options {
+  right: 0;
+  left: auto;
+  width: 100%;
+  min-width: 0;
+  max-height: min(340px, 55vh);
+  transform-origin: top right;
+}
+
+.author-options-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.author-options-retry {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--accent-strong);
+}
+
+.author-options-retry:hover { background: var(--accent-soft); }
+
+.author-option.menu-item {
+  justify-content: flex-start;
+  gap: 8px;
+  height: 40px;
+}
+
+.author-option .avatar { flex: none; }
+.author-option-selected.menu-item { background: var(--accent-soft); color: var(--accent-strong); }
+.author-option-identity { flex: 1; min-width: 0; }
+
+.author-option-identity > span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.author-option-email { color: var(--muted); font-family: var(--mono); font-size: 10px; }
 
 /* 分支浮层 */
 .popover {
@@ -667,6 +780,24 @@ html.theme-transition *::after {
 }
 
 .popover-item .check { color: var(--accent); }
+
+.branch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branch-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.branch-mark {
+  flex-shrink: 0;
+  color: var(--warning);
+}
 
 .popover-actions {
   display: flex;
@@ -866,9 +997,11 @@ html.theme-transition *::after {
 
 .date-count { color: var(--muted); font-family: var(--mono); font-size: 11px; }
 
+.commit-scroll.relative-time { --commit-time-width: 120px; }
+
 .commit-row {
   display: grid;
-  grid-template-columns: 56px 28px minmax(0, 1fr) auto;
+  grid-template-columns: var(--commit-time-width, 56px) 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   height: var(--row-h);
@@ -907,10 +1040,14 @@ html.theme-transition *::after {
 }
 
 .commit-time {
+  justify-self: end;
+  max-width: 100%;
+  overflow: hidden;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;
-  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .avatar {
@@ -978,16 +1115,22 @@ html.theme-transition *::after {
 
 .unpushed {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  min-height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--accent-soft);
   color: var(--accent-strong);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .unpushed::before {
   display: block;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--accent);
   content: "";
@@ -1696,6 +1839,47 @@ body.modal-open { overflow: hidden; }
   color: var(--accent-strong);
 }
 
+/* 数量使用普通等宽数字，有待处理提交时才强调，保持同步入口的位置稳定。 */
+.sync-action {
+  min-width: 92px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sync-action.has-updates {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.sync-count { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.sync-spinner { animation: spin 0.8s linear infinite; }
+.icon-control:disabled { cursor: default; opacity: 0.65; }
+.icon-control[aria-busy="true"] { opacity: 1; }
+
+/* 过程与错误反馈不沿用小窗口隐藏的 .status，菜单关闭或窗口变窄时仍然可见。 */
+.sync-feedback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.sync-feedback > span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.sync-feedback.error { color: var(--danger); }
+.sync-retry { flex-shrink: 0; color: var(--accent-strong); text-decoration: underline; }
+.sync-retry:disabled { cursor: default; opacity: 0.65; }
+
 .stash-wrap { position: relative; }
 
 .stash-count {
@@ -2177,8 +2361,20 @@ body.modal-open { overflow: hidden; }
 }
 
 .sync-wrap { position: relative; }
-.sync-popover { left: 0; right: auto; min-width: 190px; }
-.sync-popover .menu-item { height: 32px; }
+.sync-popover { width: 300px; }
+.sync-popover .menu-item {
+  height: 32px;
+  white-space: nowrap;
+}
+
+.sync-popover .menu-item > span:first-child { flex-shrink: 0; }
+
+.sync-popover .menu-item .hint {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .merge-badge {
   display: inline-flex;
@@ -2227,7 +2423,8 @@ body.modal-open { overflow: hidden; }
 /* ===== 布局高度链修复 ===== */
 .app { min-height: 0; }
 .projects { height: 100%; min-height: 0; }
-.main { min-height: 0; overflow: hidden; }
+/* 储藏等顶部弹层可以向左覆盖项目栏，主区不裁剪弹层，列表仍由自身容器滚动。 */
+.main { min-height: 0; overflow: visible; }
 .commit-scroll { flex: 1; min-height: 0; overflow: auto; }
 
 /* ===== 储藏批量选择 ===== */

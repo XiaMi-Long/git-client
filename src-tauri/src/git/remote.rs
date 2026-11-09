@@ -6,9 +6,30 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+use super::branch::{BranchInfo, BranchPreviewInfo, BranchUpstreamTarget};
 use super::executor::GitExecutor;
 use super::status::WorkingAreaStatus;
-use super::types::GitResult;
+use super::types::{GitError, GitResult};
+
+/// 给分支网络操作留出传输时间，同时避免长时间占用前端 Git 互斥器。
+const BRANCH_SYNC_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// 分支预览中由用户手动选择的远程操作。
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BranchSyncAction {
+    Fetch,
+    Pull,
+    Push,
+}
+
+/// 将分支操作的校验失败归入现有 Git 错误反馈。
+fn branch_sync_error(message: impl Into<String>) -> GitError {
+    GitError::CommandFailed {
+        stderr: message.into(),
+        exit_code: None,
+    }
+}
 
 /// 远程操作结果
 #[derive(Debug, Clone, Serialize)]
@@ -255,24 +276,169 @@ impl GitExecutor {
         Ok(())
     }
 
-    /// 快进更新指定本地分支到其上游（git fetch <remote> <branch>:refs/heads/<branch>）
-    /// * `branch` - 本地分支名
-    /// * `upstream` - 上游如 origin/main，拆分为远程名与分支名
-    /// 仅允许 fast-forward：本地分支没有独有提交时直接快进到远端最新；
-    /// 有本地提交（non-fast-forward）时 git 拒绝，避免覆盖本地历史
+    /// 为现有分支菜单快进拉取，保留原命令参数并按真实上游解析目标。
     pub async fn fetch_branch_ff(repo_path: &Path, branch: &str, upstream: &str) -> GitResult<()> {
-        let (remote, _remote_branch) = upstream
-            .split_once('/')
-            .ok_or_else(|| super::types::GitError::CommandFailed {
-                stderr: format!("无效的上游: {upstream}"),
-                exit_code: None,
-            })?;
-        Self::run_git(
+        let preview = Self::get_branch_info(repo_path, &format!("refs/heads/{branch}")).await?;
+        if preview.branch.upstream.as_deref() != Some(upstream) {
+            return Err(branch_sync_error("上游已变化，请刷新分支后重试"));
+        }
+        let target = preview.upstream_target.as_ref()
+            .ok_or_else(|| branch_sync_error("该分支没有可用的远程上游"))?;
+        Self::fast_forward_branch(repo_path, &preview.branch, target).await?;
+        Ok(())
+    }
+
+    /// 按预览中确认的上游操作指定本地分支。执行前重新确认仓库中的真实目标。
+    pub async fn sync_branch_upstream(
+        repo_path: &Path,
+        branch_ref: &str,
+        expected_target: &BranchUpstreamTarget,
+        action: BranchSyncAction,
+    ) -> GitResult<String> {
+        let preview = Self::get_branch_info(repo_path, branch_ref).await?;
+        Self::verify_branch_upstream(&preview, expected_target)?;
+        let branch = &preview.branch;
+
+        // 预览期间可能从外部检出该分支，此时在主界面使用当前分支操作。
+        if branch.is_current && !matches!(action, BranchSyncAction::Fetch) {
+            return Err(branch_sync_error("该分支已检出，请使用主界面的拉取或推送"));
+        }
+
+        match action {
+            BranchSyncAction::Fetch => {
+                Self::fetch_branch_tracking(repo_path, expected_target).await?;
+                Ok(format!("已获取 {} 的上游", branch.name))
+            }
+            BranchSyncAction::Pull => Self::fast_forward_branch(repo_path, branch, expected_target).await,
+            BranchSyncAction::Push => {
+                if preview.upstream_gone {
+                    return Err(branch_sync_error("本机缺少上游引用，请先获取远程"));
+                }
+                // 推送成功也可能刷新跟踪引用，因此沿用获取时的引用保护。
+                Self::ensure_direct_ref(repo_path, &expected_target.tracking_ref).await?;
+                // 发送操作开始时读到的 B 分支提交，避免工作区 HEAD 或默认 push 配置改变目标。
+                let refspec = format!("{}:{}", branch.commit_hash, expected_target.remote_ref);
+                Self::run_git_with_timeout(
+                    repo_path,
+                    &[
+                        "push", "--no-force", "--no-follow-tags", "--recurse-submodules=no",
+                        "--", expected_target.remote.as_str(), &refspec,
+                    ],
+                    BRANCH_SYNC_TIMEOUT,
+                )
+                .await?;
+                Ok(format!("已将 {} 推送到上游", branch.name))
+            }
+        }
+    }
+
+    /// 确认分支仍跟踪弹窗中展示的远程及引用，配置变化时由用户重新检查。
+    fn verify_branch_upstream(preview: &BranchPreviewInfo, target: &BranchUpstreamTarget) -> GitResult<()> {
+        if preview.branch.is_remote {
+            return Err(branch_sync_error("请在对应的本地分支预览中执行远程操作"));
+        }
+        if preview.upstream_target.as_ref() != Some(target) {
+            return Err(branch_sync_error("远程上游已变化，请刷新分支信息后重试"));
+        }
+        Ok(())
+    }
+
+    /// 只更新指定上游的本地跟踪引用，避免仓库配置将本次获取映射到其他分支。
+    async fn fetch_branch_tracking(repo_path: &Path, target: &BranchUpstreamTarget) -> GitResult<()> {
+        Self::ensure_direct_ref(repo_path, &target.tracking_ref).await?;
+
+        // 跟踪引用可以反映远程改写，本地工作分支由后续快进检查独立保护。
+        let refspec = format!("+{}:{}", target.remote_ref, target.tracking_ref);
+        Self::run_git_with_timeout(
             repo_path,
-            &["fetch", remote, &format!("{branch}:refs/heads/{branch}")],
+            &[
+                "fetch", "--no-tags", "--no-prune", "--no-prune-tags", "--no-recurse-submodules",
+                "--refmap=", "--", target.remote.as_str(), &refspec,
+            ],
+            BRANCH_SYNC_TIMEOUT,
         )
         .await?;
         Ok(())
+    }
+
+    /// 校验写入目标是直接引用。允许首次创建缺失的远程跟踪引用。
+    async fn ensure_direct_ref(repo_path: &Path, reference: &str) -> GitResult<()> {
+        let result = Self::run_git_raw(Some(repo_path), &["symbolic-ref", "--quiet", reference]).await?;
+        match result.status.code() {
+            Some(0) => Err(branch_sync_error(format!("引用 {reference} 指向其他分支，无法直接更新"))),
+            Some(1) => Ok(()),
+            exit_code => Err(GitError::CommandFailed {
+                stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
+                exit_code,
+            }),
+        }
+    }
+
+    /// 校验目标分支未被任何工作区检出，防止更新引用后工作区内容与 HEAD 脱节。
+    async fn ensure_branch_not_checked_out(repo_path: &Path, branch: &BranchInfo) -> GitResult<()> {
+        let worktrees = Self::run_git(repo_path, &["worktree", "list", "--porcelain"]).await?;
+        let is_in_use = branch.is_current || worktrees.lines().any(|line| {
+            line.strip_prefix("branch ") == Some(branch.full_name.as_str())
+        });
+        if is_in_use {
+            return Err(branch_sync_error(format!("分支 {} 已在工作区检出，请在对应工作区拉取", branch.name)));
+        }
+        Ok(())
+    }
+
+    /// 按实际退出码判断两个提交的祖先关系，查询失败时停止快进。
+    async fn branch_commit_is_ancestor(repo_path: &Path, ancestor: &str, descendant: &str) -> GitResult<bool> {
+        let result = Self::run_git_raw(
+            Some(repo_path),
+            &["merge-base", "--is-ancestor", ancestor, descendant],
+        )
+        .await?;
+        match result.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            exit_code => Err(GitError::CommandFailed {
+                stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
+                exit_code,
+            }),
+        }
+    }
+
+    /// 手动获取上游后，仅在确认为快进时更新目标本地分支引用。
+    async fn fast_forward_branch(
+        repo_path: &Path,
+        branch: &BranchInfo,
+        target: &BranchUpstreamTarget,
+    ) -> GitResult<String> {
+        // 1. 获取远端到跟踪引用，保留本地工作分支，等待实际提交关系确定。
+        Self::ensure_branch_not_checked_out(repo_path, branch).await?;
+        Self::fetch_branch_tracking(repo_path, target).await?;
+        let preview = Self::get_branch_info(repo_path, &branch.full_name).await?;
+        Self::verify_branch_upstream(&preview, target)?;
+        let current = &preview.branch;
+        let upstream_commit = format!("{}^{{commit}}", target.tracking_ref);
+        let upstream_oid = Self::run_git(repo_path, &["rev-parse", "--verify", &upstream_commit]).await?;
+        let upstream_oid = upstream_oid.trim();
+
+        // 2. 本地已包含上游时直接结束。两边都有独立提交时保留本地分支。
+        if Self::branch_commit_is_ancestor(repo_path, upstream_oid, &current.commit_hash).await? {
+            return Ok(format!("{} 已包含上游提交", current.name));
+        }
+        if !Self::branch_commit_is_ancestor(repo_path, &current.commit_hash, upstream_oid).await? {
+            return Err(branch_sync_error(format!("分支 {} 与上游已分叉，无法快进拉取", current.name)));
+        }
+
+        // 3. 网络请求结束后再次检查工作区，旧提交不匹配时由 Git 拒绝写入。
+        Self::ensure_direct_ref(repo_path, &current.full_name).await?;
+        Self::ensure_branch_not_checked_out(repo_path, current).await?;
+        Self::run_git(
+            repo_path,
+            &[
+                "update-ref", "--no-deref", "-m", "GitTrail: fast-forward from upstream",
+                current.full_name.as_str(), upstream_oid, current.commit_hash.as_str(),
+            ],
+        )
+        .await?;
+        Ok(format!("已快进更新 {}", current.name))
     }
 
     // ===== 冲突检测（2.9） =====
