@@ -27,6 +27,7 @@
     - 2026-11-07: Updated. 提交列表根据时间格式分配列宽，长时间文案可悬停查看。
     - 2026-11-07: Updated. 非当前分支通过独立弹窗查看历史和执行手动同步。
     - 2026-11-07: Updated. 共用提交搜索组件，并让搜索框换行后从左侧开始。
+    - 2026-11-10: Updated. 分支预览中的提交右键菜单支持 Cherry-pick，产生冲突时关闭预览并进入冲突处理。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -1090,6 +1091,17 @@ async function closeBranchPreview(): Promise<void> {
 }
 
 /**
+ * 分支预览中的 Cherry-pick 产生冲突后，关闭预览并打开主界面的冲突处理。
+ * @returns void
+ * @reasoning 分支预览使用原生 dialog 顶层，冲突弹窗必须先关闭预览才能显示；
+ * 这里的操作状态与预览共用 useGitActions，冲突文件也由主界面统一处理。
+ */
+function openConflictFromPreview(): void {
+  branchPreview.value = null;
+  openConflictDialog();
+}
+
+/**
  * 提交列表滚动到底部时加载下一页。
  * @param event - 滚动事件
  * @returns {void}
@@ -1798,7 +1810,7 @@ onUnmounted(() => {
       </section>
     </div>
 
-    <BranchPreviewDialog v-if="branchPreview" :target="branchPreview" @close="closeBranchPreview" />
+    <BranchPreviewDialog v-if="branchPreview" :target="branchPreview" @close="closeBranchPreview" @conflict="openConflictFromPreview" />
 
     <ReviewDialog
       v-if="reviewOpen && reviewCommit && activeRepo"
