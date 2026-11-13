@@ -3,7 +3,10 @@
  *
  * @changeLog
  *   - 2026-11-04: Created. 真实作者名派生头像，替代原型手写 initials。
+ *   - 2026-11-10: Updated. 增加作者身份比较，供作者多选筛选复用。
  */
+
+import type { CommitAuthor } from "@/types/git";
 
 /** 头像低饱和色调数量，与 rewrite.css 的 tone-0..5 对齐 */
 const AVATAR_TONES = 6;
@@ -43,4 +46,27 @@ export function authorMark(name: string, initials = ""): string {
     return parts.slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
   }
   return trimmed.slice(0, 2).toUpperCase();
+}
+
+/**
+ * 判断两个作者候选是否指向同一 Git 身份。
+ * @param left - 作者候选
+ * @param right - 作者候选
+ * @returns 姓名和邮箱都相同时为 true
+ */
+export function isSameAuthor(left: CommitAuthor, right: CommitAuthor): boolean {
+  return left.name === right.name && left.email === right.email;
+}
+
+/**
+ * 判断两组作者是否包含相同的 Git 身份，忽略选择顺序。
+ * @param left - 作者列表
+ * @param right - 作者列表
+ * @returns 数量相同且每个身份都能互相匹配时为 true
+ */
+export function isSameAuthorSet(left: CommitAuthor[], right: CommitAuthor[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((author) => right.some((item) => isSameAuthor(author, item)));
 }

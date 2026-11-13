@@ -29,8 +29,8 @@ export const useCommitStore = defineStore("commit", () => {
   const browseBranch = ref<string | null>(null);
   // 6.7 搜索关键词
   const search = ref<string>("");
-  // 作者筛选独立于关键词，切换仓库时一并清除。
-  const authorFilter = ref<CommitAuthor | null>(null);
+  // 作者筛选独立于关键词，切换仓库时一并清除；多个作者按 OR 匹配。
+  const authorFilters = ref<CommitAuthor[]>([]);
   // 从提交文件列表快捷打开或手动查询文件历史时预填的路径
   const fileHistoryPath = ref("");
   // 递增序号用于丢弃被新查询或仓库切换取代的提交日志响应
@@ -119,7 +119,7 @@ export const useCommitStore = defineStore("commit", () => {
         limit: PAGE_SIZE,
         branch: queryBranch.value,
         search: search.value.trim() || null,
-        author: authorFilter.value,
+        authors: authorFilters.value,
         all_branches: queryAllBranches.value,
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
@@ -156,7 +156,7 @@ export const useCommitStore = defineStore("commit", () => {
         limit: PAGE_SIZE,
         branch: queryBranch.value,
         search: searchQuery || null,
-        author: authorFilter.value,
+        authors: authorFilters.value,
         all_branches: queryAllBranches.value,
       };
       const result = await invoke<CommitInfo[]>("git_get_log", { path, query });
@@ -188,7 +188,7 @@ export const useCommitStore = defineStore("commit", () => {
   /** 设置搜索关键词（6.7，防抖在调用方） */
   function setSearch(q: string) {
     search.value = q;
-    if (authorFilter.value) {
+    if (authorFilters.value.length) {
       commits.value = [];
     }
     loadCommits();
@@ -196,12 +196,12 @@ export const useCommitStore = defineStore("commit", () => {
 
   /**
    * 同步作者和最新关键词，只发起一次提交列表查询。
-   * @param author - 选中的作者，null 表示清除作者条件
+   * @param authors - 选中的作者列表，空数组表示清除作者条件
    * @param keyword - 输入框中的最新关键词，包含尚未经过防抖的内容
    * @returns {void}
    */
-  function setAuthorFilter(author: CommitAuthor | null, keyword: string): void {
-    authorFilter.value = author;
+  function setAuthorFilters(authors: CommitAuthor[], keyword: string): void {
+    authorFilters.value = authors;
     search.value = keyword;
     // 作者变化后立即进入加载态，避免旧列表被误认为符合新筛选。
     commits.value = [];
@@ -229,7 +229,7 @@ export const useCommitStore = defineStore("commit", () => {
     loadingMore.value = false;
     browseBranch.value = null;
     search.value = "";
-    authorFilter.value = null;
+    authorFilters.value = [];
     fileHistoryPath.value = "";
     scope.value = "current";
     error.value = null;
@@ -245,7 +245,7 @@ export const useCommitStore = defineStore("commit", () => {
     scope,
     browseBranch,
     search,
-    authorFilter,
+    authorFilters,
     fileHistoryPath,
     queryBranch,
     queryAllBranches,
@@ -257,7 +257,7 @@ export const useCommitStore = defineStore("commit", () => {
     setScope,
     browseTo,
     setSearch,
-    setAuthorFilter,
+    setAuthorFilters,
     setFileHistoryPath,
     switchRepo,
   };

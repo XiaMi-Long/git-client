@@ -604,6 +604,14 @@ pub async fn git_reset_hard(path: String, to_commit: String) -> Result<(), Strin
 /// 获取所有已注册的 command 列表，用于 lib.rs 注册
 pub fn all_commands() -> Vec<&'static str> {
     vec![
+        "project_get_command_info",
+        "project_get_command_task",
+        "project_attach_command_terminal",
+        "project_run_command",
+        "project_write_command_input",
+        "project_resize_command_terminal",
+        "project_stop_command",
+        "project_open_dist",
         "git_detect_version",
         "git_get_user_name",
         "git_is_valid_repo",

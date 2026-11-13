@@ -8,10 +8,12 @@
  * @changeLog
  *   - 2026-11-07: Created. 支持提交搜索框的作者快捷筛选。
  *   - 2026-11-07: Updated. 主列表和分支预览分别传入查询范围及筛选状态。
+ *   - 2026-11-10: Updated. 作者筛选改为多选，切换选项时保留浮层并支持一键清除。
  */
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommitAuthor } from "@/types/git";
+import { isSameAuthor } from "../utils/author";
 
 /** 沿用原搜索输入的防抖间隔，避免每次按键都读取 Git 日志。 */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -31,9 +33,9 @@ interface CommitSearchScope {
 /** 将搜索交互与历史视图的查询和筛选状态连接起来。 */
 interface CommitSearchSource {
   scope: () => CommitSearchScope | null;
-  selectedAuthor: () => CommitAuthor | null;
+  selectedAuthors: () => CommitAuthor[];
   setKeyword: (keyword: string) => void;
-  setAuthor: (author: CommitAuthor | null, keyword: string) => void;
+  setAuthors: (authors: CommitAuthor[], keyword: string) => void;
 }
 
 /**
@@ -43,7 +45,7 @@ interface CommitSearchSource {
  */
 export function useCommitSearch(source: CommitSearchSource) {
   const scope = computed(source.scope);
-  const selectedAuthor = computed(source.selectedAuthor);
+  const selectedAuthors = computed(source.selectedAuthors);
   const localSearch = ref("");
   const searchInput = ref<HTMLInputElement | null>(null);
   const authorOptionsOpen = ref(false);
@@ -156,7 +158,7 @@ export function useCommitSearch(source: CommitSearchSource) {
   }
 
   /**
-   * 清空关键词并重新查询，作者条件可在标签上单独移除。
+   * 清空关键词并重新查询，已选作者保留在搜索框标签上。
    * @returns {void}
    */
   function clearSearch(): void {
@@ -184,27 +186,39 @@ export function useCommitSearch(source: CommitSearchSource) {
   }
 
   /**
-   * 设置或清除作者筛选，同时应用输入框中的最新关键词。
-   * @param author - 选中的作者，null 表示清除作者条件
+   * 切换单个作者的选中状态，保留作者浮层供继续多选。
+   * @param author - 点击的作者候选
    * @returns {void}
    */
-  function applyAuthorFilter(author: CommitAuthor | null): void {
+  function toggleAuthorFilter(author: CommitAuthor): void {
     cancelSearchTimer();
-    if (authorOptionsOpen.value) {
-      searchInput.value?.focus();
-    }
-    closeAuthorOptions();
-    source.setAuthor(author, localSearch.value);
+    const currentAuthors = selectedAuthors.value;
+    const isSelected = currentAuthors.some((item) => isSameAuthor(item, author));
+    const nextAuthors = isSelected
+      ? currentAuthors.filter((item) => !isSameAuthor(item, author))
+      : [...currentAuthors, author];
+    source.setAuthors(nextAuthors, localSearch.value);
   }
 
   /**
-   * 判断候选是否与当前作者筛选为同一 Git 身份。
+   * 清除全部作者筛选，保留当前关键词和作者浮层。
+   * @returns {void}
+   */
+  function clearAuthorFilters(): void {
+    cancelSearchTimer();
+    if (!selectedAuthors.value.length) {
+      return;
+    }
+    source.setAuthors([], localSearch.value);
+  }
+
+  /**
+   * 判断候选是否在当前作者筛选内。
    * @param author - 作者候选
    * @returns 同名且同邮箱时为 true
    */
-  function isSelectedAuthor(author: CommitAuthor): boolean {
-    const currentAuthor = selectedAuthor.value;
-    return currentAuthor?.name === author.name && currentAuthor.email === author.email;
+  function isAuthorSelected(author: CommitAuthor): boolean {
+    return selectedAuthors.value.some((item) => isSameAuthor(item, author));
   }
 
   /**
@@ -213,7 +227,9 @@ export function useCommitSearch(source: CommitSearchSource) {
    */
   function clearCommitFilters(): void {
     localSearch.value = "";
-    applyAuthorFilter(null);
+    cancelSearchTimer();
+    closeAuthorOptions();
+    source.setAuthors([], "");
   }
 
   // 仓库、浏览分支或检出分支变化时，旧范围的选项不再可用。
@@ -241,7 +257,7 @@ export function useCommitSearch(source: CommitSearchSource) {
   });
 
   return {
-    selectedAuthor,
+    selectedAuthors,
     localSearch,
     searchInput,
     authorOptionsOpen,
@@ -256,8 +272,9 @@ export function useCommitSearch(source: CommitSearchSource) {
     applySearch,
     clearSearch,
     dismissSearch,
-    applyAuthorFilter,
-    isSelectedAuthor,
+    toggleAuthorFilter,
+    clearAuthorFilters,
+    isAuthorSelected,
     clearCommitFilters,
   };
 }

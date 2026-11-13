@@ -8,12 +8,14 @@
  * @changeLog
  *   - 2026-11-07: Created. 将非当前分支的历史及同步状态与主列表分离。
  *   - 2026-11-07: Updated. 分支历史支持独立的关键词和作者条件。
+ *   - 2026-11-10: Updated. 分支历史的作者筛选同步支持多选。
  */
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { PAGE_SIZE } from "@/stores/commit";
 import { useRepoStore } from "@/stores/repo";
 import type { BranchInfo, BranchPreviewInfo, CommitAuthor, CommitInfo, LogQuery } from "@/types/git";
+import { isSameAuthorSet } from "../utils/author";
 import { useCommitSearch } from "./useCommitSearch";
 import { useGitActions, type GitActionResult } from "./useGitActions";
 import type { RemoteSyncAction } from "./useRemoteSync";
@@ -54,8 +56,8 @@ export function useBranchPreview(target: BranchPreviewTarget) {
   const actionResult = ref<GitActionResult | null>(null);
   // 这里保存已提交给分支历史的条件，输入草稿由 useCommitSearch 管理。
   const keyword = ref("");
-  const authorFilter = ref<CommitAuthor | null>(null);
-  const hasCommitFilters = computed(() => Boolean(keyword.value || authorFilter.value));
+  const authorFilters = ref<CommitAuthor[]>([]);
+  const hasCommitFilters = computed(() => Boolean(keyword.value || authorFilters.value.length));
   // 分页固定到同一个提交和筛选条件。条件变化时清除 loadedHead，使历史从第一页重新读取。
   let loadedHead: string | null = null;
   let historySequence = 0;
@@ -68,9 +70,9 @@ export function useBranchPreview(target: BranchPreviewTarget) {
       branch: `${branch.value?.commit_hash ?? target.branch.commit_hash}^{commit}`,
       allBranches: false,
     }),
-    selectedAuthor: () => authorFilter.value,
-    setKeyword: (nextKeyword) => applyHistoryFilters(authorFilter.value, nextKeyword),
-    setAuthor: applyHistoryFilters,
+    selectedAuthors: () => authorFilters.value,
+    setKeyword: (nextKeyword) => applyHistoryFilters(authorFilters.value, nextKeyword),
+    setAuthors: applyHistoryFilters,
   });
 
   const hasKnownUpstream = computed(() => Boolean(branch.value?.upstream_target) && !branch.value?.upstream_gone);
@@ -88,17 +90,17 @@ export function useBranchPreview(target: BranchPreviewTarget) {
 
   /**
    * 应用弹窗自己的作者和关键词条件，并从所选分支重新读取历史。
-   * @param author - 筛选的 Git 作者，null 表示所有作者
+   * @param authors - 筛选的作者列表，空数组表示所有作者
    * @param searchText - 搜索框中的当前关键词
    * @returns void
    */
-  function applyHistoryFilters(author: CommitAuthor | null, searchText: string): void {
+  function applyHistoryFilters(authors: CommitAuthor[], searchText: string): void {
     const nextKeyword = searchText.trim();
-    if (nextKeyword === keyword.value && author === authorFilter.value) {
+    if (nextKeyword === keyword.value && isSameAuthorSet(authors, authorFilters.value)) {
       return;
     }
     keyword.value = nextKeyword;
-    authorFilter.value = author;
+    authorFilters.value = authors;
     // 旧列表与新条件不匹配，清空后再加载，避免用户误把旧提交当作筛选结果。
     loadedHead = null;
     commits.value = [];
@@ -118,7 +120,7 @@ export function useBranchPreview(target: BranchPreviewTarget) {
       limit: PAGE_SIZE,
       branch: `${head}^{commit}`,
       search: keyword.value || null,
-      author: authorFilter.value,
+      authors: authorFilters.value,
       all_branches: false,
     };
     return invoke<CommitInfo[]>("git_get_log", { path: target.repoPath, query });

@@ -671,6 +671,23 @@ html.theme-transition *::after {
   font-size: 12px;
 }
 
+.author-options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.author-options-clear {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: var(--accent-strong);
+  font-size: 11px;
+}
+
+.author-options-clear:hover { background: var(--accent-soft); }
+
 .author-options-retry {
   padding: 3px 6px;
   border-radius: 5px;
@@ -2358,22 +2375,6 @@ body.modal-open { overflow: hidden; }
   color: var(--muted);
   font-size: 12px;
   text-align: center;
-}
-
-.sync-wrap { position: relative; }
-.sync-popover { width: 300px; }
-.sync-popover .menu-item {
-  height: 32px;
-  white-space: nowrap;
-}
-
-.sync-popover .menu-item > span:first-child { flex-shrink: 0; }
-
-.sync-popover .menu-item .hint {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .merge-badge {

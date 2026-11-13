@@ -25,6 +25,7 @@ tokio = { version = "1", features = ["full"] }
 notify = "7"
 # .gitignore 过滤（ripgrep 同源）
 ignore = "0.4"
+portable-pty = "0.9"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

@@ -28,6 +28,9 @@
     - 2026-11-07: Updated. 非当前分支通过独立弹窗查看历史和执行手动同步。
     - 2026-11-07: Updated. 共用提交搜索组件，并让搜索框换行后从左侧开始。
     - 2026-11-10: Updated. 分支预览中的提交右键菜单支持 Cherry-pick，产生冲突时关闭预览并进入冲突处理。
+    - 2026-11-10: Updated. 本地分支支持双击直接检出，单击仍打开该分支的提交预览。
+    - 2026-11-10: Updated. 作者筛选支持多选与清除；顶栏“更多”改为“获取远程”，移除重复的上游设置入口。
+    - 2026-11-13: Updated. 接入项目命令与 dist 快捷工具，移除侧栏无已知差异文案。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -49,6 +52,7 @@ import { useRemoteSync, type RemoteSyncAction } from "./composables/useRemoteSyn
 import { authorMark, authorTone } from "./utils/author";
 import { dateKey, formatTime, groupLabel } from "./utils/date";
 import BranchPreviewDialog from "./components/BranchPreviewDialog.vue";
+import ProjectTools from "./components/ProjectTools.vue";
 import CommitSearchBox from "./components/CommitSearchBox.vue";
 import ReviewDialog from "./components/ReviewDialog.vue";
 import SettingsView from "./components/SettingsView.vue";
@@ -92,9 +96,9 @@ const commitSearch = useCommitSearch({
       headRef: commitStore.currentBranch?.full_name,
     } : null;
   },
-  selectedAuthor: () => repoStore.activeRepo ? commitStore.authorFilter : null,
+  selectedAuthors: () => repoStore.activeRepo ? commitStore.authorFilters : [],
   setKeyword: commitStore.setSearch,
-  setAuthor: commitStore.setAuthorFilter,
+  setAuthors: commitStore.setAuthorFilters,
 });
 const { searchInput, authorOptionsOpen, openAuthorOptions, closeAuthorOptions, clearCommitFilters } = commitSearch;
 const dragPath = ref<string | null>(null);
@@ -103,8 +107,11 @@ const dragOverPath = ref<string | null>(null);
 const branchOpen = ref(false);
 const branchButton = ref<HTMLButtonElement | null>(null);
 const branchPreview = ref<BranchPreviewTarget | null>(null);
-const syncOpen = ref(false);
 const stashOpen = ref(false);
+
+// 单击会打开模态预览，必须等双击判定结束再执行，避免弹窗抢在第二次点击前出现。
+const BRANCH_SINGLE_CLICK_DELAY = 240;
+let branchClickTimer: ReturnType<typeof setTimeout> | null = null;
 
 const projectMenu = ref<{ x: number; y: number; repo: RepoTab } | null>(null);
 const commitMenu = ref<{ x: number; y: number; commit: CommitInfo; index: number } | null>(null);
@@ -155,7 +162,7 @@ const activeProjectLoading = computed(() => {
 const waitingForCommitContent = computed(() => activeRepo.value
   ? commitStore.loading && !commitStore.commits.length
   : activeProjectLoading.value);
-const hasCommitFilters = computed(() => Boolean(commitStore.authorFilter || commitStore.search.trim()));
+const hasCommitFilters = computed(() => Boolean(commitStore.authorFilters.length || commitStore.search.trim()));
 const sortedProjects = computed(() => layout.sortProjects(repoStore.repos));
 const visibleProjects = computed(() => {
   const query = projectQuery.value.trim().toLowerCase();
@@ -312,11 +319,8 @@ function projectMeta(repo: RepoTab): string {
   }
 
   // 侧栏依赖本地远程引用，零差异不代表刚刚检查过远程，未配置上游时也不能宣称已同步。
-  const hasNoKnownDifference = !!branch && !branch.ahead && !branch.behind;
   if (branch && !branch.upstream) {
     projectLabels.push("未设置上游");
-  } else if (hasNoKnownDifference) {
-    projectLabels.push("无已知差异");
   }
   return projectLabels.join(" · ");
 }
@@ -339,7 +343,6 @@ function commitTime(commit: CommitInfo): string {
  */
 function closeFloatingPanels(): void {
   branchOpen.value = false;
-  syncOpen.value = false;
   stashOpen.value = false;
   closeAuthorOptions();
   projectMenu.value = null;
@@ -471,7 +474,6 @@ async function addProject(multiple: boolean): Promise<void> {
 function openProjectContext(event: MouseEvent, repo: RepoTab): void {
   if (view.value === "settings") view.value = "commits";
   branchOpen.value = false;
-  syncOpen.value = false;
   stashOpen.value = false;
   commitMenu.value = null;
   branchMenu.value = null;
@@ -558,6 +560,7 @@ function moveProject(fromPath: string | null, toPath: string): void {
  * @returns {void}
  */
 function openBranchMenu(event: MouseEvent, branch: BranchInfo, remote: boolean): void {
+  cancelBranchClick();
   projectMenu.value = null;
   commitMenu.value = null;
   branchMenu.value = { x: event.clientX, y: event.clientY, branch, remote };
@@ -587,6 +590,7 @@ function toggleBranchMark(branch: BranchInfo): void {
  * @returns {Promise<void>}
  */
 async function openBranchDialog(mode: BranchDialogMode, branch: BranchInfo, value = ""): Promise<void> {
+  cancelBranchClick();
   branchMenu.value = null;
   branchOpen.value = false;
   const initial = value
@@ -610,19 +614,6 @@ async function openCreateBranch(): Promise<void> {
     return;
   }
   await openBranchDialog("create", base);
-}
-
-/**
- * 从同步菜单设置当前分支上游。
- * @returns {Promise<void>}
- */
-async function openCurrentUpstream(): Promise<void> {
-  const branch = currentBranch.value;
-  if (!branch) {
-    showToast("当前没有可设置上游的分支");
-    return;
-  }
-  await openBranchDialog("upstream", branch);
 }
 
 /**
@@ -832,6 +823,7 @@ async function checkoutBranch(branch: BranchInfo): Promise<void> {
  * @returns {Promise<void>}
  */
 async function pullBranch(branch: BranchInfo): Promise<void> {
+  cancelBranchClick();
   branchOpen.value = false;
   showActionResult(await actions.pullBranch(branch));
 }
@@ -990,7 +982,6 @@ async function cherryPickCommit(commit: CommitInfo): Promise<void> {
  */
 function openCommitContext(event: MouseEvent, commit: CommitInfo, index: number): void {
   branchOpen.value = false;
-  syncOpen.value = false;
   stashOpen.value = false;
   projectMenu.value = null;
   branchMenu.value = null;
@@ -1049,11 +1040,69 @@ function stepReview(delta: number): void {
 }
 
 /**
+ * 取消尚未执行的分支单击动作。
+ * @returns {void}
+ */
+function cancelBranchClick(): void {
+  if (branchClickTimer) {
+    clearTimeout(branchClickTimer);
+    branchClickTimer = null;
+  }
+}
+
+/**
+ * 本地分支行单击：延迟打开分支历史预览，为双击检出留出判定时间。
+ * @param event - 点击事件，detail 表示同一位置的连续点击次数
+ * @param branch - 本地分支
+ * @returns {void}
+ * @reasoning 单击会打开原生模态预览；若立即执行，双击的第二次点击会被弹窗拦截，
+ * 因此先等双击判定结束，再决定打开预览还是让 dblclick 执行检出。
+ */
+function onLocalBranchClick(event: MouseEvent, branch: BranchInfo): void {
+  // 双击产生的第二次 click 交给 dblclick 处理，不能再排一次预览动作。
+  if (event.detail > 1) {
+    cancelBranchClick();
+    return;
+  }
+  cancelBranchClick();
+  branchClickTimer = setTimeout(() => {
+    branchClickTimer = null;
+    selectBranch(branch);
+  }, BRANCH_SINGLE_CLICK_DELAY);
+}
+
+/**
+ * 本地分支行双击：直接检出该分支，脏工作区和冲突状态沿用现有保护。
+ * @param branch - 本地分支
+ * @returns 检出及提示更新结束
+ */
+async function onLocalBranchDblClick(branch: BranchInfo): Promise<void> {
+  cancelBranchClick();
+  if (branch.is_current) {
+    selectBranch(branch);
+    return;
+  }
+  branchOpen.value = false;
+  await checkoutBranch(branch);
+}
+
+/**
+ * 本地分支行的悬停提示，补充双击检出说明。
+ * @param branch - 本地分支
+ * @returns 上游状态和双击操作提示
+ */
+function localBranchTitle(branch: BranchInfo): string {
+  const upstreamText = branch.upstream ? `上游 ${branch.upstream}` : "未设置上游";
+  return branch.is_current ? upstreamText : `${upstreamText}；双击检出`;
+}
+
+/**
  * 在主列表选择当前或所有分支，其他分支单独打开预览。
  * @param branch - 分支信息或主列表的范围选项
  * @returns {void}
  */
 function selectBranch(branch: BranchInfo | "all" | null): void {
+  cancelBranchClick();
   branchOpen.value = false;
   if (branch === "all") {
     showStartupHistoryNotice.value = false;
@@ -1121,7 +1170,6 @@ function onCommitScroll(event: Event): void {
  * @returns {Promise<void>}
  */
 async function runRemote(action: RemoteSyncAction): Promise<void> {
-  syncOpen.value = false;
   await remoteSync.execute(action);
 }
 
@@ -1172,7 +1220,6 @@ function onDocumentMouseDown(event: MouseEvent): void {
   const target = event.target as HTMLElement;
   if (!target.closest(".context-menu")) closeContextMenus();
   if (!target.closest(".branch-wrap")) branchOpen.value = false;
-  if (!target.closest(".sync-wrap")) syncOpen.value = false;
   if (!target.closest(".stash-wrap")) stashOpen.value = false;
 }
 
@@ -1182,6 +1229,10 @@ function onDocumentMouseDown(event: MouseEvent): void {
  * @returns {void}
  */
 function onDocumentKeydown(event: KeyboardEvent): void {
+  // 命令弹窗自行处理 Esc 和焦点，主界面快捷键不干预运行中的任务。
+  if (event.target instanceof Element && event.target.closest(".project-command-dialog")) {
+    return;
+  }
   // 预览和提交审查各自处理键盘，避免快捷键将焦点移到弹窗外。
   if (branchPreview.value) {
     return;
@@ -1192,7 +1243,7 @@ function onDocumentKeydown(event: KeyboardEvent): void {
       closeContextMenus();
       return;
     }
-    if (branchOpen.value || syncOpen.value || stashOpen.value || authorOptionsOpen.value) {
+    if (branchOpen.value || stashOpen.value || authorOptionsOpen.value) {
       closeFloatingPanels();
       return;
     }
@@ -1295,6 +1346,13 @@ watch(stashes, (list) => {
   if (valid.size !== selectedStashes.value.size) selectedStashes.value = valid;
 }, { deep: true });
 
+// 分支菜单收起后丢弃尚未执行的单击，避免菜单都关了才弹出预览。
+watch(branchOpen, (open) => {
+  if (!open) {
+    cancelBranchClick();
+  }
+});
+
 onMounted(async () => {
   syncRail();
   window.addEventListener("resize", syncRail);
@@ -1316,6 +1374,7 @@ onUnmounted(() => {
   document.removeEventListener("mousedown", onDocumentMouseDown);
   document.removeEventListener("keydown", onDocumentKeydown);
   if (toastTimer) clearTimeout(toastTimer);
+  if (branchClickTimer) clearTimeout(branchClickTimer);
 });
 </script>
 
@@ -1428,7 +1487,7 @@ onUnmounted(() => {
         <div v-if="view === 'commits'" class="header-bottom">
           <div class="header-tools">
             <div class="branch-wrap">
-              <button ref="branchButton" class="branch-btn" type="button" :disabled="activeProjectLoading" aria-haspopup="menu" :aria-expanded="branchOpen" title="浏览分支" @click.stop="branchOpen = !branchOpen; syncOpen = false; stashOpen = false">
+              <button ref="branchButton" class="branch-btn" type="button" :disabled="activeProjectLoading" aria-haspopup="menu" :aria-expanded="branchOpen" title="浏览分支" @click.stop="branchOpen = !branchOpen; stashOpen = false">
                 <span>{{ branchLabel }}</span>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
               </button>
@@ -1442,8 +1501,9 @@ onUnmounted(() => {
                     type="button"
                     class="popover-item"
                     :class="{ active: commitStore.scope === 'current' && branchLabel === branch.name }"
-                    :title="branch.upstream ? `上游 ${branch.upstream}` : '未设置上游'"
-                    @click="selectBranch(branch)"
+                    :title="localBranchTitle(branch)"
+                    @click="onLocalBranchClick($event, branch)"
+                    @dblclick="onLocalBranchDblClick(branch)"
                   >
                     <span class="branch-label">
                       <span class="branch-name">{{ branch.name }}</span>
@@ -1451,7 +1511,7 @@ onUnmounted(() => {
                     </span>
                     <span v-if="branch.is_current" class="check" aria-hidden="true">✓</span>
                   </button>
-                  <div class="popover-actions">
+                  <div class="popover-actions" @dblclick.stop>
                     <button class="branch-action" type="button" :disabled="!!actionBusy" title="拉取" aria-label="拉取" @click.stop="pullBranch(branch)">
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7"/><path d="M3 13.5h10"/></svg>
                     </button>
@@ -1492,7 +1552,7 @@ onUnmounted(() => {
                 type="button"
                 :disabled="syncDisabled || !currentBranch?.upstream"
                 :aria-busy="syncAction === 'pull'"
-                :title="currentBranch?.upstream ? `拉取当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在更多菜单中设置当前分支上游'"
+                :title="currentBranch?.upstream ? `拉取当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在分支菜单的 ⋯ 中设置当前分支上游'"
                 @click="runRemote('pull')"
               >
                 <svg v-if="syncAction === 'pull'" class="sync-spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5M3 8a5 5 0 0 1 8.5-3.5"/></svg>
@@ -1506,7 +1566,7 @@ onUnmounted(() => {
                 type="button"
                 :disabled="syncDisabled || !currentBranch?.upstream"
                 :aria-busy="syncAction === 'push'"
-                :title="currentBranch?.upstream ? `推送当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在更多菜单中设置当前分支上游'"
+                :title="currentBranch?.upstream ? `推送当前检出分支 ${currentBranch.name}，上游 ${currentBranch.upstream}` : '请先在分支菜单的 ⋯ 中设置当前分支上游'"
                 @click="runRemote('push')"
               >
                 <svg v-if="syncAction === 'push'" class="sync-spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5M3 8a5 5 0 0 1 8.5-3.5"/></svg>
@@ -1514,29 +1574,20 @@ onUnmounted(() => {
                 <span>{{ syncAction === 'push' ? '推送中…' : '推送' }}</span>
                 <span v-if="syncAction !== 'push'" class="sync-count">{{ currentBranch?.upstream ? currentBranch.ahead : '—' }}</span>
               </button>
-              <div class="sync-wrap">
-                <button class="icon-control" type="button" :aria-expanded="syncOpen" :aria-busy="syncAction === 'fetch'" :disabled="syncDisabled" title="更多远程操作" @click.stop="syncOpen = !syncOpen; branchOpen = false; stashOpen = false">
-                  <svg :class="{ 'sync-spinner': syncAction === 'fetch' }" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/><path d="M11.5 2v3h-3"/><path d="M4.5 14v-3h3"/></svg>
-                  <span>更多</span>
-                </button>
-                <div v-if="syncOpen" class="popover sync-popover" role="menu">
-                  <button class="menu-item" type="button" :disabled="syncDisabled" @click="runRemote('fetch')"><span>获取远程</span><span class="hint">fetch</span></button>
-                  <div class="menu-sep"></div>
-                  <button
-                    class="menu-item"
-                    type="button"
-                    :disabled="syncDisabled"
-                    :title="currentBranch?.upstream || undefined"
-                    @click="syncOpen = false; openCurrentUpstream()"
-                  >
-                    <span>设置当前分支上游…</span>
-                    <span class="hint">{{ currentBranch?.upstream || "未设置" }}</span>
-                  </button>
-                </div>
-              </div>
+              <button
+                class="icon-control sync-action"
+                type="button"
+                :aria-busy="syncAction === 'fetch'"
+                :disabled="syncDisabled"
+                title="获取远程更新（fetch）"
+                @click="runRemote('fetch')"
+              >
+                <svg :class="{ 'sync-spinner': syncAction === 'fetch' }" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/><path d="M11.5 2v3h-3"/><path d="M4.5 14v-3h3"/></svg>
+                <span>{{ syncAction === 'fetch' ? '获取中…' : '获取远程' }}</span>
+              </button>
 
               <div class="stash-wrap">
-                <button class="icon-control stash-btn" type="button" :disabled="activeProjectLoading" :aria-expanded="stashOpen" title="储藏" @click.stop="stashOpen = !stashOpen; branchOpen = false; syncOpen = false">
+                <button class="icon-control stash-btn" type="button" :disabled="activeProjectLoading" :aria-expanded="stashOpen" title="储藏" @click.stop="stashOpen = !stashOpen; branchOpen = false">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h11v8h-11z"/><path d="M2 2.5h12v2.5H2z"/><path d="M6 8.5h4"/></svg>
                   <span class="stash-count">{{ activeProjectLoading ? '—' : stashCount }}</span>
                 </button>
@@ -1587,7 +1638,6 @@ onUnmounted(() => {
             <div v-if="showSyncFeedback" class="sync-feedback" :class="{ error: syncError && !actionBusy }" role="status" aria-live="polite" :title="syncFeedbackTitle">
               <span>{{ syncFeedback }}</span>
               <button v-if="syncError && !syncDisabled" class="sync-retry" type="button" @click="runRemote('fetch')">重新检查</button>
-              <button v-else-if="currentBranch && !currentBranch.upstream && !syncDisabled" class="sync-retry" type="button" @click="openCurrentUpstream()">设置上游</button>
             </div>
             <span class="status">{{ statusText }}</span>
           </div>
@@ -1685,6 +1735,7 @@ onUnmounted(() => {
       <div v-else class="settings-view">
         <SettingsView />
       </div>
+      <ProjectTools :project="activeRepo ? { path: activeRepo.path, name: layout.displayName(activeRepo), branch: currentBranch?.name ?? '' } : null" />
     </main>
 
     <div v-if="projectMenu" class="context-menu" :style="{ left: `${projectMenu.x}px`, top: `${projectMenu.y}px` }" role="menu">

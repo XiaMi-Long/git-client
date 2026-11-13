@@ -89,6 +89,21 @@
 6. 冲突 action -> `useGitActions.loadOperation()`；冲突条全局可见（设置页隐藏）；继续按 operation 类型调用。
 7. 设置 -> store 持久化 + 主题/密度应用；旧设置项原样保留。
 
+## 前端项目工具实现（Q19～Q25）
+
+- `RewriteApp.vue` 通过 `ProjectTools` 接入右下角 build 直达入口及项目上下文，并在 `projectMeta` 移除「无已知差异」。`ProjectCommandsDialog` 负责双栏展示及头部的 dist 按钮，`useProjectCommands` 管理脚本读取、执行、停止、目录打开及日志订阅。
+- 后端单独增加项目命令模块，读取当前项目根目录的 package.json，返回字符串脚本、包管理器线索及 dist 是否存在。优先使用有效的 `packageManager` 声明，其次识别唯一锁文件，存在歧义时由用户在已确认的选择控件中指定。
+- 执行绑定真实项目路径、脚本名和所选包管理器。后端重新确认脚本存在，工作目录为该项目根目录。脚本内容及前后置脚本由所选包管理器解释。portable-pty 提供真实终端，标准输出和标准错误保留终端中的实际合并顺序，通过 Tauri Channel 持续传回。
+- 任务由应用级后端状态持有，按真实项目路径隔离，任务和日志携带标识与序号。弹窗订阅和恢复最近一次记录时核对项目及任务，避免重新打开时丢失或重复日志。新执行替换该项目的最近一次记录。
+- 手动停止及弹窗关闭共用请求。Windows 通过 ConPTY 启动 cmd，在输入屏障处等待，登记 Job 后才放行包管理器及其后代。包管理器路径及脚本名通过环境变量传递，关闭延迟展开，不使用 call；破坏参数引号边界的脚本名按原生参数错误返回。Unix 复用 portable-pty 创建的独立会话及进程组。停止请求按原任务 ID 定位，不依赖原目录仍然存在。确认退出及日志排空后关闭弹窗。
+- 打开 dist 使用实际项目目录拼接固定的 dist 子目录，校验文件夹存在后复用现有系统打开能力。目录入口可在构建结束后重新读取可用状态。
+
+新增前端依赖 `@xterm/xterm`、`@xterm/addon-fit` 和 Rust 依赖 `portable-pty`，其余复用已有 tokio、serde_json 和 shell 打开能力。`project_commands` 提供信息读取、快照读取、终端订阅、启动、输入、尺寸、停止及打开 dist 八条命令，均注册到应用入口。PTY 阻塞读取、写入、等待及关闭在阻塞线程执行，输入线程只持有写管道；关闭 ConPTY 时释放注册表锁，并保留读线程排空输出。
+
+新增 `useProjectTerminal` 管理 xterm 的实例、主题、尺寸监听和分批渲染；`useProjectCommands` 负责项目和任务身份、Channel、输入顺序及关闭流程。数据按 UTF-8 边界解码，保留 ANSI 序列，不再剥离颜色或将回车替换成换行。初始化和重新打开通过同一状态锁交接快照与订阅，按任务 ID 和 revision 排除重复。停止回执恢复完整日志，避免晚到 Channel 输出被跳过。显示层串行解析输出、切换前清理旧任务，并隔离历史重放触发的终端响应。终端回滚缓冲从 10000 行按输出需要扩充，不新增固定行数截断；后端保留本次任务的完整原始输出。
+
+官方接口依据：[xterm.js](https://xtermjs.org/)、[尺寸适配插件](https://xtermjs.org/docs/guides/using-addons/)、[portable-pty](https://docs.rs/portable-pty/0.9.0/portable_pty/)、[Tauri Channel](https://v2.tauri.app/develop/calling-frontend/#channels)、[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。本次仅静态核对，平台和脚本兼容性尚待人工验证。
+
 ## 页面与提交状态流转
 
 - 启动：无项目（显示添加项目/空态）-> 恢复中（轻量 loading）-> 有项目（加载分支/储藏/提交）-> 失败（项目级错误 + 重试，不清空其他项目）。

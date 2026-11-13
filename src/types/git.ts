@@ -123,8 +123,8 @@ export interface LogQuery {
   limit: number;
   branch: string | null;
   search: string | null;
-  /** 选中的精确作者，未选时沿用原有查询。 */
-  author?: CommitAuthor | null;
+  /** 选中的精确作者，空数组表示不限制作者；多个作者按 OR 匹配。 */
+  authors?: CommitAuthor[];
   /** 是否查询所有分支（--all），为 true 时忽略 branch */
   all_branches: boolean;
   /** 可选的仓库相对路径或目录 pathspec */

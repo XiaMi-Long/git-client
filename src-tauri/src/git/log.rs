@@ -77,9 +77,9 @@ pub struct LogQuery {
     pub branch: Option<String>,
     /// 搜索关键词（匹配提交信息/作者/哈希）
     pub search: Option<String>,
-    /// 精确作者筛选，旧调用方可省略。
+    /// 精确作者筛选，多个作者之间按 Git 的 OR 语义匹配；旧调用方可省略。
     #[serde(default)]
-    pub author: Option<CommitAuthor>,
+    pub authors: Vec<CommitAuthor>,
     /// 是否查询所有分支（--all），为 true 时忽略 branch
     pub all_branches: bool,
     /// 限制到仓库相对路径或目录
@@ -103,7 +103,7 @@ impl Default for LogQuery {
             limit: PAGE_SIZE,
             branch: None,
             search: None,
-            author: None,
+            authors: Vec::new(),
             all_branches: false,
             path: None,
             topo_order: false,
@@ -210,11 +210,14 @@ impl GitExecutor {
 
         Self::append_log_scope(&mut args, query.branch.as_deref(), query.all_branches);
 
-        if let Some(author) = &query.author {
+        if !query.authors.is_empty() {
             // 候选和提交行使用原始姓名与邮箱，因此筛选也按同一身份匹配。
             args.push("--no-use-mailmap".to_string());
             args.push("--basic-regexp".to_string());
-            args.push(Self::exact_author_arg(author));
+            // 多个 --author 在 Git 中取并集，正好对应多选作者的 OR 语义。
+            for author in &query.authors {
+                args.push(Self::exact_author_arg(author));
+            }
         }
 
         if query.topo_order {
@@ -259,7 +262,7 @@ impl GitExecutor {
         arg
     }
 
-    /// 用代表提交沿用 Git 的关键词作者匹配，避免两个 `--author` 被 Git 当作并集。
+    /// 用代表提交单次检查关键词是否命中作者身份，避免把精确作者条件混入关键词探测。
     async fn selected_author_matches_search(
         repo_path: &Path,
         author: &CommitAuthor,
@@ -299,7 +302,7 @@ impl GitExecutor {
 
     /// 搜索模式：提交信息 / 作者 / 哈希 任一匹配（OR），合并去重后返回前 100 条
     /// 说明：git log 的 --grep 与 --author 是 AND 关系，无法一条命令实现 OR，
-    /// 因此分三次查询（message / author / hash）合并去重。
+    /// 因此按提交信息、作者身份和哈希分别查询后合并去重。
     async fn get_log_search(repo_path: &Path, query: &LogQuery, search: &str) -> GitResult<Vec<CommitInfo>> {
         const SEARCH_CAP: usize = 100;
         let mut merged: Vec<CommitInfo> = Vec::new();
@@ -312,10 +315,32 @@ impl GitExecutor {
             ..query.clone()
         };
 
-        // 关键词命中选中作者时，该身份的提交都满足关键词条件。
-        if let Some(author) = &base.author {
+        // 关键词命中部分作者身份时，这些作者的所有提交都满足关键词条件；
+        // 未命中的作者仍需按提交信息或哈希继续匹配。
+        let mut matched_authors: Vec<CommitAuthor> = Vec::new();
+        for author in &base.authors {
             if Self::selected_author_matches_search(repo_path, author, search).await {
-                return Self::get_log_page(repo_path, &base).await;
+                matched_authors.push(author.clone());
+            }
+        }
+
+        // 所有选中作者都命中关键词时，关键词对所有选中作者都成立，直接返回作者筛选结果。
+        if !base.authors.is_empty() && matched_authors.len() == base.authors.len() {
+            return Self::get_log_page(repo_path, &base).await;
+        }
+
+        // 部分作者命中时，先合并这些作者的全部提交，再补充其他作者的关键词命中。
+        if !matched_authors.is_empty() {
+            let matched_query = LogQuery {
+                authors: matched_authors,
+                ..base.clone()
+            };
+            if let Ok(commits) = Self::get_log_page(repo_path, &matched_query).await {
+                for c in commits {
+                    if seen.insert(c.hash.clone()) {
+                        merged.push(c);
+                    }
+                }
             }
         }
 
@@ -328,10 +353,8 @@ impl GitExecutor {
             if let Ok(commits) = Self::parse_log(&out) {
                 for c in commits {
                     // 关键词忽略大小写时，仍按原始姓名和邮箱校验所选身份。
-                    let matches_author = base
-                        .author
-                        .as_ref()
-                        .map_or(true, |author| author.matches_commit(&c));
+                    let matches_author = base.authors.is_empty()
+                        || base.authors.iter().any(|author| author.matches_commit(&c));
                     if matches_author && seen.insert(c.hash.clone()) {
                         merged.push(c);
                     }
@@ -340,7 +363,7 @@ impl GitExecutor {
         }
 
         // 2. 作者搜索
-        if base.author.is_none() && merged.len() < SEARCH_CAP {
+        if base.authors.is_empty() && merged.len() < SEARCH_CAP {
             let mut args = Self::build_log_args(&base, Some(search));
             args.push(format!("--author={search}"));
             Self::append_pathspec(&mut args, &base);
@@ -383,10 +406,8 @@ impl GitExecutor {
             if let Ok(out) = Self::run_git(repo_path, &refs).await {
                 if let Ok(commits) = Self::parse_log(&out) {
                     for c in commits {
-                        let matches_author = base
-                            .author
-                            .as_ref()
-                            .map_or(true, |author| author.matches_commit(&c));
+                        let matches_author = base.authors.is_empty()
+                            || base.authors.iter().any(|author| author.matches_commit(&c));
                         if matches_author && seen.insert(c.hash.clone()) {
                             merged.push(c);
                         }

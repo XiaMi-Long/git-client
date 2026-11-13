@@ -9,6 +9,8 @@ pub mod git;
 pub mod commands;
 // 文件监听模块
 pub mod watcher;
+// 前端项目脚本、日志和构建产物目录
+pub mod project_commands;
 
 use std::sync::Mutex;
 
@@ -25,7 +27,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(WatcherState::default()))
+        .manage(project_commands::ProjectCommandsState::default())
         .invoke_handler(tauri::generate_handler![
+            project_commands::project_get_command_info,
+            project_commands::project_get_command_task,
+            project_commands::project_attach_command_terminal,
+            project_commands::project_run_command,
+            project_commands::project_write_command_input,
+            project_commands::project_resize_command_terminal,
+            project_commands::project_stop_command,
+            project_commands::project_open_dist,
             commands::git_detect_version,
             commands::git_get_user_name,
             commands::git_is_valid_repo,
@@ -97,6 +108,12 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("运行 Tauri 应用时出错");
+        .build(tauri::generate_context!())
+        .expect("运行 Tauri 应用时出错")
+        .run(|app, event| {
+            // 退出应用时回收脚本进程树，日志状态随本次应用会话一起释放。
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<project_commands::ProjectCommandsState>().shutdown();
+            }
+        });
 }

@@ -1,5 +1,13 @@
 # 交付记录
 
+## 前端项目工具交付（2026-11-13）
+
+按 Q19～Q25 和用户后续实施授权完成右下角 build 直达入口、双栏命令弹窗、包管理器识别与手动切换、停止及会话内最近一次日志。打开 dist 位于弹窗头部，侧栏文案已移除。右侧采用 xterm.js，后端采用 portable-pty，可直接输入并保留 ANSI 颜色、光标和交互按键。新增 `ProjectTools`、`ProjectCommandsDialog`、`useProjectCommands`、`useProjectTerminal`、后端 `project_commands` 及进程树模块。任务见 1.11，布局示意见 ux-review。
+
+引入 `@xterm/xterm` 6.0.0、`@xterm/addon-fit` 0.11.0 和 `portable-pty` 0.9.0，依赖及锁文件已更新。输出由 Tauri Channel 增量传输，替代 120 毫秒合并通知和反复读取整份日志。输入、尺寸和退出按原任务隔离；停止后等待 PTY 关闭及日志排空，重开恢复最近一次记录。
+
+本轮完成代码阅读和 Diff 核对。开发静态审查与独立体验静态对照分别记录于 verification；Rust 编译、类型检查、构建及实际命令和桌面操作未执行，按 MF-13～MF-13e 待人工验证。Windows 启动屏障、PTY 关闭、交互脚本及其他平台兼容性尚需人工运行确认。代码保留在当前工作区，未提交。
+
 ## 交付范围与状态
 
 - Change：`rewrite-gittrail-ui`（frontend-team-v2）。
