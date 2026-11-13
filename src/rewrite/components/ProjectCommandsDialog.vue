@@ -11,9 +11,11 @@
     - 2026-11-13: Updated. 使用 build 标题，并在弹窗头部提供打开 dist。
     - 2026-11-13: Updated. 日志底部提供逐行输入，支持回车及发送按钮。
     - 2026-11-13: Updated. 用 xterm.js 替换纯文本日志及独立输入框，支持完整终端交互。
+    - 2026-11-13: Updated. 包管理器改用公共选择框，统一展开菜单样式。
 -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import AppSelect from "@/components/AppSelect.vue";
 import { useProjectCommands, type ProjectCommandTarget } from "../composables/useProjectCommands";
 import { useProjectTerminal } from "../composables/useProjectTerminal";
 
@@ -37,6 +39,27 @@ const {
   inputEnabled, writeInput, resizeTerminal,
   manifestMessage, statusText, commandText, initialize, openDist, runScript, stopTask, prepareClose,
 } = useProjectCommands(props.target, terminal);
+
+// 自动选项随项目识别结果更新，运行日志刷新时保持选项数组稳定。
+const managerOptions = computed(() => [
+  { value: "", label: `自动${info.value?.manager ? ` / ${info.value.manager}` : ""}` },
+  { value: "npm", label: "npm" },
+  { value: "pnpm", label: "pnpm" },
+  { value: "yarn", label: "yarn" },
+  { value: "bun", label: "bun" },
+] as const);
+
+/**
+ * 将公共选择框的字符串映射回已支持的包管理器，保持命令模块的枚举约束。
+ * @param managerValue - 用户在包管理器菜单中确认的选项值
+ * @returns void
+ */
+function setManagerChoice(managerValue: string): void {
+  const selectedManager = managerOptions.value.find((option) => option.value === managerValue);
+  if (selectedManager) {
+    managerChoice.value = selectedManager.value;
+  }
+}
 
 /**
  * 停止原项目的命令后关闭，所有关闭入口和项目切换共用此方法。
@@ -72,13 +95,7 @@ defineExpose({ requestClose });
         <button class="icon-control command-dist" type="button" :disabled="loading || openingDist || closing || !info?.dist_exists" :aria-busy="openingDist" @click="openDist">打开 dist</button>
         <label class="command-manager">
           <span>包管理器</span>
-          <select v-model="managerChoice" :disabled="busy" aria-label="包管理器">
-            <option value="">自动{{ info?.manager ? ` / ${info.manager}` : '' }}</option>
-            <option value="npm">npm</option>
-            <option value="pnpm">pnpm</option>
-            <option value="yarn">yarn</option>
-            <option value="bun">bun</option>
-          </select>
+          <AppSelect :model-value="managerChoice" class="command-manager-select" :options="managerOptions" :disabled="busy" aria-label="包管理器" @update:model-value="setManagerChoice" />
         </label>
         <button class="close-btn" type="button" :disabled="closing" aria-label="关闭 build" autofocus @click="requestClose">×</button>
       </header>
@@ -143,7 +160,7 @@ defineExpose({ requestClose });
 .command-header .close-btn { flex-shrink: 0; }
 .command-dist { flex-shrink: 0; font-size: 12px; white-space: nowrap; }
 .command-manager { display: flex; align-items: center; flex-shrink: 0; gap: 8px; font-size: 12px; color: var(--muted); }
-.command-manager select { min-width: 120px; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: 12px var(--mono); }
+.command-manager-select { min-width: 120px; font: 12px var(--mono); }
 .command-body { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); flex: 1; min-height: 0; }
 .command-scripts { overflow: auto; border-right: 1px solid var(--border); }
 .command-scripts ul { margin: 0; padding: 8px; list-style: none; }

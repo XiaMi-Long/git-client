@@ -16,6 +16,7 @@
 
   @changeLog
     - 2026-09-24: Created. 新增版本标签历史视图。
+    - 2026-11-13: Updated. 目标和基准标签改用公共选择框，保持原有标签范围查询。
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
@@ -25,6 +26,7 @@ import { useRepoStore } from "@/stores/repo";
 import { useSelectionStore } from "@/stores/selection";
 import type { CommitInfo, LogQuery, TagInfo } from "@/types/git";
 import HistoryCommitRows from "./HistoryCommitRows.vue";
+import AppSelect from "@/components/AppSelect.vue";
 
 const props = defineProps<{
   /** 是否正在显示版本历史视图 */
@@ -58,6 +60,14 @@ const tags = computed(() => [...(repoStore.activeRepo?.tags ?? [])].sort((a, b) 
   return dateB - dateA;
 }));
 const baseOptions = computed(() => tags.value.filter((tag) => tag.name !== targetTag.value));
+const targetTagOptions = computed(() => [
+  { value: "", label: "选择标签", disabled: true },
+  ...tags.value.map((tag) => ({ value: tag.name, label: tag.name })),
+]);
+const baseTagOptions = computed(() => [
+  { value: "", label: "不设基准" },
+  ...baseOptions.value.map((tag) => ({ value: tag.name, label: tag.name })),
+]);
 const queryKey = computed(() => JSON.stringify([
   repoStore.activeRepo?.id,
   targetTag.value,
@@ -193,17 +203,11 @@ watch(targetTag, (target) => {
     <div class="release-toolbar">
       <label>
         目标版本
-        <select v-model="targetTag" :disabled="tags.length === 0">
-          <option value="" disabled>选择标签</option>
-          <option v-for="tag in tags" :key="tag.name" :value="tag.name">{{ tag.name }}</option>
-        </select>
+        <AppSelect v-model="targetTag" :options="targetTagOptions" :disabled="tags.length === 0" aria-label="目标版本" />
       </label>
       <label>
         基准版本
-        <select v-model="baseTag" :disabled="!targetTag">
-          <option value="">不设基准</option>
-          <option v-for="tag in baseOptions" :key="tag.name" :value="tag.name">{{ tag.name }}</option>
-        </select>
+        <AppSelect v-model="baseTag" :options="baseTagOptions" :disabled="!targetTag" aria-label="基准版本" />
       </label>
       <span v-if="targetTag" class="release-range-hint">
         {{ baseTag ? `${baseTag}..${targetTag}` : `截至 ${targetTag}` }}
@@ -269,13 +273,9 @@ watch(targetTag, (target) => {
   font-size: 12px;
 }
 
-.release-toolbar select {
+.release-toolbar .app-select {
+  width: 150px;
   max-width: 150px;
-  padding: 4px 6px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  background: var(--bg-panel);
 }
 
 .release-range-hint {

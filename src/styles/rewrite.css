@@ -14,6 +14,7 @@
     - 2026-11-07: Updated. 远程菜单的操作文字保持单行，长上游名称在提示列截断。
     - 2026-11-07: Updated. 为相对时间分配更宽的列，提交时间保持单行。
     - 2026-11-07: Updated. 顶栏搜索换行时与操作区左边缘对齐。
+    - 2026-11-13: Updated. 选择框统一由 AppSelect 展示，保留各表单的既有尺寸。
 */
 
 /* ===== 主题 token ===== */
@@ -2055,7 +2056,6 @@ body.modal-open { overflow: hidden; }
 .action-field span { color: var(--muted); font-size: 11px; }
 
 .action-field input,
-.action-field select,
 .action-field textarea {
   width: 100%;
   padding: 8px 10px;
@@ -2070,7 +2070,6 @@ body.modal-open { overflow: hidden; }
 }
 
 .action-field input:focus,
-.action-field select:focus,
 .action-field textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
@@ -2348,7 +2347,7 @@ body.modal-open { overflow: hidden; }
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.settings-input.compact { width: 150px; font-family: var(--font); }
+.settings-select { width: 150px; flex-shrink: 0; }
 
 .settings-check {
   display: inline-flex;

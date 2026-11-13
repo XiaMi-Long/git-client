@@ -12,6 +12,7 @@
     - 2026-11-07: Created. 新增分支历史预览、上游状态和手动同步入口。
     - 2026-11-07: Updated. 本地分支预览支持作者筛选，弹窗尺寸随窗口增大。
     - 2026-11-10: Updated. 提交列表提供与主列表一致的右键菜单，可审查、Cherry-pick 到当前分支并复制提交信息与哈希。
+    - 2026-11-13: Updated. 分支预览按窗口宽度展开，移除大屏固定宽度上限。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
@@ -466,7 +467,7 @@ onBeforeUnmount(() => {
 .branch-preview-dialog {
   position: fixed;
   inset: 0;
-  width: min(80vw, 1600px, calc(100% - 48px));
+  width: min(92vw, calc(100% - 48px));
   height: min(86vh, calc(100% - 48px));
   margin: auto;
   padding: 0;

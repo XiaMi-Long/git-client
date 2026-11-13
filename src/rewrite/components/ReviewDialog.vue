@@ -13,6 +13,7 @@
 
   @changeLog
     - 2026-11-04: Created. 新 Review 真实 diff、键盘和复制反馈。
+    - 2026-11-13: Updated. 大屏审查随窗口加宽，文件栏按比例扩展并完整换行显示路径。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -190,7 +191,7 @@ onMounted(async () => {
     <div class="backdrop" @click.self="emit('close')">
       <section
         ref="dialog"
-        class="dialog"
+        class="dialog review-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="reviewSubject"
@@ -264,3 +265,38 @@ onMounted(async () => {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* 审查使用窗口宽度，保留外层遮罩的安全边距，不再受通用弹窗的固定宽度上限限制。 */
+.review-dialog {
+  width: min(92vw, 100%);
+  max-width: none;
+}
+
+.review-dialog .dialog-body {
+  grid-template-columns: minmax(280px, 28%) minmax(0, 1fr);
+}
+
+.review-dialog .files {
+  min-width: 0;
+}
+
+/* 长路径增加行高，状态和统计仍停留在首行，避免文件名被省略号遮住。 */
+.review-dialog .file-row {
+  align-items: start;
+  padding-block: 8px;
+}
+
+.review-dialog .file-name {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.review-dialog .file-status,
+.review-dialog .file-stat {
+  line-height: 16px;
+}
+</style>

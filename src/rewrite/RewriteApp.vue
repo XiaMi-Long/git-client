@@ -31,6 +31,7 @@
     - 2026-11-10: Updated. 本地分支支持双击直接检出，单击仍打开该分支的提交预览。
     - 2026-11-10: Updated. 作者筛选支持多选与清除；顶栏“更多”改为“获取远程”，移除重复的上游设置入口。
     - 2026-11-13: Updated. 接入项目命令与 dist 快捷工具，移除侧栏无已知差异文案。
+    - 2026-11-13: Updated. 上游分支选择统一使用公共选择框。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -43,6 +44,7 @@ import { useCommitStore } from "@/stores/commit";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
 import { useRepoWatcher } from "@/composables/useRepoWatcher";
+import AppSelect from "@/components/AppSelect.vue";
 import type { BranchPreviewTarget } from "./composables/useBranchPreview";
 import { useGitActions, type GitActionResult } from "./composables/useGitActions";
 import type { BranchInfo, CommitInfo, FileDiff, StashInfo } from "@/types/git";
@@ -178,6 +180,7 @@ const currentBranch = computed<BranchInfo | null>(
 );
 const localBranches = computed(() => (activeRepo.value?.branches ?? []).filter((branch) => !branch.is_remote));
 const remoteBranches = computed(() => (activeRepo.value?.branches ?? []).filter((branch) => branch.is_remote));
+const upstreamOptions = computed(() => remoteBranches.value.map((branch) => ({ value: branch.name, label: branch.name })));
 const markedBranchRefs = computed(() => {
   const repoPath = activeRepo.value?.path;
   return new Set(repoPath ? layout.getMarkedBranchRefs(repoPath) : []);
@@ -1797,9 +1800,7 @@ onUnmounted(() => {
         <div class="action-body">
           <label v-if="branchDialog.mode === 'upstream'" class="action-field">
             <span>远程分支</span>
-            <select v-model="branchDialog.value">
-              <option v-for="branch in remoteBranches" :key="branch.full_name" :value="branch.name">{{ branch.name }}</option>
-            </select>
+            <AppSelect v-model="branchDialog.value" :options="upstreamOptions" aria-label="远程分支" />
           </label>
           <label v-else-if="branchDialog.mode === 'create' || branchDialog.mode === 'rename' || branchDialog.mode === 'fromRemote'" class="action-field">
             <span>分支名</span>

@@ -10,14 +10,21 @@
   @changeLog
     - 2026-11-04: Created. 原型设置页生产化，保留旧设置能力。
     - 2026-11-07: Updated. 增加代码对比主题选择和即时配色预览。
+    - 2026-11-13: Updated. 代码主题与时间格式统一使用公共选择框。
 -->
 <script setup lang="ts">
 import { useSettingsStore } from "@/stores/settings";
 import { CODE_THEME_OPTIONS, useThemeStore, type Density, type ThemeMode } from "@/stores/theme";
 import { highlightCode } from "../utils/highlight";
+import AppSelect from "@/components/AppSelect.vue";
 
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
+
+const timeFormatOptions = [
+  { value: "relative", label: "相对时间" },
+  { value: "absolute", label: "绝对时间" },
+];
 
 const themeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: "system", label: "跟随系统" },
@@ -46,7 +53,7 @@ const previewLines = [
  * @returns {void}
  */
 function persistInput(setter: (value: string) => void, event: Event): void {
-  const target = event.target as HTMLInputElement | HTMLSelectElement | null;
+  const target = event.target as HTMLInputElement | null;
   if (target) setter(target.value);
 }
 
@@ -62,14 +69,13 @@ function persistCheck(setter: (value: boolean) => void, event: Event): void {
 }
 
 /**
- * 保存时间格式，收窄 select 的字符串值。
- * @param event - change 事件
+ * 保存公共选择框提交的时间格式，保持原有枚举校验和持久化流程。
+ * @param timeFormat - 用户选中的时间格式字符串
  * @returns {void}
  */
-function persistTimeFormat(event: Event): void {
-  const target = event.target as HTMLSelectElement | null;
-  if (target && (target.value === "relative" || target.value === "absolute")) {
-    settingsStore.setTimeFormat(target.value);
+function persistTimeFormat(timeFormat: string): void {
+  if (timeFormat === "relative" || timeFormat === "absolute") {
+    settingsStore.setTimeFormat(timeFormat);
   }
 }
 </script>
@@ -100,14 +106,13 @@ function persistTimeFormat(event: Event): void {
             <div class="setting-title">代码对比</div>
             <div class="setting-desc">独立设置代码高亮和增删行底色，预览与对比视图即时更新。</div>
           </div>
-          <select
-            class="settings-input compact"
-            :value="themeStore.codeTheme"
+          <AppSelect
+            class="settings-select"
+            :model-value="themeStore.codeTheme"
+            :options="CODE_THEME_OPTIONS"
             aria-label="代码对比主题"
-            @change="persistInput(themeStore.setCodeTheme, $event)"
-          >
-            <option v-for="option in CODE_THEME_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
+            @update:model-value="themeStore.setCodeTheme"
+          />
         </div>
         <div class="code-preview">
           <div class="preview-bar">
@@ -175,10 +180,7 @@ function persistTimeFormat(event: Event): void {
             <div class="setting-title">提交时间格式</div>
             <div class="setting-desc">相对时间或绝对时间。</div>
           </div>
-          <select class="settings-input compact" :value="settingsStore.timeFormat" @change="persistTimeFormat">
-            <option value="relative">相对时间</option>
-            <option value="absolute">绝对时间</option>
-          </select>
+          <AppSelect class="settings-select" :model-value="settingsStore.timeFormat" :options="timeFormatOptions" aria-label="提交时间格式" @update:model-value="persistTimeFormat" />
         </div>
       </section>
 
