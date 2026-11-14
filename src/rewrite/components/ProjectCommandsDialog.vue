@@ -13,9 +13,10 @@
     - 2026-11-13: Updated. 用 xterm.js 替换纯文本日志及独立输入框，支持完整终端交互。
     - 2026-11-13: Updated. 包管理器改用公共选择框，统一展开菜单样式。
     - 2026-11-13: Updated. 命令区改用代码主题配色，并在标题行增加手动命令输入。
+    - 2026-11-14: Updated. 任务结束后把焦点交回命令行，已停止状态和不可用的停止按钮有明确样式。
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AppSelect from "@/components/AppSelect.vue";
 import { useProjectCommands, type ProjectCommandTarget } from "../composables/useProjectCommands";
 import { useProjectTerminal } from "../composables/useProjectTerminal";
@@ -100,6 +101,27 @@ function selectCommandText(event: FocusEvent): void {
 // 结束或关闭过程中立即停止接受按键，终端仍保留选中和复制日志的能力。
 watch(inputEnabled, terminal.setInputEnabled, { immediate: true, flush: "sync" });
 
+/**
+ * 任务结束后终端不再接收按键，把焦点交回命令行。
+ * 用户正在选中日志时保持原焦点，避免复制过程被抢走。
+ * @param isRunning - 当前任务是否仍在执行
+ * @param wasRunning - 上一次的任务执行状态
+ * @returns void
+ */
+function returnFocusToCommand(isRunning: boolean, wasRunning: boolean): void {
+  const terminalOwnedKeyboard = terminal.hasFocus() && !terminal.hasSelection();
+  if (!wasRunning || isRunning || !terminalOwnedKeyboard) {
+    return;
+  }
+  // 等结束状态渲染完成后再聚焦，命令行此时才恢复可编辑。
+  void nextTick(() => {
+    commandInput.value?.focus();
+    commandInput.value?.select();
+  });
+}
+
+watch(running, returnFocusToCommand);
+
 onMounted(() => {
   dialog.value?.showModal();
   terminal.mountTerminal();
@@ -175,7 +197,15 @@ defineExpose({ requestClose });
               />
             </label>
             <span class="command-state" :class="task?.status" role="status">{{ statusText }}</span>
-            <button class="icon-control command-stop" type="button" :disabled="(!running && !starting) || stopping || closing" @click="stopTask">停止</button>
+            <!-- 命令结束后按钮必然不可用，用悬停提示和样式说明原因，避免看起来能点却没反应 -->
+            <button
+              class="icon-control command-stop"
+              type="button"
+              :disabled="(!running && !starting) || stopping || closing"
+              :aria-busy="stopping"
+              :title="running || starting ? '停止命令及其子进程' : '当前没有正在执行的命令'"
+              @click="stopTask"
+            >停止</button>
           </div>
           <!-- PTY 终端直接接收输入；Esc 交给脚本，避免误关闭正在交互的任务 -->
           <div ref="terminalArea" class="command-output" aria-label="执行日志" @keydown.esc.stop.prevent />
@@ -236,9 +266,13 @@ defineExpose({ requestClose });
 .command-state { max-width: 50%; color: var(--code-gutter); font-size: 12px; overflow-wrap: anywhere; }
 .command-state.running { color: var(--code-tag); }
 .command-state.succeeded { color: var(--code-add-sign); }
+/* 已停止是用户主动结束，用中性琥珀色与成功的绿色、失败的红区分开。 */
+.command-state.stopped { color: var(--code-number); }
 .command-state.failed { color: var(--code-del-sign); }
 .command-console .command-stop { flex-shrink: 0; border-color: var(--code-border, var(--border)); background: transparent; color: var(--code-text); font-size: 12px; }
 .command-console .command-stop:not(:disabled):hover { border-color: var(--code-keyword); background: var(--code-bg); color: var(--code-keyword); }
+/* 命令结束后停止按钮不可用，边框和文字都要明显变淡，避免用户以为点击没有反应。 */
+.command-console .command-stop:disabled { border-color: var(--code-border, var(--border)); color: var(--code-gutter); opacity: 0.45; cursor: default; }
 .command-output { flex: 1; min-width: 0; min-height: 0; padding: 16px 20px; overflow: hidden; }
 .command-output :deep(.xterm) { height: 100%; }
 </style>

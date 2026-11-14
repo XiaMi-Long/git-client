@@ -5,6 +5,7 @@
  *   挂载终端后同步尺寸，按顺序渲染 PTY 输出，将键盘事件交给任务模块，卸载时释放资源。
  * @changeLog
  *   - 2026-11-13: Created. 用成熟终端组件承接交互输入和彩色日志。
+ *   - 2026-11-14: Updated. 提供焦点和选区查询，供任务结束后把键盘交回命令行。
  */
 import { onScopeDispose, type Ref } from "vue";
 import { Terminal } from "@xterm/xterm";
@@ -191,6 +192,23 @@ export function useProjectTerminal(host: Ref<HTMLDivElement | null>, handlers: T
   }
 
   /**
+   * 判断键盘焦点是否还在终端内，任务结束后据此决定是否需要移走焦点。
+   * @returns 焦点位于终端区域时为 true
+   */
+  function hasFocus(): boolean {
+    const visibleHost = host.value;
+    return visibleHost !== null && visibleHost.contains(document.activeElement);
+  }
+
+  /**
+   * 判断用户是否正在选中日志，移动焦点前先让复制操作保持可用。
+   * @returns 终端存在选区时为 true
+   */
+  function hasSelection(): boolean {
+    return terminal?.hasSelection() ?? false;
+  }
+
+  /**
    * 仅运行中的任务接受输入，结束后的终端仍允许选择和复制日志。
    * @param enabled - 当前任务是否仍可接收输入
    * @returns void
@@ -261,5 +279,5 @@ export function useProjectTerminal(host: Ref<HTMLDivElement | null>, handlers: T
     terminal = null;
   });
 
-  return { mountTerminal, reset, write, getSize, focus, setInputEnabled };
+  return { mountTerminal, reset, write, getSize, focus, hasFocus, hasSelection, setInputEnabled };
 }

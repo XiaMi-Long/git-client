@@ -4,6 +4,7 @@
 //! @changeLog 2026-11-13: Updated. 保留运行中命令的标准输入，支持按任务发送一行文本。
 //! @changeLog 2026-11-13: Updated. 使用 portable-pty 和终端数据流替换普通进程管道。
 //! @changeLog 2026-11-13: Updated. 支持在项目根目录执行手动输入的命令行。
+//! @changeLog 2026-11-14: Updated. 终端里的 Ctrl+C 结算为用户停止，并给停止、关闭和日志排空等待设上限。
 
 mod process_tree;
 
@@ -11,6 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -24,8 +26,17 @@ use process_tree::ProcessTree;
 const OUTPUT_CHUNK_BYTES: usize = 8192;
 // ConPTY 的行列使用有符号短整数，前后端均限制到有效的正数范围。
 const MAX_TERMINAL_DIMENSION: u16 = 32767;
+// Ctrl+C 之后进程在这段时间内退出，就认定这次退出由用户中断引起。
+const INTERRUPT_GRACE: Duration = Duration::from_secs(10);
+// 终端里的 Ctrl+C 就是一个 ETX 字节，和 Enter、方向键一样按原始字节传递。
+const CTRL_C: u8 = 0x03;
+// 关闭 ConPTY 和排空日志都可能卡在系统管道上，任务结算不能无限等待。
+const TERMINAL_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
+// 停止请求必须有上限，否则界面会永远停在“停止中”。
+const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 const MANIFEST_ERROR: &str = "package.json 读取失败";
 const MANAGER_ERROR: &str = "未找到所选包管理器";
+const STOP_TIMEOUT_ERROR: &str = "等待命令退出超时";
 
 /// 支持从项目声明或锁文件识别的脚本运行器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +115,8 @@ struct ProjectTask {
     channel: Option<Channel<TerminalEvent>>,
     completion: watch::Sender<bool>,
     stop_requested: bool,
+    /// 终端里按下 Ctrl+C 的时间，用于把用户中断和命令自身失败区分开。
+    interrupt_at: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -136,7 +149,8 @@ impl ProjectCommandsState {
         if text.is_empty() {
             return;
         }
-        if let Ok(mut registry) = self.0.lock() {
+        // 锁内只维护任务快照，Channel 属于界面层，必须解锁后再发送，避免两边互相等待。
+        let notification = if let Ok(mut registry) = self.0.lock() {
             let Some(task) = registry.tasks.get_mut(root) else {
                 return;
             };
@@ -145,12 +159,15 @@ impl ProjectCommandsState {
             }
             task.snapshot.output.push_str(text);
             task.snapshot.revision += 1;
-            if let Some(channel) = &task.channel {
-                let _ = channel.send(TerminalEvent {
-                    task_id, revision: task.snapshot.revision, output: text.to_string(),
-                    status: task.snapshot.status, exit_code: task.snapshot.exit_code,
-                });
-            }
+            task.channel.clone().map(|channel| (channel, TerminalEvent {
+                task_id, revision: task.snapshot.revision, output: text.to_string(),
+                status: task.snapshot.status, exit_code: task.snapshot.exit_code,
+            }))
+        } else {
+            return;
+        };
+        if let Some((channel, event)) = notification {
+            let _ = channel.send(event);
         }
     }
 }
@@ -294,7 +311,7 @@ fn start_task(
         };
         registry.tasks.insert(root.to_path_buf(), ProjectTask {
             snapshot: snapshot.clone(), tree: Some(tree.clone()), terminal: Some(terminal),
-            channel: Some(on_event), completion, stop_requested: false,
+            channel: Some(on_event), completion, stop_requested: false, interrupt_at: None,
         });
         (child, snapshot, tree)
     };
@@ -311,14 +328,16 @@ fn start_task(
 }
 
 /// 读取脚本及目录信息，打开弹窗本身不执行项目命令。
+/// 读取文件不放在主线程执行，避免磁盘变慢时整个窗口没有响应。
 #[tauri::command]
-pub fn project_get_command_info(path: String) -> Result<ProjectCommandInfo, String> {
+pub async fn project_get_command_info(path: String) -> Result<ProjectCommandInfo, String> {
     Ok(read_project_info(&project_root(&path)?))
 }
 
 /// 恢复当前应用会话中该项目最近一次输出，不重新启动命令。
+/// 停止和关闭流程会先调用它，因此不能占用主线程等待状态锁。
 #[tauri::command]
-pub fn project_get_command_task(
+pub async fn project_get_command_task(
     path: String, state: State<'_, ProjectCommandsState>,
 ) -> Result<Option<ProjectTaskSnapshot>, String> {
     let root = project_root(&path)?;
@@ -328,7 +347,7 @@ pub fn project_get_command_task(
 
 /// 在同一状态锁下恢复快照并接续运行中的终端输出，避免订阅窗口内丢失日志。
 #[tauri::command]
-pub fn project_attach_command_terminal(
+pub async fn project_attach_command_terminal(
     path: String, on_event: Channel<TerminalEvent>, state: State<'_, ProjectCommandsState>,
 ) -> Result<Option<ProjectTaskSnapshot>, String> {
     let root = project_root(&path)?;
@@ -402,11 +421,29 @@ pub async fn project_write_command_input(
 ) -> Result<(), String> {
     // 写入线程只持有输入管道，不能因阻塞写入而延长 ConPTY 主端的生命周期。
     let writer = running_terminal(state.inner(), &path, task_id)?.writer;
+    // Ctrl+C 由终端送进原任务，进程被杀死的退出码是包管理器自己的失败码，
+    // 只有在这里记下中断意图，结束时才能按“用户停止”而不是“执行失败”结算。
+    if text.as_bytes().contains(&CTRL_C) {
+        mark_interrupt(state.inner(), &path, task_id);
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let mut writer = writer.lock().map_err(|error| error.to_string())?;
         writer.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
         writer.flush().map_err(|error| error.to_string())
     }).await.map_err(|error| error.to_string())?
+}
+
+/// 记录终端里按下的 Ctrl+C，后续输出和停止流程仍按原任务处理。
+fn mark_interrupt(state: &ProjectCommandsState, path: &str, task_id: u64) {
+    if let Ok(mut registry) = state.0.lock() {
+        if let Some(task) = registry.tasks.values_mut().find(|task| {
+            task.snapshot.task_id == task_id && task.snapshot.project_path == path
+        }) {
+            if task.snapshot.status == "running" && !task.stop_requested {
+                task.interrupt_at = Some(Instant::now());
+            }
+        }
+    }
 }
 
 /// 只取得原任务仍可操作的终端，旧请求不能写入或调整同项目的新任务。
@@ -465,12 +502,19 @@ pub async fn project_stop_command(
         }
         task.completion.subscribe()
     };
-    loop {
-        let finished = *completion.borrow_and_update();
-        if finished {
-            break;
+    // 等退出和日志排空，但必须有上限：系统管道异常时界面不能永远停在“停止中”。
+    let waited = tokio::time::timeout(STOP_TIMEOUT, async {
+        loop {
+            if *completion.borrow_and_update() {
+                break;
+            }
+            completion.changed().await.map_err(|error| error.to_string())?;
         }
-        completion.changed().await.map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    }).await;
+    match waited {
+        Ok(result) => result?,
+        Err(_) => return Err(STOP_TIMEOUT_ERROR.into()),
     }
     let registry = state.inner().0.lock().map_err(|error| error.to_string())?;
     Ok(registry.tasks.values().find(|task| task.snapshot.task_id == task_id)
@@ -479,7 +523,7 @@ pub async fn project_stop_command(
 
 /// 在系统文件管理器中打开固定 dist 子目录，打开前再次确认目录仍存在。
 #[tauri::command]
-pub fn project_open_dist(path: String, app: AppHandle) -> Result<(), String> {
+pub async fn project_open_dist(path: String, app: AppHandle) -> Result<(), String> {
     let dist = project_root(&path)?.join("dist");
     if !dist.is_dir() {
         return Err(std::io::Error::from(std::io::ErrorKind::NotFound).to_string());
@@ -512,35 +556,65 @@ async fn supervise_task(
         state.append_output(&root, task_id, &format!("\r\n{error}\r\n"));
     }
 
-    // 必须在注册表锁外关闭 ConPTY，同时保留读线程排空输出，避免关闭控制台互相等待。
+    // 1. 主端必须先移出注册表再在锁外关闭；关闭控制台和排空输出都可能阻塞在系统管道上，
+    //    两者各自设上限，任务状态不能依赖它们是否顺利结束。
     let terminal = state.0.lock().ok().and_then(|mut registry| {
         registry.tasks.get_mut(&root).filter(|task| task.snapshot.task_id == task_id)
             .and_then(|task| task.terminal.take())
     });
-    let _ = tauri::async_runtime::spawn_blocking(move || drop(terminal)).await;
-    let _ = output.await;
+    let closed = tokio::time::timeout(
+        TERMINAL_SETTLE_TIMEOUT, tauri::async_runtime::spawn_blocking(move || drop(terminal)),
+    ).await;
+    if closed.is_err() {
+        state.append_output(&root, task_id, "\r\n关闭终端超时，剩余日志可能不完整。\r\n");
+    }
+    if tokio::time::timeout(TERMINAL_SETTLE_TIMEOUT, output).await.is_err() {
+        state.append_output(&root, task_id, "\r\n读取剩余日志超时。\r\n");
+    }
     if let Err(error) = &result {
         state.append_output(&root, task_id, &format!("\r\n{error}\r\n"));
     }
-    if let Ok(mut registry) = state.0.lock() {
-        if let Some(task) = registry.tasks.get_mut(&root) {
-            if task.snapshot.task_id == task_id {
-                task.snapshot.exit_code = result.as_ref().ok().map(|status| status.exit_code() as i32);
-                task.snapshot.status = if task.stop_requested { "stopped" }
-                    else if result.as_ref().map_or(false, |status| status.success()) { "succeeded" }
-                    else { "failed" };
-                task.snapshot.revision += 1;
-                task.tree = None;
-                if let Some(channel) = task.channel.take() {
-                    let _ = channel.send(TerminalEvent {
-                        task_id, revision: task.snapshot.revision, output: String::new(),
-                        status: task.snapshot.status, exit_code: task.snapshot.exit_code,
-                    });
-                }
-                task.completion.send_replace(true);
-            }
+
+    // 2. 退出码、最终状态和完成信号在同一次状态锁里写回，停止请求随后能拿到最终快照。
+    let notification = {
+        let Ok(mut registry) = state.0.lock() else {
+            return;
+        };
+        let Some(task) = registry.tasks.get_mut(&root) else {
+            return;
+        };
+        if task.snapshot.task_id != task_id {
+            return;
         }
+        let succeeded = result.as_ref().map_or(false, |status| status.success());
+        let status = task_outcome(task, succeeded);
+        task.snapshot.exit_code = result.as_ref().ok().map(|status| status.exit_code() as i32);
+        task.snapshot.status = status;
+        task.snapshot.revision += 1;
+        task.tree = None;
+        // 先唤醒等待停止的请求，再把最终状态交给界面层，两者都不占用任务锁。
+        task.completion.send_replace(true);
+        task.channel.take().map(|channel| (channel, TerminalEvent {
+            task_id, revision: task.snapshot.revision, output: String::new(),
+            status: task.snapshot.status, exit_code: task.snapshot.exit_code,
+        }))
     };
+    if let Some((channel, event)) = notification {
+        let _ = channel.send(event);
+    }
+}
+
+/// 用户中断或主动停止都结算为“已停止”，其余按退出码区分成功和失败。
+fn task_outcome(task: &ProjectTask, succeeded: bool) -> &'static str {
+    // Ctrl+C 只对紧跟着结束的进程生效，避免中断后继续跑很久的命令被误判成用户停止。
+    let interrupted = task.interrupt_at.map_or(false, |at| at.elapsed() <= INTERRUPT_GRACE);
+    if task.stop_requested || interrupted {
+        "stopped"
+    } else if succeeded {
+        "succeeded"
+    } else {
+        "failed"
+    }
 }
 
 /// 逐块解码 UTF-8，保留跨读取边界的半个中文字符，防止日志出现错误替换字符。

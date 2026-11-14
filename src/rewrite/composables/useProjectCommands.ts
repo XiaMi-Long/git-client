@@ -9,6 +9,7 @@
  *   - 2026-11-13: Updated. 运行中的命令支持发送一行输入，任务变化后丢弃旧输入结果。
  *   - 2026-11-13: Updated. 接入 PTY 输入、尺寸同步和 Tauri Channel 增量输出。
  *   - 2026-11-13: Updated. 增加命令输入草稿，并在项目根目录执行手动输入的命令行。
+ *   - 2026-11-14: Updated. 终端 Ctrl+C 由后端结算为已停止，关闭失败时在状态栏说明原因。
  */
 import { computed, onScopeDispose, ref } from "vue";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -62,6 +63,7 @@ interface TerminalEvent {
 
 const MANIFEST_ERROR = "package.json 读取失败";
 const MANAGER_ERROR = "未找到所选包管理器";
+const STOP_ERROR = "停止命令失败，请重试";
 
 /**
  * 管理当前弹窗的命令与日志，不依赖主列表的筛选和 Git 操作状态。
@@ -426,6 +428,10 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
    */
   async function stopActiveTask(): Promise<boolean> {
     stopping.value = true;
+    // 上一次停止失败的提示随本次重试一起清掉，结果出来后再按实际结果写回。
+    if (operationError.value === STOP_ERROR) {
+      operationError.value = "";
+    }
 
     // 1. 尚未返回任务身份时等待启动结束，防止关闭比进程启动更早完成。
     try {
@@ -456,6 +462,8 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
       return true;
     } catch (error) {
       reportError(error);
+      // 停止没有完成时弹窗会保持打开，原因必须出现在状态栏，不能只写进日志。
+      operationError.value = STOP_ERROR;
       return false;
     } finally {
       stopping.value = false;
