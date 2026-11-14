@@ -60,6 +60,7 @@ import CommitSearchBox from "./components/CommitSearchBox.vue";
 import ReviewDialog from "./components/ReviewDialog.vue";
 import SettingsView from "./components/SettingsView.vue";
 import ConflictDialog from "./components/ConflictDialog.vue";
+import GitFailureDialog from "./components/GitFailureDialog.vue";
 import StashViewDialog from "./components/StashViewDialog.vue";
 
 const repoStore = useRepoStore();
@@ -279,6 +280,12 @@ const syncAction = remoteSync.currentAction;
 const syncFeedback = remoteSync.feedback;
 const syncFeedbackTitle = remoteSync.feedbackTitle;
 const syncError = remoteSync.error;
+const syncFailure = remoteSync.failure;
+const syncFailureOpen = remoteSync.failureOpen;
+const syncFailureRetryable = remoteSync.canRetryFailure;
+const openSyncFailure = remoteSync.openFailure;
+const closeSyncFailure = remoteSync.dismissFailure;
+const retrySyncFailure = remoteSync.retryFailure;
 const syncDisabled = computed(() => !activeRepo.value || activeProjectLoading.value || syncBusy.value || !!actionBusy.value);
 const showSyncFeedback = computed(() => !activeProjectLoading.value || syncBusy.value || Boolean(actionBusy.value));
 const branchLabel = computed(() => {
@@ -2189,8 +2196,16 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="showSyncFeedback" class="sync-feedback" :class="{ error: syncError && !actionBusy }" role="status" aria-live="polite" :title="syncFeedbackTitle">
-              <span>{{ syncFeedback }}</span>
+            <div v-if="showSyncFeedback" class="sync-feedback" :class="{ error: syncError && !actionBusy }" role="status" aria-live="polite">
+              <!-- 摘要只展示一行，点击回到含完整 git 输出的详情与重试 -->
+              <button
+                v-if="syncError && !actionBusy"
+                class="sync-error-link"
+                type="button"
+                title="查看完整错误与重试"
+                @click="openSyncFailure"
+              >{{ syncFeedback }}</button>
+              <span v-else :title="syncFeedbackTitle">{{ syncFeedback }}</span>
               <button v-if="syncError && !syncDisabled" class="sync-retry" type="button" @click="runRemote('fetch')">重新检查</button>
             </div>
             <span class="status">{{ statusText }}</span>
@@ -2515,6 +2530,17 @@ onUnmounted(() => {
       :stash="stashView.stash"
       :files="stashView.files"
       @close="stashView = null"
+    />
+
+    <GitFailureDialog
+      v-if="syncFailureOpen && syncFailure"
+      :title="syncFailure.title"
+      :context="syncFailure.context"
+      :detail="syncFailure.detail"
+      :hint="syncFailure.hint"
+      :can-retry="syncFailureRetryable"
+      @retry="retrySyncFailure"
+      @close="closeSyncFailure"
     />
 
     <div class="toast" :class="{ show: toastVisible }" role="status" aria-live="polite">{{ toastMessage }}</div>

@@ -26,9 +26,11 @@ pub enum GitError {
 impl fmt::Display for GitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GitError::CommandFailed { stderr, exit_code } => {
-                write!(f, "git 命令失败 (exit={exit_code:?}): {stderr}")
-            }
+            // 退出码按普通整数展示，缺失时连括号一起去掉，界面不会出现 Some(1) 这类调试格式。
+            GitError::CommandFailed { stderr, exit_code } => match exit_code {
+                Some(code) => write!(f, "git 命令失败 (exit={code}): {stderr}"),
+                None => write!(f, "git 命令失败: {stderr}"),
+            },
             GitError::NotInstalled => write!(f, "未找到 git，请确认已安装并在 PATH 中"),
             GitError::ParseError(msg) => write!(f, "解析失败: {msg}"),
             GitError::VersionParse(msg) => write!(f, "版本解析失败: {msg}"),

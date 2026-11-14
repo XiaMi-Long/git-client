@@ -2018,6 +2018,20 @@ body.modal-open { overflow: hidden; }
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+/* 失败摘要可以点开详情弹窗，保留与普通过程文案一致的两行省略。 */
+.sync-feedback > .sync-error-link {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.sync-feedback > .sync-error-link:hover { text-decoration: underline; }
 .sync-feedback.error { color: var(--danger); }
 .sync-retry { flex-shrink: 0; color: var(--accent-strong); text-decoration: underline; }
 .sync-retry:disabled { cursor: default; opacity: 0.65; }

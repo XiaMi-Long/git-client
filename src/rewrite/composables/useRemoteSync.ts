@@ -6,17 +6,19 @@
  * @workflow
  *   1. 捕获操作所属的仓库和上游，复用 Git 操作互斥器执行 fetch/pull/push。
  *   2. 原子读取分支和工作区状态，只更新原仓库；仍激活原项目时刷新提交与冲突视图。
- *   3. 成功后记录检查时间，失败保留既有数据并在顶栏反馈。
+ *   3. 成功后记录检查时间；失败保留既有数据和完整输出，顶栏显示摘要，详情弹窗可重试。
  * @changeLog
  *   - 2026-11-06: Created. 实现常驻同步操作、过程反馈和按项目节流的自动获取。
  *   - 2026-11-07: Updated. 远程同步读取到分支后同步更新侧栏摘要的就绪状态。
  *   - 2026-11-07: Updated. 移除自动获取，改由用户手动触发远程操作。
+ *   - 2026-11-14: Updated. 失败摘要只取有用的一行，并保留完整输出供详情弹窗展示和重试。
  */
 import { computed, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import type { BranchInfo, RemoteResult, WorkingAreaStatus } from "@/types/git";
+import { inspectGitFailure } from "../utils/gitFailure";
 import { useGitActions, type GitActionResult } from "./useGitActions";
 
 /** 顶栏提供的手动远程操作。 */
@@ -44,6 +46,22 @@ interface RemoteTask {
   action: RemoteSyncAction;
 }
 
+/** 一次远程失败的完整信息，状态栏摘要和详情弹窗共用。 */
+export interface RemoteFailure {
+  /** 失败的操作，重试时原样再执行一次。 */
+  action: RemoteSyncAction;
+  /** 失败所属仓库，项目切换后不能把重试指向别的仓库。 */
+  repoPath: string;
+  /** 弹窗标题，例如“拉取失败”。 */
+  title: string;
+  /** 项目、分支和上游，说明这次失败发生在什么目标上。 */
+  context: string;
+  /** 去掉外层标签后的完整 git 输出。 */
+  detail: string;
+  /** 按失败特征给出的可操作建议。 */
+  hint: string | null;
+}
+
 const ACTION_LABELS: Record<RemoteSyncAction, string> = {
   fetch: "获取远程",
   pull: "拉取",
@@ -53,7 +71,7 @@ const ACTION_LABELS: Record<RemoteSyncAction, string> = {
 /**
  * 管理手动远程操作，复用现有 Git 互斥器，并按仓库隔离检查结果。
  * @param onSuccess - 操作成功时调用，过程和错误由返回的响应式状态展示
- * @returns 当前操作、过程文案、错误详情、检查提示与手动执行方法
+ * @returns 当前操作、过程文案、错误摘要、失败详情与重试、检查提示与手动执行方法
  * @reasoning 远程操作与其他 Git 操作共用互斥器，请求返回时用户可能已切换项目，因此目标必须在开始时固定。
  * @changeLog
  * - 2026-11-06: Created. 拆分远程同步的状态、生命周期及异步处理。
@@ -64,6 +82,10 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
   const gitActions = useGitActions();
   const checks = ref<Record<string, RemoteCheck>>({});
   const task = ref<RemoteTask | null>(null);
+  /** 最近一次失败的完整信息，关闭弹窗后仍保留，供顶栏再次打开。 */
+  const failure = ref<RemoteFailure | null>(null);
+  /** 详情弹窗是否显示，和失败信息分开保存，关闭不影响顶栏摘要。 */
+  const failureOpen = ref(false);
   let disposed = false;
 
   const currentBranch = computed(() => repoStore.activeRepo?.branches.find((branch) => branch.is_current));
@@ -76,6 +98,12 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
   const busy = computed(() => task.value !== null);
   const currentAction = computed(() => task.value?.repoId === repoStore.activeId ? task.value?.action : null);
   const error = computed(() => currentCheck.value?.error ?? null);
+  // 失败所属项目仍在当前界面、且没有别的操作在跑时才允许重试，避免命令发到别的仓库。
+  const canRetryFailure = computed(() => {
+    const current = failure.value;
+    const repo = repoStore.activeRepo;
+    return current !== null && !!repo && repo.path === current.repoPath && !busy.value;
+  });
   const feedback = computed(() => {
     const runningTask = task.value;
     if (runningTask) {
@@ -85,8 +113,9 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
     if (gitActions.busy.value) {
       return `正在${gitActions.busy.value}…`;
     }
+    // 摘要只展示最有用的一行，完整输出放在详情弹窗里。
     if (error.value) {
-      return error.value.trim().split(/\r?\n/)[0] || "远程操作失败";
+      return inspectGitFailure(error.value).summary;
     }
     if (!repoStore.activeRepo) {
       return "请先添加项目";
@@ -185,6 +214,9 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
       checkedAt: previousCheck?.upstream === upstream ? previousCheck.checkedAt : null,
       error: null,
     };
+    // 新的执行结果会重新生成失败信息，先把上一次的详情收起。
+    failure.value = null;
+    failureOpen.value = false;
     task.value = target;
 
     try {
@@ -209,13 +241,15 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
         return commandResult;
       });
 
-      // 3. 检查结果按原项目保存，失败原因在顶栏展示，用户可以重新获取。
+      // 3. 检查结果按原项目保存，失败时同时准备详情弹窗，顶栏摘要和弹窗共用同一份原文。
       if (!disposed) {
         const check = checks.value[target.repoPath];
         check.error = result.ok ? null : result.message;
         if (result.ok) {
           check.checkedAt = Date.now();
           onSuccess(`${target.repoName} · ${result.message}`);
+        } else {
+          showFailure(target, result.message, upstream);
         }
       }
     } finally {
@@ -223,9 +257,62 @@ export function useRemoteSync(onSuccess: (message: string) => void) {
     }
   }
 
+  /**
+   * 记录一次远程失败的完整输出，并自动打开详情弹窗。
+   * @param target - 失败时固定的操作目标
+   * @param message - 后端返回的原始错误文本
+   * @param upstream - 操作时使用的上游引用
+   * @returns void
+   */
+  function showFailure(target: RemoteTask, message: string, upstream: string | null): void {
+    const view = inspectGitFailure(message);
+    failure.value = {
+      action: target.action,
+      repoPath: target.repoPath,
+      title: `${ACTION_LABELS[target.action]}失败`,
+      context: `${target.repoName} · ${target.branchName}${upstream ? ` · 上游 ${upstream}` : ""}`,
+      detail: view.detail,
+      hint: view.hint,
+    };
+    failureOpen.value = true;
+  }
+
+  /**
+   * 重新执行最近一次失败的远程操作，目标项目已切换时不再执行。
+   * @returns void
+   */
+  function retryFailure(): void {
+    const current = failure.value;
+    if (!current || !canRetryFailure.value) {
+      return;
+    }
+    void execute(current.action);
+  }
+
+  /**
+   * 关闭详情弹窗，顶栏仍保留摘要，可以再次打开。
+   * @returns void
+   */
+  function dismissFailure(): void {
+    failureOpen.value = false;
+  }
+
+  /**
+   * 从顶栏重新打开失败详情。
+   * @returns void
+   */
+  function openFailure(): void {
+    if (failure.value) {
+      failureOpen.value = true;
+    }
+  }
+
   onUnmounted(() => {
     disposed = true;
   });
 
-  return { busy, currentAction, error, feedback, feedbackTitle, execute };
+  return {
+    busy, currentAction, error, feedback, feedbackTitle, execute,
+    failure, failureOpen, canRetryFailure, openFailure, dismissFailure, retryFailure,
+  };
 }
