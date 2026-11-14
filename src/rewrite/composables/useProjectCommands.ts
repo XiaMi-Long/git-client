@@ -8,6 +8,7 @@
  *   - 2026-11-13: Updated. 在弹窗内打开 dist，并在停止后刷新目录可用状态。
  *   - 2026-11-13: Updated. 运行中的命令支持发送一行输入，任务变化后丢弃旧输入结果。
  *   - 2026-11-13: Updated. 接入 PTY 输入、尺寸同步和 Tauri Channel 增量输出。
+ *   - 2026-11-13: Updated. 增加命令输入草稿，并在项目根目录执行手动输入的命令行。
  */
 import { computed, onScopeDispose, ref } from "vue";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -72,14 +73,14 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
   const info = ref<ProjectCommandInfo | null>(null);
   const task = ref<ProjectTaskSnapshot | null>(null);
   const managerChoice = ref<PackageManager | "">("");
+  // 头部命令行的内容，脚本和手动命令共用；启动失败时仍保留用户尝试的命令。
+  const commandDraft = ref("");
   const loading = ref(true);
   const starting = ref(false);
   const stopping = ref(false);
   const closing = ref(false);
   const openingDist = ref(false);
   const operationError = ref("");
-  // 启动失败时也要显示本次尝试的命令，避免错误详情与上一次命令混在一起。
-  const attemptedCommand = ref("");
   let startPending: Promise<ProjectTaskSnapshot> | null = null;
   // 停止按钮和关闭动作共用同一请求，关闭时可等待正在进行的停止。
   let stopPending: Promise<boolean> | null = null;
@@ -94,7 +95,8 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
   const manager = computed(() => managerChoice.value || info.value?.manager || null);
   const running = computed(() => task.value?.status === "running");
   const inputEnabled = computed(() => running.value && !loading.value && !starting.value && !stopping.value && !closing.value);
-  const commandText = computed(() => task.value?.command || attemptedCommand.value);
+  // 没有任务运行时命令输入行可以编辑，回车会作为新的手动命令启动。
+  const commandInputEnabled = computed(() => !loading.value && !starting.value && !stopping.value && !closing.value && !running.value);
   const busy = computed(() => loading.value || starting.value || stopping.value || closing.value || running.value);
   const manifestMessage = computed(() => {
     if (info.value?.manifest_status === "missing") {
@@ -270,6 +272,9 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
           return;
         }
         task.value = snapshot;
+        if (snapshot) {
+          commandDraft.value = snapshot.command;
+        }
         terminal.reset(snapshot?.output ?? "");
         ready = true;
         for (const event of pendingEvents) {
@@ -298,6 +303,9 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
     }
     const taskFinished = task.value?.status === "running" && snapshot?.status !== "running";
     task.value = snapshot;
+    if (snapshot) {
+      commandDraft.value = snapshot.command;
+    }
     terminal.reset(snapshot?.output ?? "");
     if (taskFinished) {
       await refreshInfo();
@@ -332,36 +340,27 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
   }
 
   /**
-   * 在打开时的项目目录执行选中的脚本，重复点击与关闭期间不能再启动。
-   * @param script - 根目录 package.json 中的脚本
+   * 清空上一条输出并启动任务，脚本和手动命令共用启动、快照及失败处理。
+   * @param displayCommand - 命令输入行和任务快照中显示的命令文本
+   * @param invokeStart - 使用本次订阅建立启动请求
    * @returns 启动命令及快照同步完成
    */
-  async function runScript(script: ProjectScript): Promise<void> {
-    // 1. 仅空闲时允许执行，包管理器由自动识别或手动选择得到。
-    if (busy.value) {
-      return;
-    }
-    const selectedManager = manager.value;
-    if (!selectedManager) {
-      operationError.value = MANAGER_ERROR;
-      return;
-    }
-
-    // 2. 先清空本次界面输出并记录启动请求，关闭流程会等待同一请求。
+  async function launchTask(
+    displayCommand: string,
+    invokeStart: (onEvent: Channel<TerminalEvent>) => Promise<ProjectTaskSnapshot>,
+  ): Promise<void> {
+    // 1. 先清空本次界面输出并记录启动请求，关闭流程会等待同一请求。
     starting.value = true;
     operationError.value = "";
     snapshotSequence++;
     terminal.reset("");
     task.value = null;
-    attemptedCommand.value = `${selectedManager} run ${script.name}`;
+    commandDraft.value = displayCommand;
     const connection = createConnection();
-    const pending = invoke<ProjectTaskSnapshot>("project_run_command", {
-      path: target.path, script: script.name, manager: selectedManager,
-      ...terminal.getSize(), onEvent: connection.channel,
-    });
+    const pending = invokeStart(connection.channel);
     startPending = pending;
 
-    // 3. 先恢复启动快照，再按序接上回执返回前已经收到的终端输出。
+    // 2. 先恢复启动快照，再按序接上回执返回前已经收到的终端输出。
     try {
       const snapshot = await pending;
       if (!disposed) {
@@ -381,6 +380,44 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
         terminal.focus();
       }
     }
+  }
+
+  /**
+   * 在打开时的项目目录执行选中的脚本，重复点击与关闭期间不能再启动。
+   * @param script - 根目录 package.json 中的脚本
+   * @returns 启动命令及快照同步完成
+   */
+  function runScript(script: ProjectScript): Promise<void> {
+    // 仅空闲时允许执行，包管理器由自动识别或手动选择得到。
+    if (busy.value) {
+      return Promise.resolve();
+    }
+    const selectedManager = manager.value;
+    if (!selectedManager) {
+      operationError.value = MANAGER_ERROR;
+      return Promise.resolve();
+    }
+    return launchTask(`${selectedManager} run ${script.name}`, (onEvent) =>
+      invoke<ProjectTaskSnapshot>("project_run_command", {
+        path: target.path, script: script.name, manager: selectedManager,
+        ...terminal.getSize(), onEvent,
+      }));
+  }
+
+  /**
+   * 在项目根目录执行命令输入行的手动命令，使用与脚本相同的终端和停止流程。
+   * @param commandLine - 用户确认的整行命令
+   * @returns 启动命令及快照同步完成
+   */
+  function runCommand(commandLine: string): Promise<void> {
+    const command = commandLine.trim();
+    if (busy.value || !command) {
+      return Promise.resolve();
+    }
+    return launchTask(command, (onEvent) =>
+      invoke<ProjectTaskSnapshot>("project_run_shell_command", {
+        path: target.path, command, ...terminal.getSize(), onEvent,
+      }));
   }
 
   /**
@@ -467,7 +504,7 @@ export function useProjectCommands(target: ProjectCommandTarget, terminal: Proje
 
   return {
     info, task, managerChoice, manager, loading, starting, stopping, closing, openingDist, running, busy,
-    inputEnabled, resizeTerminal, writeInput,
-    manifestMessage, statusText, commandText, initialize, openDist, runScript, stopTask, prepareClose,
+    inputEnabled, commandInputEnabled, commandDraft, resizeTerminal, writeInput,
+    manifestMessage, statusText, initialize, openDist, runScript, runCommand, stopTask, prepareClose,
   };
 }

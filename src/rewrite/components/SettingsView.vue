@@ -110,7 +110,7 @@ function persistTimeFormat(timeFormat: string): void {
             class="settings-select"
             :model-value="themeStore.codeTheme"
             :options="CODE_THEME_OPTIONS"
-            aria-label="代码对比主题"
+            ariaLabel="代码对比主题"
             @update:model-value="themeStore.setCodeTheme"
           />
         </div>
@@ -180,7 +180,7 @@ function persistTimeFormat(timeFormat: string): void {
             <div class="setting-title">提交时间格式</div>
             <div class="setting-desc">相对时间或绝对时间。</div>
           </div>
-          <AppSelect class="settings-select" :model-value="settingsStore.timeFormat" :options="timeFormatOptions" aria-label="提交时间格式" @update:model-value="persistTimeFormat" />
+          <AppSelect class="settings-select" :model-value="settingsStore.timeFormat" :options="timeFormatOptions" ariaLabel="提交时间格式" @update:model-value="persistTimeFormat" />
         </div>
       </section>
 

@@ -12,6 +12,7 @@
     - 2026-11-13: Updated. 日志底部提供逐行输入，支持回车及发送按钮。
     - 2026-11-13: Updated. 用 xterm.js 替换纯文本日志及独立输入框，支持完整终端交互。
     - 2026-11-13: Updated. 包管理器改用公共选择框，统一展开菜单样式。
+    - 2026-11-13: Updated. 命令区改用代码主题配色，并在标题行增加手动命令输入。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
@@ -30,14 +31,15 @@ const emit = defineEmits<{
 
 const dialog = ref<HTMLDialogElement | null>(null);
 const terminalArea = ref<HTMLDivElement | null>(null);
+const commandInput = ref<HTMLInputElement | null>(null);
 const terminal = useProjectTerminal(terminalArea, {
   input: (text) => writeInput(text),
   resize: (size) => resizeTerminal(size),
 });
 const {
   info, task, managerChoice, loading, starting, stopping, closing, openingDist, running, busy,
-  inputEnabled, writeInput, resizeTerminal,
-  manifestMessage, statusText, commandText, initialize, openDist, runScript, stopTask, prepareClose,
+  inputEnabled, commandInputEnabled, commandDraft, writeInput, resizeTerminal,
+  manifestMessage, statusText, initialize, openDist, runScript, runCommand, stopTask, prepareClose,
 } = useProjectCommands(props.target, terminal);
 
 // 自动选项随项目识别结果更新，运行日志刷新时保持选项数组稳定。
@@ -71,13 +73,45 @@ async function requestClose(): Promise<void> {
   }
 }
 
+/**
+ * 在命令输入行按回车时启动手动命令，输入法确认候选词不触发执行。
+ * @param event - 输入行收到的键盘事件
+ * @returns void
+ */
+function submitCommand(event: KeyboardEvent): void {
+  if (event.isComposing || !commandInputEnabled.value || !commandDraft.value.trim()) {
+    return;
+  }
+  event.preventDefault();
+  void runCommand(commandDraft.value);
+}
+
+/**
+ * 任务结束后再次聚焦命令行时选中上一条命令，直接输入即可替换。
+ * @param event - 命令行获得焦点的事件
+ * @returns void
+ */
+function selectCommandText(event: FocusEvent): void {
+  if (commandInputEnabled.value) {
+    (event.target as HTMLInputElement).select();
+  }
+}
+
 // 结束或关闭过程中立即停止接受按键，终端仍保留选中和复制日志的能力。
 watch(inputEnabled, terminal.setInputEnabled, { immediate: true, flush: "sync" });
 
 onMounted(() => {
   dialog.value?.showModal();
   terminal.mountTerminal();
-  void initialize();
+  // 恢复的运行中任务直接接收键盘输入，空闲时把焦点交给可编辑的命令行。
+  void initialize().then(() => {
+    if (running.value) {
+      terminal.focus();
+    } else {
+      commandInput.value?.focus();
+      commandInput.value?.select();
+    }
+  });
 });
 
 defineExpose({ requestClose });
@@ -95,9 +129,9 @@ defineExpose({ requestClose });
         <button class="icon-control command-dist" type="button" :disabled="loading || openingDist || closing || !info?.dist_exists" :aria-busy="openingDist" @click="openDist">打开 dist</button>
         <label class="command-manager">
           <span>包管理器</span>
-          <AppSelect :model-value="managerChoice" class="command-manager-select" :options="managerOptions" :disabled="busy" aria-label="包管理器" @update:model-value="setManagerChoice" />
+          <AppSelect :model-value="managerChoice" class="command-manager-select" :options="managerOptions" :disabled="busy" ariaLabel="包管理器" @update:model-value="setManagerChoice" />
         </label>
-        <button class="close-btn" type="button" :disabled="closing" aria-label="关闭 build" autofocus @click="requestClose">×</button>
+        <button class="close-btn" type="button" :disabled="closing" aria-label="关闭 build" @click="requestClose">×</button>
       </header>
 
       <div class="command-body">
@@ -122,7 +156,24 @@ defineExpose({ requestClose });
         <!-- 当前任务的命令、退出结果和持续输出 -->
         <section class="command-console" aria-label="命令日志">
           <div class="command-console-header">
-            <code :title="commandText">{{ commandText ? `$ ${commandText}` : '' }}</code>
+            <label class="command-line" title="在项目根目录执行命令，按 Enter 运行">
+              <span class="command-prompt" aria-hidden="true">$</span>
+              <input
+                ref="commandInput"
+                v-model="commandDraft"
+                class="command-input"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                :readonly="!commandInputEnabled"
+                :title="commandDraft"
+                placeholder="输入命令，按 Enter 执行"
+                aria-label="输入命令"
+                autofocus
+                @focus="selectCommandText"
+                @keydown.enter="submitCommand"
+              />
+            </label>
             <span class="command-state" :class="task?.status" role="status">{{ statusText }}</span>
             <button class="icon-control command-stop" type="button" :disabled="(!running && !starting) || stopping || closing" @click="stopTask">停止</button>
           </div>
@@ -173,14 +224,21 @@ defineExpose({ requestClose });
 .command-run:not(:disabled):hover { background: var(--hover); }
 .command-run:disabled { opacity: 0.5; cursor: default; }
 .command-empty { padding: 16px; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.command-console { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--code-bg); }
-.command-console-header { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 20px; border-bottom: 1px solid var(--border); }
-.command-console-header > code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: 12px var(--mono); }
-.command-state { max-width: 50%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.command-state.running { color: var(--accent-strong); }
-.command-state.succeeded { color: var(--success); }
-.command-state.failed { color: var(--danger); }
-.command-stop { flex-shrink: 0; font-size: 12px; }
+.command-console { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--code-bg); color: var(--code-text); }
+.command-console-header { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 20px; background: var(--code-hunk); border-bottom: 1px solid var(--code-border, var(--border)); }
+/* 命令行跟随代码主题，浅色界面配深色预设时不会再出现深底深字。 */
+.command-line { display: flex; align-items: center; flex: 1; min-width: 0; gap: 7px; border-bottom: 1px solid transparent; font: 12px var(--mono); }
+.command-line:focus-within { border-bottom-color: var(--code-string); }
+.command-prompt { flex-shrink: 0; color: var(--code-string); font-weight: 600; }
+.command-input { flex: 1; min-width: 0; padding: 4px 0; border: 0; background: transparent; color: var(--code-text); caret-color: var(--code-string); font: inherit; appearance: none; }
+.command-input::placeholder { color: var(--code-gutter); opacity: 1; }
+.command-input:focus { outline: none; }
+.command-state { max-width: 50%; color: var(--code-gutter); font-size: 12px; overflow-wrap: anywhere; }
+.command-state.running { color: var(--code-tag); }
+.command-state.succeeded { color: var(--code-add-sign); }
+.command-state.failed { color: var(--code-del-sign); }
+.command-console .command-stop { flex-shrink: 0; border-color: var(--code-border, var(--border)); background: transparent; color: var(--code-text); font-size: 12px; }
+.command-console .command-stop:not(:disabled):hover { border-color: var(--code-keyword); background: var(--code-bg); color: var(--code-keyword); }
 .command-output { flex: 1; min-width: 0; min-height: 0; padding: 16px 20px; overflow: hidden; }
 .command-output :deep(.xterm) { height: 100%; }
 </style>

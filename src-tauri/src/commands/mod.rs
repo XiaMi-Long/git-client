@@ -608,6 +608,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "project_get_command_task",
         "project_attach_command_terminal",
         "project_run_command",
+        "project_run_shell_command",
         "project_write_command_input",
         "project_resize_command_terminal",
         "project_stop_command",

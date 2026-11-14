@@ -32,6 +32,7 @@
     - 2026-11-10: Updated. 作者筛选支持多选与清除；顶栏“更多”改为“获取远程”，移除重复的上游设置入口。
     - 2026-11-13: Updated. 接入项目命令与 dist 快捷工具，移除侧栏无已知差异文案。
     - 2026-11-13: Updated. 上游分支选择统一使用公共选择框。
+    - 2026-11-14: Updated. 项目栏支持手动分组、拖拽/右键归组、分组内快捷添加项目、折叠和分组管理。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -49,7 +50,7 @@ import type { BranchPreviewTarget } from "./composables/useBranchPreview";
 import { useGitActions, type GitActionResult } from "./composables/useGitActions";
 import type { BranchInfo, CommitInfo, FileDiff, StashInfo } from "@/types/git";
 import { useCommitSearch } from "./composables/useCommitSearch";
-import { useProjectLayout } from "./composables/useProjectLayout";
+import { useProjectLayout, type ProjectGroup } from "./composables/useProjectLayout";
 import { useRemoteSync, type RemoteSyncAction } from "./composables/useRemoteSync";
 import { authorMark, authorTone } from "./utils/author";
 import { dateKey, formatTime, groupLabel } from "./utils/date";
@@ -118,8 +119,19 @@ let branchClickTimer: ReturnType<typeof setTimeout> | null = null;
 const projectMenu = ref<{ x: number; y: number; repo: RepoTab } | null>(null);
 const commitMenu = ref<{ x: number; y: number; commit: CommitInfo; index: number } | null>(null);
 const branchMenu = ref<{ x: number; y: number; branch: BranchInfo; remote: boolean } | null>(null);
+const groupMenu = ref<{ x: number; y: number; group: ProjectGroup } | null>(null);
 const projectDialog = ref<{ mode: "rename" | "remove"; repo: RepoTab; value: string } | null>(null);
 const projectDialogInput = ref<HTMLInputElement | null>(null);
+const groupDialog = ref<{
+  mode: "create" | "rename" | "remove";
+  group: ProjectGroup | null;
+  value: string;
+  /** 从项目右键新建分组时，创建后自动把该项目移入。 */
+  projectPath?: string;
+} | null>(null);
+const groupDialogInput = ref<HTMLInputElement | null>(null);
+const dragOverGroupId = ref<string | null>(null);
+const dragOverUngrouped = ref(false);
 
 type BranchDialogMode =
   | "create"
@@ -166,13 +178,89 @@ const waitingForCommitContent = computed(() => activeRepo.value
   : activeProjectLoading.value);
 const hasCommitFilters = computed(() => Boolean(commitStore.authorFilters.length || commitStore.search.trim()));
 const sortedProjects = computed(() => layout.sortProjects(repoStore.repos));
-const visibleProjects = computed(() => {
-  const query = projectQuery.value.trim().toLowerCase();
-  if (!query) return sortedProjects.value;
-  return sortedProjects.value.filter((repo) => {
-    const haystack = `${layout.displayName(repo)} ${repo.name} ${repo.path}`.toLowerCase();
-    return haystack.includes(query);
-  });
+const groupList = computed(() => layout.groups.value);
+const hasGroups = computed(() => groupList.value.length > 0);
+const normalizedProjectQuery = computed(() => projectQuery.value.trim().toLowerCase());
+
+/** 侧栏展示的一段：真实分组、未分组，或还没有分组时的平铺列表。 */
+interface ProjectSection {
+  key: string;
+  group: ProjectGroup | null;
+  projects: RepoTab[];
+  flat: boolean;
+}
+
+/**
+ * 项目搜索同时匹配显示名、目录名和完整路径。
+ * @param repo - 仓库
+ * @returns 是否命中当前搜索词
+ */
+function matchesProjectQuery(repo: RepoTab): boolean {
+  const query = normalizedProjectQuery.value;
+  return !query || `${layout.displayName(repo)} ${repo.name} ${repo.path}`.toLowerCase().includes(query);
+}
+
+const visibleProjects = computed(() => sortedProjects.value.filter(matchesProjectQuery));
+const groupedProjects = computed(() => {
+  const byGroup = new Map<string, RepoTab[]>();
+  const ungrouped: RepoTab[] = [];
+  for (const repo of visibleProjects.value) {
+    const group = layout.groupOf(repo.path);
+    if (group) {
+      const members = byGroup.get(group.id);
+      if (members) {
+        members.push(repo);
+      } else {
+        byGroup.set(group.id, [repo]);
+      }
+    } else {
+      ungrouped.push(repo);
+    }
+  }
+  return { byGroup, ungrouped };
+});
+const visibleGroups = computed(() => {
+  const query = normalizedProjectQuery.value;
+  return groupList.value
+    .map((group) => ({ group, projects: groupedProjects.value.byGroup.get(group.id) ?? [] }))
+    .filter((entry) => !query || entry.projects.length > 0);
+});
+const visibleUngrouped = computed(() => groupedProjects.value.ungrouped);
+const visibleSections = computed<ProjectSection[]>(() => {
+  // 没有分组时保持原来的平铺项目列表。
+  if (!hasGroups.value) {
+    return [{ key: "flat", group: null, projects: visibleProjects.value, flat: true }];
+  }
+  const sections: ProjectSection[] = visibleGroups.value.map((entry) => ({
+    key: entry.group.id, group: entry.group, projects: entry.projects, flat: false,
+  }));
+  // 有分组时保留未分组区域作为拖出目标；搜索没有命中时不再占位。
+  if (!normalizedProjectQuery.value || visibleUngrouped.value.length) {
+    sections.push({ key: "ungrouped", group: null, projects: visibleUngrouped.value, flat: false });
+  }
+  return sections;
+});
+const visibleProjectCount = computed(() => visibleGroups.value.reduce((total, entry) => total + entry.projects.length, 0)
+  + visibleUngrouped.value.length);
+const groupDialogTitle = computed(() => {
+  const mode = groupDialog.value?.mode;
+  return mode === "rename" ? "重命名分组" : mode === "remove" ? "删除分组" : "新建分组";
+});
+const groupDialogDescription = computed(() => {
+  const dialog = groupDialog.value;
+  if (!dialog) return "";
+  if (dialog.mode === "create") {
+    return dialog.projectPath
+      ? "创建后会把当前项目移入这个分组；分组只影响左侧列表，不会修改仓库目录。"
+      : "分组只影响左侧列表，不会修改仓库目录。创建后把项目拖进来即可。";
+  }
+  if (dialog.mode === "rename") {
+    return "只改变左侧分组名称，不影响组内项目。";
+  }
+  const count = dialog.group ? groupProjectCount(dialog.group) : 0;
+  return count
+    ? `删除分组「${dialog.group?.name}」后，组内 ${count} 个项目会回到未分组，不会从项目列表移除。`
+    : `删除空分组「${dialog.group?.name}」？不会影响已打开的项目。`;
 });
 
 const currentBranch = computed<BranchInfo | null>(
@@ -351,6 +439,7 @@ function closeFloatingPanels(): void {
   projectMenu.value = null;
   commitMenu.value = null;
   branchMenu.value = null;
+  groupMenu.value = null;
 }
 
 /**
@@ -391,20 +480,29 @@ async function selectProject(repo: RepoTab): Promise<void> {
 /**
  * 添加项目：系统目录选择 -> Git 校验 -> 写入项目布局。
  * @param multiple - 是否允许在系统窗口中多选项目目录；false 时只选择一个目录
+ * @param targetGroup - 指定时把新项目和已打开的项目移入该分组；null 表示普通添加
  * @returns {Promise<void>}
  */
-async function addProject(multiple: boolean): Promise<void> {
+async function addProject(multiple: boolean, targetGroup: ProjectGroup | null = null): Promise<void> {
   // 目录选择和添加过程共用互斥状态，避免两个入口同时发起添加。
   if (addingProjects.value) {
     return;
   }
-  addingMode.value = multiple ? "batch" : "single";
+  // 从分组菜单进入时先收起菜单，系统窗口关闭后不要再盖住侧栏。
+  groupMenu.value = null;
+  projectMenu.value = null;
+  // 顶部加号/批量入口继续显示加载态，分组入口不误导顶部按钮。
+  addingMode.value = targetGroup ? null : (multiple ? "batch" : "single");
   addingProjects.value = true;
+  const groupLabel = targetGroup ? `「${targetGroup.name}」` : "";
+  const addTitle = targetGroup
+    ? `添加项目到${groupLabel}`
+    : (multiple ? "批量添加项目" : "添加单个项目");
 
   try {
     // 1. 根据入口启用单选或多选；取消选择时保留现有项目和激活状态。
     const selected = await open({
-      title: multiple ? "批量添加项目（按住 Ctrl 或 Shift 多选文件夹）" : "添加单个项目",
+      title: multiple ? `${addTitle}（按住 Ctrl 或 Shift 多选文件夹）` : addTitle,
       directory: true,
       multiple,
       defaultPath: settingsStore.defaultOpenDir || undefined,
@@ -420,24 +518,35 @@ async function addProject(multiple: boolean): Promise<void> {
     // 2. 逐个复用仓库校验和打开流程；单个失败不阻断其余项目，已打开的目录不重复添加。
     const previousActiveId = repoStore.activeId;
     const addedProjectPaths: string[] = [];
+    const movedProjectPaths: string[] = [];
     let failedProjectCount = 0;
 
     for (const projectPath of selectedProjectPaths) {
-      const isProjectAlreadyOpen = repoStore.repos.some((repo) => repo.path === projectPath);
-      if (isProjectAlreadyOpen) {
+      const existingProject = repoStore.repos.find((repo) => repo.path === projectPath);
+      if (existingProject) {
+        // 分组添加时，已打开的项目直接移动归属，避免用户再次从列表移除后重加。
+        const currentGroup = layout.groupOf(projectPath);
+        if (targetGroup && currentGroup?.id !== targetGroup.id && placeProjectInGroup(projectPath, targetGroup)) {
+          movedProjectPaths.push(projectPath);
+        }
         continue;
       }
       try {
         await repoStore.openRepo(projectPath);
         addedProjectPaths.push(projectPath);
+        if (targetGroup) {
+          placeProjectInGroup(projectPath, targetGroup);
+        }
       } catch {
         failedProjectCount += 1;
       }
     }
 
     // 3. 成功项目追加到现有顺序末尾，并沿用原来保留当前项目的行为。
-    if (addedProjectPaths.length) {
-      layout.saveOrder([...new Set([...layout.order.value, ...addedProjectPaths])]);
+    if (addedProjectPaths.length || movedProjectPaths.length) {
+      if (addedProjectPaths.length) {
+        layout.saveOrder([...new Set([...layout.order.value, ...addedProjectPaths])]);
+      }
       const targetId = previousActiveId && repoStore.repos.some((repo) => repo.id === previousActiveId)
         ? previousActiveId
         : repoStore.repos.find((repo) => repo.path === addedProjectPaths[0])?.id;
@@ -447,15 +556,34 @@ async function addProject(multiple: boolean): Promise<void> {
       layout.setActivePath(repoStore.activeRepo?.path ?? null);
       view.value = "commits";
       closeFloatingPanels();
+      // 分组添加后清掉搜索，确保新项目/移动后的项目能在目标分组里看到。
+      if (targetGroup) {
+        projectQuery.value = "";
+      }
     }
 
     // 4. 根据实际添加结果反馈，避免将部分失败或全部重复误报为全部成功。
-    if (addedProjectPaths.length) {
+    const failedSuffix = failedProjectCount ? `，${failedProjectCount} 个失败` : "";
+    if (targetGroup && (addedProjectPaths.length || movedProjectPaths.length)) {
+      if (addedProjectPaths.length && movedProjectPaths.length) {
+        showToast(`已添加 ${addedProjectPaths.length} 个项目，另有 ${movedProjectPaths.length} 个移入${groupLabel}${failedSuffix}`);
+      } else if (addedProjectPaths.length) {
+        showToast(addedProjectPaths.length === 1
+          ? `项目已添加到${groupLabel}${failedSuffix}`
+          : `已添加 ${addedProjectPaths.length} 个项目到${groupLabel}${failedSuffix}`);
+      } else {
+        showToast(movedProjectPaths.length === 1
+          ? `项目已移入${groupLabel}${failedSuffix}`
+          : `已将 ${movedProjectPaths.length} 个项目移入${groupLabel}${failedSuffix}`);
+      }
+    } else if (addedProjectPaths.length) {
       showToast(multiple
-        ? `已添加 ${addedProjectPaths.length} 个项目${failedProjectCount ? `，${failedProjectCount} 个失败` : ""}`
+        ? `已添加 ${addedProjectPaths.length} 个项目${failedSuffix}`
         : "项目已打开");
     } else if (failedProjectCount) {
       showToast("没有添加成功，请检查所选目录是否为 Git 仓库");
+    } else if (targetGroup) {
+      showToast(`所选项目已在${groupLabel}中`);
     } else {
       showToast("所选项目已在列表中");
     }
@@ -480,7 +608,14 @@ function openProjectContext(event: MouseEvent, repo: RepoTab): void {
   stashOpen.value = false;
   commitMenu.value = null;
   branchMenu.value = null;
-  projectMenu.value = { x: event.clientX, y: event.clientY, repo };
+  groupMenu.value = null;
+  // 分组越多菜单越高，靠近窗口底部时向上收，避免菜单被裁掉。
+  const estimatedHeight = 260 + groupList.value.length * 30;
+  projectMenu.value = {
+    x: event.clientX,
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - estimatedHeight - 12)),
+    repo,
+  };
 }
 
 /**
@@ -539,13 +674,188 @@ async function confirmProjectDialog(): Promise<void> {
 }
 
 /**
- * 项目拖拽排序。
+ * 统计分组内的全部项目，不受搜索过滤影响。
+ * @param group - 分组
+ * @returns 项目数量
+ */
+function groupProjectCount(group: ProjectGroup): number {
+  return sortedProjects.value.reduce((total, repo) => (
+    layout.groupOf(repo.path)?.id === group.id ? total + 1 : total
+  ), 0);
+}
+
+/**
+ * 判断当前激活项目是否在这个分组内，用于折叠状态下仍能看出所在分组。
+ * @param section - 分组展示段
+ * @returns 是否包含当前项目
+ */
+function sectionHasActiveProject(section: ProjectSection): boolean {
+  const active = activeRepo.value;
+  return Boolean(active && section.group && layout.groupOf(active.path)?.id === section.group.id);
+}
+
+/**
+ * 项目拖拽开始，清掉上一次的放置高亮。
+ * @param repo - 被拖动的项目
+ * @returns {void}
+ */
+function startProjectDrag(repo: RepoTab): void {
+  dragPath.value = repo.path;
+  dragOverPath.value = null;
+  dragOverGroupId.value = null;
+  dragOverUngrouped.value = false;
+}
+
+/**
+ * 拖到项目行上时只高亮该行，并清除分组标题的高亮。
+ * @param repo - 目标项目
+ * @returns {void}
+ */
+function dragOverProject(repo: RepoTab): void {
+  if (!dragPath.value) return;
+  dragOverPath.value = repo.path;
+  dragOverGroupId.value = null;
+  dragOverUngrouped.value = false;
+}
+
+/**
+ * 清理项目拖拽过程中的所有高亮和目标，拖拽取消时复用。
+ * @returns {void}
+ */
+function clearDragState(): void {
+  dragPath.value = null;
+  dragOverPath.value = null;
+  dragOverGroupId.value = null;
+  dragOverUngrouped.value = false;
+}
+
+/**
+ * 把一个项目放进目标分组；移入时顺带放到组内最后，避免新项目插到组中间。
+ * @param path - 项目路径
+ * @param group - 目标分组；null 表示移出到未分组
+ * @returns 是否完成归属更新
+ */
+function placeProjectInGroup(path: string, group: ProjectGroup | null): boolean {
+  const memberPaths = group
+    ? new Set(sortedProjects.value
+      .filter((repo) => layout.groupOf(repo.path)?.id === group.id)
+      .map((repo) => repo.path))
+    : new Set<string>();
+  if (!layout.setGroup(path, group?.id ?? null)) {
+    return false;
+  }
+  if (!group) {
+    return true;
+  }
+
+  const order = sortedProjects.value.map((repo) => repo.path).filter((item) => item !== path);
+  let insertAt = order.length;
+  for (let index = order.length - 1; index >= 0; index -= 1) {
+    if (memberPaths.has(order[index])) {
+      insertAt = index + 1;
+      break;
+    }
+  }
+  order.splice(insertAt, 0, path);
+  layout.saveOrder(order);
+  return true;
+}
+
+/**
+ * 从项目右键菜单把项目移入/移出分组。
+ * @param repo - 项目
+ * @param group - 目标分组；null 表示移出
+ * @returns {void}
+ */
+function moveProjectToGroup(repo: RepoTab, group: ProjectGroup | null): void {
+  projectMenu.value = null;
+  const currentGroup = layout.groupOf(repo.path);
+  if ((currentGroup?.id ?? null) === (group?.id ?? null)) {
+    return;
+  }
+  if (placeProjectInGroup(repo.path, group)) {
+    showToast(group ? `已移入分组「${group.name}」` : "已移出分组");
+  }
+}
+
+/**
+ * 拖到分组标题时切换目标高亮；未分组标题复用同一套状态。
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function dragOverSection(section: ProjectSection): void {
+  if (!dragPath.value) return;
+  dragOverPath.value = null;
+  if (section.group) {
+    dragOverGroupId.value = section.group.id;
+    dragOverUngrouped.value = false;
+  } else if (!section.flat) {
+    dragOverGroupId.value = null;
+    dragOverUngrouped.value = true;
+  }
+}
+
+/**
+ * 离开分组标题时只清除该标题的高亮，避免拖动经过子元素时闪到别的组。
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function dragLeaveSection(section: ProjectSection): void {
+  if (section.group && dragOverGroupId.value === section.group.id) {
+    dragOverGroupId.value = null;
+  }
+  if (!section.group && !section.flat) {
+    dragOverUngrouped.value = false;
+  }
+}
+
+/**
+ * 拖到分组标题后放下，groupId 为空表示放入未分组。
+ * @param groupId - 目标分组 id 或 null
+ * @returns {void}
+ */
+function dropOnGroup(groupId: string | null): void {
+  const path = dragPath.value;
+  clearDragState();
+  if (!path) return;
+  const group = groupId ? layout.groupById(groupId) : null;
+  if (groupId && !group) return;
+  if ((layout.groupOf(path)?.id ?? null) === (group?.id ?? null)) {
+    return;
+  }
+  if (placeProjectInGroup(path, group)) {
+    showToast(group ? `已移入分组「${group.name}」` : "已移出分组");
+  }
+}
+
+/**
+ * 分组标题放下时转交统一的归属更新。
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function dropOnSection(section: ProjectSection): void {
+  if (section.flat) return;
+  dropOnGroup(section.group?.id ?? null);
+}
+
+/**
+ * 项目拖拽：拖到另一个项目上时先处理跨组归属，再调整项目顺序。
  * @param fromPath - 拖拽项目路径，未从项目行开始拖动时为空
  * @param toPath - 目标项目路径
  * @returns {void}
  */
 function moveProject(fromPath: string | null, toPath: string): void {
+  clearDragState();
   if (!fromPath || !toPath || fromPath === toPath) return;
+  const sourceGroup = layout.groupOf(fromPath);
+  const targetGroup = layout.groupOf(toPath);
+  if ((sourceGroup?.id ?? null) !== (targetGroup?.id ?? null)) {
+    if (!placeProjectInGroup(fromPath, targetGroup)) {
+      return;
+    }
+    showToast(targetGroup ? `已移入分组「${targetGroup.name}」` : "已移出分组");
+  }
+
   const list = sortedProjects.value.map((repo) => repo.path);
   const fromIndex = list.indexOf(fromPath);
   const toIndex = list.indexOf(toPath);
@@ -553,6 +863,183 @@ function moveProject(fromPath: string | null, toPath: string): void {
   const [moved] = list.splice(fromIndex, 1);
   list.splice(toIndex, 0, moved);
   layout.saveOrder(list);
+}
+
+/**
+ * 折叠/展开一个分组；未分组标题不触发。
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function toggleSection(section: ProjectSection): void {
+  // 搜索时分组被强制展开以显示命中项，此时不改变保存的折叠状态。
+  if (section.group && !normalizedProjectQuery.value) {
+    layout.toggleGroup(section.group.id);
+  }
+}
+
+/**
+ * 打开分组右键菜单。
+ * @param event - 右键事件
+ * @param group - 分组
+ * @returns {void}
+ */
+function openGroupContext(event: MouseEvent, group: ProjectGroup): void {
+  if (view.value === "settings") view.value = "commits";
+  closeFloatingPanels();
+  groupMenu.value = {
+    x: event.clientX,
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - 220)),
+    group,
+  };
+}
+
+/**
+ * 从分组标题右侧的管理按钮打开菜单，菜单贴着按钮左下方。
+ * @param event - 点击事件
+ * @param group - 分组
+ * @returns {void}
+ */
+function openGroupMenuFromButton(event: MouseEvent, group: ProjectGroup): void {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  if (view.value === "settings") view.value = "commits";
+  closeFloatingPanels();
+  groupMenu.value = {
+    x: rect.left,
+    y: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 220)),
+    group,
+  };
+}
+
+/**
+ * 展示段右键菜单转交到分组菜单。
+ * @param event - 右键事件
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function openSectionContext(event: MouseEvent, section: ProjectSection): void {
+  if (!section.group) return;
+  openGroupContext(event, section.group);
+}
+
+/**
+ * 展示段的管理按钮转交到分组菜单。
+ * @param event - 点击事件
+ * @param section - 分组展示段
+ * @returns {void}
+ */
+function openSectionMenu(event: MouseEvent, section: ProjectSection): void {
+  if (!section.group) return;
+  event.stopPropagation();
+  openGroupMenuFromButton(event, section.group);
+}
+
+/**
+ * 打开新建分组对话框；从项目右键进入时创建后自动移入该项目。
+ * @param projectPath - 可选的待移入项目路径
+ * @returns {Promise<void>}
+ */
+async function openCreateGroup(projectPath: string | null = null): Promise<void> {
+  closeFloatingPanels();
+  groupDialog.value = { mode: "create", group: null, value: "", projectPath: projectPath ?? undefined };
+  await nextTick();
+  groupDialogInput.value?.focus();
+  groupDialogInput.value?.select();
+}
+
+/**
+ * 打开重命名分组对话框。
+ * @param group - 分组
+ * @returns {Promise<void>}
+ */
+async function openRenameGroup(group: ProjectGroup): Promise<void> {
+  groupMenu.value = null;
+  groupDialog.value = { mode: "rename", group, value: group.name };
+  await nextTick();
+  groupDialogInput.value?.focus();
+  groupDialogInput.value?.select();
+}
+
+/**
+ * 打开删除分组确认；组内项目会回到未分组。
+ * @param group - 分组
+ * @returns {void}
+ */
+function openRemoveGroup(group: ProjectGroup): void {
+  groupMenu.value = null;
+  groupDialog.value = { mode: "remove", group, value: "" };
+}
+
+/**
+ * 分组名称输入框回车：输入法确认候选词时不提交，避免中文名称被提前创建。
+ * @param event - 输入框收到的键盘事件
+ * @returns {void}
+ */
+function submitGroupDialog(event: KeyboardEvent): void {
+  if (event.isComposing) {
+    return;
+  }
+  event.preventDefault();
+  confirmGroupDialog();
+}
+
+/**
+ * 确认分组新建、重命名或删除。
+ * @returns {void}
+ */
+function confirmGroupDialog(): void {
+  const dialog = groupDialog.value;
+  if (!dialog) return;
+
+  if (dialog.mode === "remove") {
+    if (!dialog.group) return;
+    const name = dialog.group.name;
+    const count = groupProjectCount(dialog.group);
+    layout.removeGroup(dialog.group.id);
+    groupDialog.value = null;
+    showToast(count ? `已删除分组「${name}」，${count} 个项目已移到未分组` : `已删除分组「${name}」`);
+    return;
+  }
+
+  const name = dialog.value.trim();
+  if (!name) {
+    showToast("分组名称不能为空");
+    return;
+  }
+  if (name === "未分组") {
+    showToast("「未分组」是保留名称");
+    return;
+  }
+  const duplicate = groupList.value.some((group) => group.id !== dialog.group?.id
+    && group.name.trim().toLowerCase() === name.toLowerCase());
+  if (duplicate) {
+    showToast("分组名称已存在");
+    return;
+  }
+
+  if (dialog.mode === "create") {
+    const group = layout.createGroup(name);
+    if (!group) {
+      showToast("分组名称已存在");
+      return;
+    }
+    // 新分组即使为空也要可见，避免当前搜索词把它过滤掉。
+    projectQuery.value = "";
+    const project = dialog.projectPath
+      ? repoStore.repos.find((repo) => repo.path === dialog.projectPath)
+      : null;
+    if (project && placeProjectInGroup(project.path, group)) {
+      showToast(`已新建分组「${group.name}」，并移入项目`);
+    } else {
+      showToast(`已新建分组「${group.name}」`);
+    }
+  } else if (dialog.group) {
+    if (!layout.renameGroup(dialog.group.id, name)) {
+      showToast("分组名称已存在");
+      return;
+    }
+    showToast(`分组已重命名为「${name}」`);
+  }
+  groupDialog.value = null;
 }
 
 /**
@@ -1212,6 +1699,7 @@ function closeContextMenus(): void {
   projectMenu.value = null;
   commitMenu.value = null;
   branchMenu.value = null;
+  groupMenu.value = null;
 }
 
 /**
@@ -1241,8 +1729,9 @@ function onDocumentKeydown(event: KeyboardEvent): void {
     return;
   }
   if (event.key === "Escape") {
-    if (projectDialog.value || projectMenu.value || commitMenu.value) {
+    if (projectDialog.value || groupDialog.value || projectMenu.value || commitMenu.value || groupMenu.value) {
       projectDialog.value = null;
+      groupDialog.value = null;
       closeContextMenus();
       return;
     }
@@ -1401,6 +1890,9 @@ onUnmounted(() => {
               <svg v-if="addingMode !== 'batch'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4H6l1.2 1.4H13a1 1 0 0 1 1 1V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12z"/><path d="M8 8v3M6.5 9.5h3"/></svg>
               <svg v-else class="add-spin" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 0 1-8.5 3.5"/><path d="M3 8a5 5 0 0 1 8.5-3.5"/></svg>
             </button>
+            <button class="icon-btn group-add-btn" type="button" aria-label="新建分组" title="新建分组" @click="openCreateGroup()">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="11" height="8" rx="1.6"/><path d="M5 2.5h8.5v8"/></svg>
+            </button>
             <button class="icon-btn rail-toggle" type="button" :aria-label="railCollapsed ? '展开项目栏' : '折叠项目栏'" :title="railCollapsed ? '展开项目栏' : '折叠项目栏'" @click="toggleRail">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg>
             </button>
@@ -1412,36 +1904,95 @@ onUnmounted(() => {
         </label>
       </div>
 
-      <div class="project-list" role="list">
-        <div
-          v-for="repo in visibleProjects"
-          :key="repo.path"
-          class="project"
-          :class="{ active: repo.id === repoStore.activeId, dragging: dragPath === repo.path, 'drag-over': dragOverPath === repo.path }"
-          role="button"
-          tabindex="0"
-          draggable="true"
-          :title="repo.path"
-          :aria-current="repo.id === repoStore.activeId ? 'true' : 'false'"
-          @click="selectProject(repo)"
-          @keydown.enter.prevent="selectProject(repo)"
-          @keydown.space.prevent="selectProject(repo)"
-          @contextmenu.prevent="openProjectContext($event, repo)"
-          @dragstart="dragPath = repo.path"
-          @dragover.prevent="dragOverPath = repo.path"
-          @dragleave="dragOverPath = dragOverPath === repo.path ? null : dragOverPath"
-          @drop.prevent="moveProject(dragPath, repo.path); dragPath = null; dragOverPath = null"
-          @dragend="dragPath = null; dragOverPath = null"
+      <div class="project-list" role="list" @dragover.prevent @drop.prevent="clearDragState()">
+        <section
+          v-for="section in visibleSections"
+          :key="section.key"
+          class="project-group"
+          :class="{
+            flat: section.flat,
+            ungrouped: !section.group && !section.flat,
+            collapsed: !!section.group?.collapsed && !normalizedProjectQuery,
+            'has-active': sectionHasActiveProject(section),
+          }"
+          :role="section.flat ? undefined : 'group'"
+          :aria-label="section.flat ? undefined : (section.group?.name ?? '未分组')"
         >
-          <span class="project-dot" aria-hidden="true"></span>
-          <span class="project-content">
-            <span class="project-name">{{ layout.displayName(repo) }}</span>
-            <span class="project-branch">{{ projectMeta(repo) }}</span>
-          </span>
-          <span class="project-initials" aria-hidden="true">{{ projectInitials(repo) }}</span>
-        </div>
+          <div
+            v-if="!section.flat"
+            class="project-group-header"
+            :class="{ 'drag-over': section.group ? dragOverGroupId === section.group.id : dragOverUngrouped, searching: !!normalizedProjectQuery }"
+            :role="section.group && !normalizedProjectQuery ? 'button' : undefined"
+            :tabindex="section.group && !normalizedProjectQuery ? 0 : undefined"
+            :aria-expanded="section.group && !normalizedProjectQuery ? !section.group.collapsed : undefined"
+            :aria-label="section.group ? `${section.group.name}，${section.projects.length} 个项目` : undefined"
+            :title="section.group ? `${section.group.name}（${section.projects.length} 个项目）` : '未分组'"
+            @click="toggleSection(section)"
+            @keydown.enter.self.prevent="toggleSection(section)"
+            @keydown.space.self.prevent="toggleSection(section)"
+            @contextmenu.prevent="openSectionContext($event, section)"
+            @dragover.prevent="dragOverSection(section)"
+            @dragleave="dragLeaveSection(section)"
+            @drop.prevent="dropOnSection(section)"
+          >
+            <svg v-if="section.group" class="project-group-chevron" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg>
+            <span class="project-group-name">{{ section.group?.name ?? "未分组" }}</span>
+            <span class="project-group-count">{{ section.projects.length }}</span>
+            <button
+              v-if="section.group"
+              class="project-group-add"
+              type="button"
+              :disabled="addingProjects"
+              :aria-label="`添加项目到「${section.group?.name ?? ''}」`"
+              :title="`添加项目到「${section.group?.name ?? ''}」`"
+              @click.stop="addProject(false, section.group)"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+            </button>
+            <button v-if="section.group" class="project-group-more" type="button" :aria-label="`管理分组 ${section.group?.name ?? ''}`" title="管理分组" @click.stop="openSectionMenu($event, section)">⋯</button>
+          </div>
 
-        <div v-if="!visibleProjects.length" class="project-empty">
+          <div
+            v-show="section.flat || !section.group?.collapsed || railCollapsed || normalizedProjectQuery"
+            class="project-group-items"
+            @dragover.prevent="dragOverSection(section)"
+            @drop.prevent="dropOnSection(section)"
+          >
+            <div
+              v-for="repo in section.projects"
+              :key="repo.path"
+              class="project"
+              :class="{ active: repo.id === repoStore.activeId, dragging: dragPath === repo.path, 'drag-over': dragOverPath === repo.path }"
+              role="button"
+              tabindex="0"
+              draggable="true"
+              :title="repo.path"
+              :aria-current="repo.id === repoStore.activeId ? 'true' : 'false'"
+              @click="selectProject(repo)"
+              @keydown.enter.prevent="selectProject(repo)"
+              @keydown.space.prevent="selectProject(repo)"
+              @contextmenu.prevent="openProjectContext($event, repo)"
+              @dragstart="startProjectDrag(repo)"
+              @dragover.prevent.stop="dragOverProject(repo)"
+              @dragleave="dragOverPath = dragOverPath === repo.path ? null : dragOverPath"
+              @drop.prevent.stop="moveProject(dragPath, repo.path)"
+              @dragend="clearDragState()"
+            >
+              <span class="project-dot" aria-hidden="true"></span>
+              <span class="project-content">
+                <span class="project-name">{{ layout.displayName(repo) }}</span>
+                <span class="project-branch">{{ projectMeta(repo) }}</span>
+              </span>
+              <span class="project-initials" aria-hidden="true">{{ projectInitials(repo) }}</span>
+            </div>
+
+            <p v-if="!section.flat && !section.projects.length && !normalizedProjectQuery" class="project-group-empty">
+              {{ section.group ? "空分组，拖项目进来" : "拖到这里移出分组" }}
+            </p>
+          </div>
+        </section>
+
+        <div v-if="!visibleProjectCount" class="project-empty">
           {{ repoStore.repos.length ? "没有匹配的项目" : "还没有打开项目" }}
         </div>
       </div>
@@ -1741,14 +2292,56 @@ onUnmounted(() => {
       <ProjectTools :project="activeRepo ? { path: activeRepo.path, name: layout.displayName(activeRepo), branch: currentBranch?.name ?? '' } : null" />
     </main>
 
-    <div v-if="projectMenu" class="context-menu" :style="{ left: `${projectMenu.x}px`, top: `${projectMenu.y}px` }" role="menu">
-      <div class="menu-header"><div class="menu-hash">{{ layout.displayName(projectMenu.repo) }}</div></div>
+    <div
+      v-if="projectMenu"
+      class="context-menu project-menu"
+      :style="{ left: `${projectMenu.x}px`, top: `${projectMenu.y}px`, maxHeight: `calc(100vh - ${projectMenu.y + 16}px)` }"
+      role="menu"
+    >
+      <div class="menu-header">
+        <div class="menu-hash">{{ layout.displayName(projectMenu.repo) }}</div>
+        <div v-if="layout.groupOf(projectMenu.repo.path)" class="menu-subject">分组 · {{ layout.groupOf(projectMenu.repo.path)?.name }}</div>
+      </div>
       <button class="menu-item" type="button" @click="copyText(projectMenu.repo.path, '已复制绝对路径'); projectMenu = null">
         <span>复制绝对路径</span>
       </button>
       <button class="menu-item" type="button" @click="openRenameDialog(projectMenu.repo)"><span>重命名显示名…</span><span class="hint">只改显示</span></button>
       <div class="menu-sep"></div>
+      <template v-if="groupList.length">
+        <div class="menu-label">移入分组</div>
+        <button v-for="group in groupList" :key="group.id" class="menu-item" type="button" @click="moveProjectToGroup(projectMenu.repo, group)">
+          <span class="menu-option-name">{{ group.name }}</span>
+          <span v-if="layout.groupOf(projectMenu.repo.path)?.id === group.id" class="hint">当前</span>
+        </button>
+        <button class="menu-item" type="button" :disabled="!layout.groupOf(projectMenu.repo.path)" @click="moveProjectToGroup(projectMenu.repo, null)">
+          <span>移出分组</span>
+        </button>
+      </template>
+      <button class="menu-item" type="button" @click="openCreateGroup(projectMenu.repo.path)">
+        <span>新建分组并移入…</span>
+      </button>
+      <div class="menu-sep"></div>
       <button class="menu-item danger" type="button" @click="openRemoveDialog(projectMenu.repo)"><span>从列表移除</span></button>
+    </div>
+
+    <div v-if="groupMenu" class="context-menu" :style="{ left: `${groupMenu.x}px`, top: `${groupMenu.y}px` }" role="menu">
+      <div class="menu-header">
+        <div class="menu-hash">分组 · {{ groupProjectCount(groupMenu.group) }} 个项目</div>
+        <div class="menu-subject">{{ groupMenu.group.name }}</div>
+      </div>
+      <button class="menu-item" type="button" :disabled="addingProjects" @click="addProject(false, groupMenu.group)">
+        <span>添加项目…</span>
+      </button>
+      <div class="menu-sep"></div>
+      <button class="menu-item" type="button" @click="openRenameGroup(groupMenu.group)"><span>重命名分组…</span></button>
+      <button class="menu-item" type="button" :disabled="!!normalizedProjectQuery" @click="layout.toggleGroup(groupMenu.group.id); groupMenu = null">
+        <span>{{ groupMenu.group.collapsed ? "展开分组" : "折叠分组" }}</span>
+        <span v-if="normalizedProjectQuery" class="hint">搜索中</span>
+      </button>
+      <div class="menu-sep"></div>
+      <button class="menu-item danger" type="button" @click="openRemoveGroup(groupMenu.group)">
+        <span>删除分组</span><span class="hint">项目保留</span>
+      </button>
     </div>
 
     <div v-if="commitMenu" class="context-menu" :style="{ left: `${commitMenu.x}px`, top: `${commitMenu.y}px` }" role="menu">
@@ -1800,7 +2393,7 @@ onUnmounted(() => {
         <div class="action-body">
           <label v-if="branchDialog.mode === 'upstream'" class="action-field">
             <span>远程分支</span>
-            <AppSelect v-model="branchDialog.value" :options="upstreamOptions" aria-label="远程分支" />
+            <AppSelect v-model="branchDialog.value" :options="upstreamOptions" ariaLabel="远程分支" />
           </label>
           <label v-else-if="branchDialog.mode === 'create' || branchDialog.mode === 'rename' || branchDialog.mode === 'fromRemote'" class="action-field">
             <span>分支名</span>
@@ -1830,6 +2423,36 @@ onUnmounted(() => {
           <button class="action-btn secondary" type="button" @click="projectDialog = null">取消</button>
           <button class="action-btn" :class="projectDialog.mode === 'remove' ? 'danger' : 'primary'" type="button" @click="confirmProjectDialog()">
             {{ projectDialog.mode === "rename" ? "保存" : "移除" }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="groupDialog" class="action-backdrop" @click.self="groupDialog = null">
+      <section class="action-dialog" role="dialog" aria-modal="true" tabindex="-1" @keydown.esc.prevent="groupDialog = null">
+        <h2 class="action-title">{{ groupDialogTitle }}</h2>
+        <p class="action-desc">{{ groupDialogDescription }}</p>
+        <div v-if="groupDialog.mode !== 'remove'" class="action-body">
+          <label class="action-field">
+            <span>分组名称</span>
+            <input
+              ref="groupDialogInput"
+              v-model="groupDialog.value"
+              maxlength="30"
+              placeholder="例如 beta / main / dev"
+              @keydown.enter="submitGroupDialog"
+            >
+          </label>
+        </div>
+        <div class="action-actions">
+          <button class="action-btn secondary" type="button" @click="groupDialog = null">取消</button>
+          <button
+            class="action-btn"
+            :class="groupDialog.mode === 'remove' ? 'danger' : 'primary'"
+            type="button"
+            @click="confirmGroupDialog()"
+          >
+            {{ groupDialog.mode === "create" ? "创建" : groupDialog.mode === "rename" ? "保存" : "删除分组" }}
           </button>
         </div>
       </section>

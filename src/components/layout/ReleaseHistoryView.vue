@@ -203,11 +203,11 @@ watch(targetTag, (target) => {
     <div class="release-toolbar">
       <label>
         目标版本
-        <AppSelect v-model="targetTag" :options="targetTagOptions" :disabled="tags.length === 0" aria-label="目标版本" />
+        <AppSelect v-model="targetTag" :options="targetTagOptions" :disabled="tags.length === 0" ariaLabel="目标版本" />
       </label>
       <label>
         基准版本
-        <AppSelect v-model="baseTag" :options="baseTagOptions" :disabled="!targetTag" aria-label="基准版本" />
+        <AppSelect v-model="baseTag" :options="baseTagOptions" :disabled="!targetTag" ariaLabel="基准版本" />
       </label>
       <span v-if="targetTag" class="release-range-hint">
         {{ baseTag ? `${baseTag}..${targetTag}` : `截至 ${targetTag}` }}

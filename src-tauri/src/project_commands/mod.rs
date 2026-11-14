@@ -3,6 +3,7 @@
 //! @changeLog 2026-11-13: Created. 接入项目命令、持续输出和 dist 目录入口。
 //! @changeLog 2026-11-13: Updated. 保留运行中命令的标准输入，支持按任务发送一行文本。
 //! @changeLog 2026-11-13: Updated. 使用 portable-pty 和终端数据流替换普通进程管道。
+//! @changeLog 2026-11-13: Updated. 支持在项目根目录执行手动输入的命令行。
 
 mod process_tree;
 
@@ -12,7 +13,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use portable_pty::{native_pty_system, Child, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tauri::{ipc::Channel, AppHandle, State};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::watch;
@@ -241,6 +242,74 @@ fn manager_executable(manager: PackageManager) -> Option<PathBuf> {
     None
 }
 
+/// 启动已构造的 PTY 任务，脚本和手动命令共用互斥、快照、输出订阅和进程树清理。
+fn start_task(
+    state: &ProjectCommandsState,
+    root: &Path,
+    project_path: String,
+    script: String,
+    display_command: String,
+    mut command: CommandBuilder,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<ProjectTaskSnapshot, String> {
+    // 1. 头部命令区和终端内的交互输出使用同一种终端能力。
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    let pair = native_pty_system().openpty(terminal_size(cols, rows))
+        .map_err(|error| error.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|error| error.to_string())?;
+    let mut writer = pair.master.take_writer().map_err(|error| error.to_string())?;
+
+    // 2. 检查和登记在同一个锁内完成，重复点击不能并行启动同项目的构建。
+    let (child, snapshot, tree) = {
+        let mut registry = state.0.lock().map_err(|error| error.to_string())?;
+        let unavailable = registry.shutting_down || registry.tasks.get(root)
+            .map_or(false, |task| task.snapshot.status == "running");
+        if unavailable {
+            return Err("执行中".into());
+        }
+        let mut child = pair.slave.spawn_command(command).map_err(|error| error.to_string())?;
+        let tree = match ProcessTree::attach(child.as_ref()) {
+            Ok(tree) => Arc::new(tree),
+            Err(error) => {
+                let _ = child.kill();
+                return Err(error.to_string());
+            }
+        };
+        if let Err(error) = process_tree::release_start(writer.as_mut()) {
+            let _ = tree.terminate();
+            return Err(error.to_string());
+        }
+        registry.next_id += 1;
+        let snapshot = ProjectTaskSnapshot {
+            task_id: registry.next_id, project_path, script, command: display_command,
+            status: "running", exit_code: None, output: String::new(), revision: 0,
+        };
+        let (completion, _) = watch::channel(false);
+        let terminal = TerminalIo {
+            master: Arc::new(Mutex::new(pair.master)),
+            writer: Arc::new(Mutex::new(writer)),
+        };
+        registry.tasks.insert(root.to_path_buf(), ProjectTask {
+            snapshot: snapshot.clone(), tree: Some(tree.clone()), terminal: Some(terminal),
+            channel: Some(on_event), completion, stop_requested: false,
+        });
+        (child, snapshot, tree)
+    };
+
+    // 3. 释放父进程持有的 slave；PTY 读取和退出等待分别在阻塞线程执行。
+    drop(pair.slave);
+    let task_id = snapshot.task_id;
+    let task_state = ProjectCommandsState::clone(state);
+    let task_root = root.to_path_buf();
+    tauri::async_runtime::spawn(async move {
+        supervise_task(task_state, task_root, task_id, child, tree, reader).await;
+    });
+    Ok(snapshot)
+}
+
 /// 读取脚本及目录信息，打开弹窗本身不执行项目命令。
 #[tauri::command]
 pub fn project_get_command_info(path: String) -> Result<ProjectCommandInfo, String> {
@@ -284,68 +353,43 @@ pub async fn project_run_command(
     on_event: Channel<TerminalEvent>,
     state: State<'_, ProjectCommandsState>,
 ) -> Result<ProjectTaskSnapshot, String> {
-    // 1. 点击时重读文件，防止启动已经删除的脚本或使用界面中拼接的命令内容。
+    // 点击时重读文件，防止启动已经删除的脚本或使用界面中拼接的命令内容。
     let root = project_root(&path)?;
     let info = read_project_info(&root);
     if !info.scripts.iter().any(|entry| entry.name == script) {
         return Err(info.detail.unwrap_or_else(|| MANIFEST_ERROR.into()));
     }
     let executable = manager_executable(manager).ok_or(MANAGER_ERROR)?;
-    let mut command = process_tree::script_command(&executable, &script, &root)
+    let display_command = format!("{} run {script}", manager.name());
+    let command = process_tree::script_command(&executable, &script, &root)
         .map_err(|error| error.to_string())?;
-    command.env("TERM", "xterm-256color");
-    command.env("COLORTERM", "truecolor");
-    let pair = native_pty_system().openpty(terminal_size(cols, rows))
+    start_task(
+        state.inner(), &root, path, script, display_command,
+        command, cols, rows, on_event,
+    )
+}
+
+/// 在项目根目录执行用户手动输入的命令行，输出、停止和日志恢复沿用脚本任务。
+#[tauri::command]
+pub async fn project_run_shell_command(
+    path: String,
+    command: String,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+    state: State<'_, ProjectCommandsState>,
+) -> Result<ProjectTaskSnapshot, String> {
+    let command_line = command.trim();
+    if command_line.is_empty() {
+        return Err("请输入要执行的命令".into());
+    }
+    let root = project_root(&path)?;
+    let builder = process_tree::shell_command(command_line, &root)
         .map_err(|error| error.to_string())?;
-    let reader = pair.master.try_clone_reader().map_err(|error| error.to_string())?;
-    let mut writer = pair.master.take_writer().map_err(|error| error.to_string())?;
-
-    // 2. 检查和登记在同一个锁内完成，重复点击不能并行启动同项目的构建。
-    let (child, snapshot, tree) = {
-        let mut registry = state.inner().0.lock().map_err(|error| error.to_string())?;
-        let unavailable = registry.shutting_down || registry.tasks.get(&root)
-            .map_or(false, |task| task.snapshot.status == "running");
-        if unavailable {
-            return Err("执行中".into());
-        }
-        let mut child = pair.slave.spawn_command(command).map_err(|error| error.to_string())?;
-        let tree = match ProcessTree::attach(child.as_ref()) {
-            Ok(tree) => Arc::new(tree),
-            Err(error) => {
-                let _ = child.kill();
-                return Err(error.to_string());
-            }
-        };
-        if let Err(error) = process_tree::release_start(writer.as_mut()) {
-            let _ = tree.terminate();
-            return Err(error.to_string());
-        }
-        registry.next_id += 1;
-        let snapshot = ProjectTaskSnapshot {
-            task_id: registry.next_id, project_path: path, script: script.clone(),
-            command: format!("{} run {script}", manager.name()), status: "running",
-            exit_code: None, output: String::new(), revision: 0,
-        };
-        let (completion, _) = watch::channel(false);
-        let terminal = TerminalIo {
-            master: Arc::new(Mutex::new(pair.master)),
-            writer: Arc::new(Mutex::new(writer)),
-        };
-        registry.tasks.insert(root.clone(), ProjectTask {
-            snapshot: snapshot.clone(), tree: Some(tree.clone()), terminal: Some(terminal),
-            channel: Some(on_event), completion, stop_requested: false,
-        });
-        (child, snapshot, tree)
-    };
-
-    // 3. 释放父进程持有的 slave；PTY 读取和退出等待分别在阻塞线程执行。
-    drop(pair.slave);
-    let task_id = snapshot.task_id;
-    let task_state = state.inner().clone();
-    tauri::async_runtime::spawn(async move {
-        supervise_task(task_state, root, task_id, child, tree, reader).await;
-    });
-    Ok(snapshot)
+    start_task(
+        state.inner(), &root, path, String::new(), command_line.to_string(),
+        builder, cols, rows, on_event,
+    )
 }
 
 /// 按原始字节语义传递终端键盘输入，保留 Enter、方向键和 Ctrl+C 等控制字符。

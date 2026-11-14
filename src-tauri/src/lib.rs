@@ -33,6 +33,7 @@ pub fn run() {
             project_commands::project_get_command_task,
             project_commands::project_attach_command_terminal,
             project_commands::project_run_command,
+            project_commands::project_run_shell_command,
             project_commands::project_write_command_input,
             project_commands::project_resize_command_terminal,
             project_commands::project_stop_command,

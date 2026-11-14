@@ -15,6 +15,7 @@
     - 2026-11-07: Updated. 为相对时间分配更宽的列，提交时间保持单行。
     - 2026-11-07: Updated. 顶栏搜索换行时与操作区左边缘对齐。
     - 2026-11-13: Updated. 选择框统一由 AppSelect 展示，保留各表单的既有尺寸。
+    - 2026-11-14: Updated. 项目栏增加分组标题、快捷添加按钮、拖拽目标与分组管理菜单样式。
 */
 
 /* ===== 主题 token ===== */
@@ -374,6 +375,105 @@ svg { display: block; }
   letter-spacing: 0.02em;
 }
 
+/* 项目分组：组标题只保留名称和数量，组内项目沿用原项目行。 */
+.project-group { margin: 2px 0; }
+
+.project-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 0 4px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.project-group-header:hover { background: var(--hover); color: var(--text); }
+.project-group-header.searching { cursor: default; }
+.project-group-header.searching:not(.drag-over):hover { background: transparent; }
+
+.project-group-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.project-group-header.drag-over {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.project-group-chevron { flex-shrink: 0; transition: transform 140ms ease; }
+.project-group.collapsed .project-group-chevron { transform: rotate(-90deg); }
+.project-group.has-active .project-group-chevron { color: var(--accent); }
+
+.project-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-group-count {
+  margin-left: auto;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.project-group-add {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.project-group-add:hover { background: var(--surface); color: var(--text); }
+.project-group-add:disabled { opacity: 0.5; cursor: default; }
+
+.project-group-more {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-right: -2px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.project-group-header:hover .project-group-more,
+.project-group-header:focus-within .project-group-more { opacity: 1; pointer-events: auto; }
+.project-group-more:hover { background: var(--surface); color: var(--text); }
+
+.project-group-items { padding-left: 6px; }
+.project-group.flat { margin: 0; }
+.project-group.flat .project-group-items { padding-left: 0; }
+.project-group.ungrouped .project-group-header { color: var(--muted-2); font-weight: 500; cursor: default; }
+.project-group.ungrouped .project-group-header:not(.drag-over):hover { background: transparent; }
+.project-group.ungrouped .project-group-header.drag-over { color: var(--accent-strong); }
+
+.project-group-empty {
+  padding: 2px 12px 8px 18px;
+  color: var(--muted-2);
+  font-size: 10px;
+  line-height: 15px;
+}
+
 .projects-footer {
   display: flex;
   flex-shrink: 0;
@@ -421,6 +521,11 @@ svg { display: block; }
 .app.rail .project-initials { display: block; }
 .app.rail .projects-footer { justify-content: center; padding: 0; }
 .app.rail .settings-label { display: none; }
+.app.rail .group-add-btn { display: none; }
+.app.rail .project-group { margin: 0; }
+.app.rail .project-group-header,
+.app.rail .project-group-empty { display: none; }
+.app.rail .project-group-items { padding-left: 0; }
 
 /* ===== 主区域 ===== */
 .main {
@@ -963,6 +1068,25 @@ html.theme-transition *::after {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 10px;
+}
+
+
+.menu-label {
+  padding: 6px 8px 4px;
+  color: var(--muted-2);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+/* 项目菜单可能包含多个分组，超出可用高度时滚动。 */
+.project-menu { max-width: 320px; overflow: auto; }
+
+.menu-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-item.done .hint { color: var(--accent-strong); }

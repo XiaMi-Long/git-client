@@ -1,41 +1,49 @@
-//! 为 portable-pty 的项目脚本提供进程树管理及 Windows 启动屏障。
+//! 为 portable-pty 的项目脚本和手动命令提供进程树管理及 Windows 启动屏障。
 //! 任务停止、结束或应用退出时回收脚本派生的进程，避免 Node 构建进程遗留。
 //! @changeLog 2026-11-13: Created. 为项目命令提供与弹窗生命周期一致的进程清理。
 //! @changeLog 2026-11-13: Updated. 接入 PTY 子进程，并在 Windows Job 登记后才启动包管理器。
 //! @changeLog 2026-11-13: Updated. 修正 CMD 的盘符工作目录和启动等待参数。
 //! @changeLog 2026-11-13: Updated. 使用原生目录分隔符拼接 CMD 路径，修复启动命令行解析失败。
+//! @changeLog 2026-11-13: Updated. 增加手动命令的 CMD 构造，复用启动屏障和进程树清理。
 
 use std::io;
 use portable_pty::{Child, CommandBuilder};
 use std::path::Path;
 
+/// canonicalize 返回的扩展盘符路径会被 CMD 当成 UNC，启动时恢复普通盘符格式。
+/// 只转换命令的工作目录，外部任务注册表继续使用规范化路径，保证项目互斥不变。
+#[cfg(windows)]
+fn native_directory(root: &Path) -> std::path::PathBuf {
+    use std::path::{Component, PathBuf, Prefix};
+    let mut directory = root.to_path_buf();
+    if let Some(Component::Prefix(prefix)) = root.components().next() {
+        if let Prefix::VerbatimDisk(drive) = prefix.kind() {
+            directory = PathBuf::from(format!("{}:\\", char::from(drive)));
+            directory.extend(root.components().skip(2));
+        }
+    }
+    directory
+}
+
+/// 定位系统 CMD。portable-pty 会把没有空格的程序路径原样放入命令行，混入 /cmd.exe 会影响解析。
+#[cfg(windows)]
+fn cmd_executable() -> io::Result<std::path::PathBuf> {
+    std::env::var_os("SystemRoot")
+        .map(|root| std::path::PathBuf::from(root).join("System32").join("cmd.exe"))
+        .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+}
+
 /// 构造项目脚本进程。Windows 的批处理入口先等待输入，避免派生进程逃离 Job。
 pub fn script_command(executable: &Path, script: &str, root: &Path) -> io::Result<CommandBuilder> {
     #[cfg(windows)]
     {
-        use std::path::{Component, PathBuf, Prefix};
-
-        // 1. canonicalize 返回的扩展盘符路径会被 CMD 当成 UNC，启动时恢复普通盘符格式。
-        // 只转换命令的工作目录，外部任务注册表继续使用规范化路径，保证项目互斥不变。
-        let mut directory = root.to_path_buf();
-        if let Some(Component::Prefix(prefix)) = root.components().next() {
-            if let Prefix::VerbatimDisk(drive) = prefix.kind() {
-                directory = PathBuf::from(format!("{}:\\", char::from(drive)));
-                directory.extend(root.components().skip(2));
-            }
-        }
-
-        // 2. 在 Job 登记后才放行包管理器，隐藏启动提示，并显式启用 set /p 所需的命令扩展。
+        // 1. 在 Job 登记后才放行包管理器，隐藏启动提示，并显式启用 set /p 所需的命令扩展。
         // cmd 的参数通过环境变量传入，禁止打破双引号边界的名称；不使用二次展开的 call。
         if script.contains(['"', '\r', '\n', '\0']) {
             return Err(io::ErrorKind::InvalidInput.into());
         }
-        let shell = std::env::var_os("SystemRoot")
-            // portable-pty 会把没有空格的程序路径原样放入命令行，混入 /cmd.exe 会影响 CMD 解析。
-            .map(|root| PathBuf::from(root).join("System32").join("cmd.exe"))
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
-        let mut command = CommandBuilder::new(shell);
-        command.cwd(directory);
+        let mut command = CommandBuilder::new(cmd_executable()?);
+        command.cwd(native_directory(root));
         command.args(["/d", "/e:on", "/q", "/s", "/v:off", "/c",
             "set /p GITTRAIL_READY=.>nul & %GITTRAIL_RUNNER% run %GITTRAIL_SCRIPT%"]);
         command.env("GITTRAIL_RUNNER", format!("\"{}\"", executable.display()));
@@ -47,6 +55,34 @@ pub fn script_command(executable: &Path, script: &str, root: &Path) -> io::Resul
         let mut command = CommandBuilder::new(executable);
         command.cwd(root);
         command.args(["run", script]);
+        Ok(command)
+    }
+}
+
+/// 构造用户手动输入的整行命令，继续由 CMD 解释管道、重定向和引号。
+pub fn shell_command(command_line: &str, root: &Path) -> io::Result<CommandBuilder> {
+    #[cfg(windows)]
+    {
+        // 1. 原始命令行放在环境变量中展开，避免 portable-pty 按参数重新拼接引号。
+        // 启动屏障与脚本一致，命令不会在 Job 登记前抢先创建子进程。
+        if command_line.contains(['\r', '\n', '\0']) {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let mut command = CommandBuilder::new(cmd_executable()?);
+        command.cwd(native_directory(root));
+        command.args(["/d", "/e:on", "/q", "/s", "/v:off", "/c",
+            "set /p GITTRAIL_READY=.>nul & %GITTRAIL_COMMAND%"]);
+        command.env("GITTRAIL_COMMAND", command_line);
+        Ok(command)
+    }
+    #[cfg(not(windows))]
+    {
+        // 交互终端使用用户登录 shell，命令的大小写、引号和管道都由 shell 自己解释。
+        let shell = std::env::var_os("SHELL")
+            .unwrap_or_else(|| std::ffi::OsString::from("/bin/sh"));
+        let mut command = CommandBuilder::new(shell);
+        command.cwd(root);
+        command.args(["-c", command_line]);
         Ok(command)
     }
 }
