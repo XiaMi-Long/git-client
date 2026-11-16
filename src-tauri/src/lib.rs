@@ -38,6 +38,7 @@ pub fn run() {
             project_commands::project_resize_command_terminal,
             project_commands::project_stop_command,
             project_commands::project_open_dist,
+            project_commands::project_open_file,
             commands::git_detect_version,
             commands::git_get_user_name,
             commands::git_is_valid_repo,

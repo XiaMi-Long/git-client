@@ -652,6 +652,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "project_resize_command_terminal",
         "project_stop_command",
         "project_open_dist",
+        "project_open_file",
         "git_detect_version",
         "git_get_user_name",
         "git_is_valid_repo",

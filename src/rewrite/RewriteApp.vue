@@ -34,13 +34,14 @@
     - 2026-11-13: Updated. 上游分支选择统一使用公共选择框。
     - 2026-11-14: Updated. 项目栏支持手动分组、拖拽/右键归组、分组内快捷添加项目、折叠和分组管理。
     - 2026-11-16: Updated. 提交列表支持 Shift/Ctrl 多选与合并审查，普通点击仍直接打开单提交审查。
+    - 2026-11-16: Updated. 顶栏和冲突条增加「刷新」入口，外部解决冲突后自动同步操作状态并收起弹窗。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { open as openShell } from "@tauri-apps/plugin-shell";
 import { useRepoStore, type RepoTab } from "@/stores/repo";
 import { useCommitStore } from "@/stores/commit";
 import { useSettingsStore } from "@/stores/settings";
@@ -80,6 +81,12 @@ const gitConflictedFiles = actions.conflictedFiles;
 const appWindow = getCurrentWindow();
 const isMaximized = ref(false);
 let unlistenResized: (() => void) | null = null;
+let unlistenFocus: UnlistenFn | null = null;
+/** 手动 / 回焦刷新进行中，用于按钮转圈与防重入 */
+const refreshingState = ref(false);
+// 窗口回焦会连续触发多次，限制最短间隔，避免重复执行 git 查询。
+const FOCUS_REFRESH_INTERVAL = 1500;
+let lastFocusRefreshAt = 0;
 
 const booting = ref(true);
 // 提交区的大提示只用于首屏，用户切换项目或分支后便收起。
@@ -1251,6 +1258,32 @@ function showActionResult(result: GitActionResult | null): void {
 }
 
 /**
+ * 重新读取仓库状态、提交列表和 Git 操作状态。
+ * 外部工具里解决冲突或提交后，文件监听可能漏事件，这里作为显式兜底。
+ * @param options - silent 不提示结果；commits 为 false 时不重新加载提交列表（避免打断浏览）
+ * @returns {Promise<void>}
+ */
+async function refreshRepoState(options: { silent?: boolean; commits?: boolean } = {}): Promise<void> {
+  if (refreshingState.value || !activeRepo.value) return;
+  refreshingState.value = true;
+  try {
+    const jobs: Array<Promise<unknown>> = [
+      repoStore.refreshActive(),
+      actions.refreshOperation(),
+    ];
+    if (options.commits !== false) {
+      jobs.push(commitStore.loadCommits());
+    }
+    await Promise.all(jobs);
+    if (!options.silent) {
+      showToast("已刷新仓库状态");
+    }
+  } finally {
+    refreshingState.value = false;
+  }
+}
+
+/**
  * 打开冲突处理弹窗。
  * @returns {void}
  */
@@ -1276,9 +1309,9 @@ async function resolveConflictFile(file: string): Promise<void> {
 async function openConflictFile(file: string): Promise<void> {
   const repo = activeRepo.value;
   if (!repo) return;
-  const absolute = `${repo.path.replace(/[\\/]+$/, "")}\\${file.replace(/\//g, "\\")}`;
   try {
-    await openShell(absolute);
+    // 交给后端拼接并打开：前端拼绝对路径会触发 shell 插件的 URL scope 校验
+    await invoke("project_open_file", { path: repo.path, file });
   } catch (e) {
     showToast(`无法打开文件：${e instanceof Error ? e.message : String(e)}`);
   }
@@ -2088,6 +2121,14 @@ const { start: startWatcher } = useRepoWatcher(() => {
   void actions.refreshOperation();
 });
 
+// 外部解决冲突（或在外部终端完成 merge/commit）后操作状态会回到 normal，
+// 自动收起冲突弹窗，避免弹窗继续显示已经过期的冲突文件。
+watch(() => gitOperation.value, (state) => {
+  if (state === "normal") {
+    conflictDialogOpen.value = false;
+  }
+});
+
 watch(() => repoStore.activeId, async (id) => {
   branchPreview.value = null;
   if (!id) {
@@ -2149,10 +2190,23 @@ onMounted(async () => {
   } catch {
     // 非 Tauri 环境忽略
   }
+  try {
+    // 从外部编辑器 / 终端切回应用时补一次状态，赶在用户点按钮之前把冲突状态纠正。
+    unlistenFocus = await appWindow.onFocusChanged(({ payload: focused }) => {
+      if (!focused) return;
+      const now = Date.now();
+      if (now - lastFocusRefreshAt < FOCUS_REFRESH_INTERVAL) return;
+      lastFocusRefreshAt = now;
+      void refreshRepoState({ silent: true, commits: false });
+    });
+  } catch {
+    // 非 Tauri 环境忽略
+  }
 });
 
 onUnmounted(() => {
   if (unlistenResized) unlistenResized();
+  if (unlistenFocus) unlistenFocus();
   window.removeEventListener("resize", syncRail);
   document.removeEventListener("mousedown", onDocumentMouseDown);
   document.removeEventListener("keydown", onDocumentKeydown);
@@ -2431,6 +2485,28 @@ onUnmounted(() => {
                 <span>{{ syncAction === 'fetch' ? '获取中…' : '获取远程' }}</span>
               </button>
 
+              <button
+                class="icon-control"
+                type="button"
+                :disabled="activeProjectLoading || refreshingState || !!actionBusy"
+                :aria-busy="refreshingState"
+                title="刷新仓库状态（在外部解决冲突或提交后使用）"
+                @click="refreshRepoState()"
+              >
+                <svg
+                  :class="{ 'sync-spinner': refreshingState }"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ><path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.75"/><path d="M13.4 2.4v3.4H10"/></svg>
+                <span>{{ refreshingState ? "刷新中…" : "刷新" }}</span>
+              </button>
+
               <div class="stash-wrap">
                 <button class="icon-control stash-btn" type="button" :disabled="activeProjectLoading" :aria-expanded="stashOpen" title="储藏" @click.stop="stashOpen = !stashOpen; branchOpen = false">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h11v8h-11z"/><path d="M2 2.5h12v2.5H2z"/><path d="M6 8.5h4"/></svg>
@@ -2516,6 +2592,9 @@ onUnmounted(() => {
         <span class="conflict-state">{{ conflictLabel }}</span>
         <span class="conflict-info">{{ gitConflictedFiles.length }} 个文件待解决</span>
         <div class="conflict-bar-actions">
+          <button type="button" :disabled="refreshingState || !!actionBusy" :aria-busy="refreshingState" title="在外部解决冲突后重新读取仓库状态" @click="refreshRepoState()">
+            {{ refreshingState ? "刷新中…" : "刷新状态" }}
+          </button>
           <button type="button" @click="openConflictDialog">查看冲突</button>
           <button type="button" class="primary" :disabled="gitConflictedFiles.length > 0 || gitOperation === 'conflict' || gitOperation === 'rebasing' || !!actionBusy" @click="continueConflict">继续</button>
           <button type="button" :disabled="!!actionBusy" @click="abortConflict">中止</button>

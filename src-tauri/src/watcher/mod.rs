@@ -1,5 +1,6 @@
 // 文件监听模块
-// 使用 notify crate 递归监听工作区文件变更，遵守 .gitignore，排除 .git 目录，
+// 使用 notify crate 递归监听工作区文件变更，遵守 .gitignore，排除 .git 目录
+// （仅放行 HEAD / index / MERGE_HEAD 等关键状态文件，用于感知外部 add/commit/merge），
 // 500ms 防抖后通过 Tauri 事件 "repo-changed" 通知前端刷新。
 // 依据: design.md D5, tasks 3.1 / 3.2 / 3.3
 
@@ -58,6 +59,19 @@ fn is_inside_git(path: &Path) -> bool {
     path.components().any(|c| c.as_os_str() == ".git")
 }
 
+/// 需要放行的关键 Git 状态文件（位于 .git 目录内）
+/// 外部终端 / 编辑器里执行 git add、git commit、merge、rebase 时只会改动这些文件，
+/// 监听它们才能让界面及时感知「冲突已在外部解决」「操作已经结束」。
+fn is_git_state_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    matches!(
+        name,
+        "HEAD" | "ORIG_HEAD" | "index" | "MERGE_HEAD" | "MERGE_MSG" | "CHERRY_PICK_HEAD" | "REVERT_HEAD"
+    )
+}
+
 /// 启动文件监听（Tauri command）
 /// 在仓库工作区递归监听，过滤 .gitignore 与 .git 目录，500ms 防抖后 emit "repo-changed"
 #[tauri::command]
@@ -98,7 +112,13 @@ pub async fn watcher_start(
                 return;
             }
             for path in &event.paths {
+                // .git 内部默认忽略，但放行 HEAD / index / MERGE_HEAD 等状态文件，
+                // 否则外部完成合并或提交后界面会一直停留在旧状态。
                 if is_inside_git(path) {
+                    if is_git_state_file(path) {
+                        let _ = tx.try_send(());
+                        break;
+                    }
                     continue;
                 }
                 let is_dir = path.is_dir();

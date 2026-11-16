@@ -540,6 +540,33 @@ pub async fn project_open_dist(path: String, app: AppHandle) -> Result<(), Strin
     app.shell().open(directory, None).map_err(|error| error.to_string())
 }
 
+/// 用系统默认程序打开仓库内的某个文件
+/// 冲突处理时用于把文件交给外部编辑器；只允许打开项目目录内已存在的文件。
+#[tauri::command]
+pub async fn project_open_file(path: String, file: String, app: AppHandle) -> Result<(), String> {
+    let root = project_root(&path)?;
+    let target = root.join(file.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let canonical = std::fs::canonicalize(&target)
+        .map_err(|_| format!("文件不存在或已被移动：{file}"))?;
+    if !canonical.is_file() {
+        return Err(format!("不是可打开的文件：{file}"));
+    }
+    // 只允许项目目录内的文件，避免把任意路径交给系统默认程序
+    if !canonical.starts_with(&root) {
+        return Err("只能打开当前项目目录内的文件".to_string());
+    }
+    let absolute = canonical.to_string_lossy().into_owned();
+    // Explorer 及默认程序使用普通绝对路径，避免 canonicalize 的 Windows 扩展前缀被当成 URL
+    #[cfg(windows)]
+    let absolute = if let Some(network) = absolute.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{network}")
+    } else {
+        absolute.strip_prefix(r"\\?\").unwrap_or(&absolute).to_string()
+    };
+    #[allow(deprecated)]
+    app.shell().open(absolute, None).map_err(|error| error.to_string())
+}
+
 /// 收齐进程及输出流后再宣布完成，进程结束也清理其派生的后台子进程。
 async fn supervise_task(
     state: ProjectCommandsState, root: PathBuf, task_id: u64,
