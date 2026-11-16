@@ -1,4 +1,4 @@
-﻿// git 命令封装模块
+// git 命令封装模块
 // 通过 tokio::process::Command 调用系统 git，解析输出为结构化数据
 // 依据: design.md D2/D3
 
@@ -19,7 +19,7 @@ use types::GitError;
 pub use executor::GitExecutor;
 pub use status::{FileStatus, WorkingAreaStatus, FileChangeType, StageStatus};
 pub use log::{CommitActivityDay, CommitAuthor, CommitInfo, LogQuery, PAGE_SIZE};
-pub use diff::{DiffHunk, DiffLine, DiffLineType, FileDiff};
+pub use diff::{CommitDiff, DiffHunk, DiffLine, DiffLineType, FileDiff};
 pub use branch::{BranchInfo, TagInfo, BranchOperationResult, BranchPreviewInfo, BranchUpstreamTarget, CompareResult};
 pub use remote::{BranchSyncAction, RemoteResult, OperationState};
 pub use stash::StashInfo;

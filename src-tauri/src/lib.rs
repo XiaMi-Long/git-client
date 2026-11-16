@@ -50,6 +50,8 @@ pub fn run() {
             commands::git_get_working_diff,
             commands::git_get_staged_diff,
             commands::git_get_commit_diff,
+            commands::git_get_commit_range_diff,
+            commands::git_get_commits_diff,
             commands::git_list_branches,
             commands::git_get_branch_info,
             commands::git_list_tags,

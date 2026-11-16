@@ -3,6 +3,7 @@
 // 依据: design.md D3/D7, tasks 2.4
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -84,6 +85,15 @@ pub struct FileDiff {
     pub deletions: u32,
 }
 
+/// 单条提交及其文件改动（多选提交在历史中不相邻时逐条展示）
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitDiff {
+    /// 提交哈希
+    pub hash: String,
+    /// 该提交的完整文件改动
+    pub files: Vec<FileDiff>,
+}
+
 impl GitExecutor {
     /// 获取工作区某文件的 diff（未暂存）
     pub async fn get_working_diff(repo_path: &Path, file_path: &str) -> GitResult<Vec<FileDiff>> {
@@ -106,6 +116,10 @@ impl GitExecutor {
     }
 
     /// 获取指定提交中某文件的 diff
+    /// @param repo_path - 仓库目录
+    /// @param commit_hash - 提交哈希
+    /// @param file_path - 限定单个文件；为空时返回整条提交的改动
+    /// @returns 该提交的文件改动；合并提交按第一父提交比较，避免 git show 对 merge 不输出补丁
     pub async fn get_commit_diff(
         repo_path: &Path,
         commit_hash: &str,
@@ -113,10 +127,52 @@ impl GitExecutor {
     ) -> GitResult<Vec<FileDiff>> {
         let args: Vec<&str> = match file_path {
             Some(path) => vec!["diff", commit_hash, "^{commit}", "--", path],
-            None => vec!["show", commit_hash, "--format=", "--no-color"],
+            // --first-parent -m：合并提交只展示相对第一父提交的改动
+            None => vec!["show", commit_hash, "--format=", "--no-color", "--first-parent", "-m"],
         };
 
         let output = Self::run_git(repo_path, &args).await?;
+        Self::parse_diff(&output)
+    }
+
+    /// 逐条读取多条提交各自的文件改动
+    /// @param repo_path - 仓库目录
+    /// @param commit_hashes - 提交哈希列表，顺序即展示顺序
+    /// @returns 每条提交及其完整文件改动，只包含这些提交本身的变化
+    pub async fn get_commits_diff(
+        repo_path: &Path,
+        commit_hashes: &[String],
+    ) -> GitResult<Vec<CommitDiff>> {
+        let mut result = Vec::with_capacity(commit_hashes.len());
+        for hash in commit_hashes {
+            let files = Self::get_commit_diff(repo_path, hash, None).await?;
+            result.push(CommitDiff {
+                hash: hash.clone(),
+                files,
+            });
+        }
+        Ok(result)
+    }
+
+    /// 获取提交区间的累计 diff（多选提交的合并审查）
+    /// @param repo_path - 仓库目录
+    /// @param from_commit - 区间起点（不含该提交本身），为空表示仓库根提交之前
+    /// @param to_commit - 区间终点（含该提交）
+    /// @returns 区间内相对起点的累计文件改动
+    pub async fn get_commit_range_diff(
+        repo_path: &Path,
+        from_commit: Option<&str>,
+        to_commit: &str,
+    ) -> GitResult<Vec<FileDiff>> {
+        // 根提交没有父提交，用 Git 内置空树作为比较起点，避免 "unknown revision"
+        const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        let from = from_commit.unwrap_or(EMPTY_TREE);
+        let output = Self::run_git_with_timeout(
+            repo_path,
+            &["diff", "--no-color", from, to_commit],
+            Duration::from_secs(120),
+        )
+        .await?;
         Self::parse_diff(&output)
     }
 

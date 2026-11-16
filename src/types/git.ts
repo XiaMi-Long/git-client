@@ -197,6 +197,12 @@ export interface DiffHunk {
   lines: DiffLine[];
 }
 
+/** 单条提交及其文件改动（多选提交逐条审查，对应后端 CommitDiff） */
+export interface CommitDiff {
+  hash: string;
+  files: FileDiff[];
+}
+
 /** 单个文件的完整 diff */
 export interface FileDiff {
   old_path: string;

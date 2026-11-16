@@ -1,4 +1,4 @@
-﻿// Tauri command 处理模块
+// Tauri command 处理模块
 // 前端通过 invoke 调用的命令在此注册
 // 依据: design.md D3, tasks 2.x
 
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::git::{
     BranchInfo, BranchOperationResult, BranchPreviewInfo, BranchSyncAction, BranchUpstreamTarget,
-    CommitActivityDay, CommitAuthor, CommitInfo, CompareResult, FileDiff, GitExecutor,
+    CommitActivityDay, CommitAuthor, CommitDiff, CommitInfo, CompareResult, FileDiff, GitExecutor,
     GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
 
@@ -144,6 +144,30 @@ pub async fn git_get_commit_diff(
     file_path: Option<String>,
 ) -> Result<Vec<FileDiff>, String> {
     GitExecutor::get_commit_diff(&to_path(&path), &commit_hash, file_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 获取提交区间的累计 diff（多选提交的合并审查）
+/// `from_commit` 为空表示区间起点是仓库根提交之前，后端会回退到空树
+#[tauri::command]
+pub async fn git_get_commit_range_diff(
+    path: String,
+    from_commit: Option<String>,
+    to_commit: String,
+) -> Result<Vec<FileDiff>, String> {
+    GitExecutor::get_commit_range_diff(&to_path(&path), from_commit.as_deref(), &to_commit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 逐条获取多条提交各自的文件改动（多选提交在历史中不相邻时使用）
+#[tauri::command]
+pub async fn git_get_commits_diff(
+    path: String,
+    commit_hashes: Vec<String>,
+) -> Result<Vec<CommitDiff>, String> {
+    GitExecutor::get_commits_diff(&to_path(&path), &commit_hashes)
         .await
         .map_err(|e| e.to_string())
 }
@@ -624,6 +648,8 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_get_working_diff",
         "git_get_staged_diff",
         "git_get_commit_diff",
+        "git_get_commit_range_diff",
+        "git_get_commits_diff",
         "git_list_branches",
         "git_get_branch_info",
         "git_list_tags",
