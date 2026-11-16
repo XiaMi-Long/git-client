@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use crate::git::{
-    BranchInfo, BranchOperationResult, BranchPreviewInfo, BranchSyncAction, BranchUpstreamTarget,
+    BlameLine, BranchInfo, BranchOperationResult, BranchPreviewInfo, BranchSyncAction, BranchUpstreamTarget,
     CommitActivityDay, CommitAuthor, CommitDiff, CommitInfo, CompareResult, FileDiff, GitExecutor,
     GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
@@ -142,8 +142,9 @@ pub async fn git_get_commit_diff(
     path: String,
     commit_hash: String,
     file_path: Option<String>,
+    context_lines: Option<u32>,
 ) -> Result<Vec<FileDiff>, String> {
-    GitExecutor::get_commit_diff(&to_path(&path), &commit_hash, file_path.as_deref())
+    GitExecutor::get_commit_diff(&to_path(&path), &commit_hash, file_path.as_deref(), context_lines)
         .await
         .map_err(|e| e.to_string())
 }
@@ -155,8 +156,9 @@ pub async fn git_get_commit_range_diff(
     path: String,
     from_commit: Option<String>,
     to_commit: String,
+    context_lines: Option<u32>,
 ) -> Result<Vec<FileDiff>, String> {
-    GitExecutor::get_commit_range_diff(&to_path(&path), from_commit.as_deref(), &to_commit)
+    GitExecutor::get_commit_range_diff(&to_path(&path), from_commit.as_deref(), &to_commit, context_lines)
         .await
         .map_err(|e| e.to_string())
 }
@@ -166,8 +168,21 @@ pub async fn git_get_commit_range_diff(
 pub async fn git_get_commits_diff(
     path: String,
     commit_hashes: Vec<String>,
+    context_lines: Option<u32>,
 ) -> Result<Vec<CommitDiff>, String> {
-    GitExecutor::get_commits_diff(&to_path(&path), &commit_hashes)
+    GitExecutor::get_commits_diff(&to_path(&path), &commit_hashes, context_lines)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 读取指定版本文件每行的最后修改作者，供提交审查逐行展示。
+#[tauri::command]
+pub async fn git_blame_file(
+    path: String,
+    revision: String,
+    file_path: String,
+) -> Result<Vec<BlameLine>, String> {
+    GitExecutor::blame_file(&to_path(&path), &revision, &file_path)
         .await
         .map_err(|e| e.to_string())
 }
@@ -650,6 +665,7 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_get_commit_diff",
         "git_get_commit_range_diff",
         "git_get_commits_diff",
+        "git_blame_file",
         "git_list_branches",
         "git_get_branch_info",
         "git_list_tags",

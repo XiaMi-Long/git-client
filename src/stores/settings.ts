@@ -18,6 +18,10 @@ interface SettingsData {
   enableRemoteHint: boolean;
   remoteHintExpandMode: "click" | "auto";
   timeFormat: "relative" | "absolute";
+  /** 提交审查 diff 的上下文行数；旧数据可能没有该字段 */
+  diffContextLines?: number;
+  /** 提交审查是否默认显示每行作者；旧数据可能没有该字段 */
+  showLineAuthors?: boolean;
   /** 新版历史视图；旧字段用于兼容迁移 */
   commitHistoryView?: CommitHistoryView;
   commitListMode?: "classic" | "swimlane";
@@ -25,6 +29,15 @@ interface SettingsData {
 
 /** 提交历史可选的展示方式 */
 export type CommitHistoryView = "classic" | "swimlane" | "graph" | "file" | "release" | "activity";
+
+/** 提交审查 diff 可选的上下文行数，数值越大展示的上下文越完整。 */
+export const DIFF_CONTEXT_OPTIONS = [3, 10, 20, 50] as const;
+
+/** 提交审查 diff 的上下文行数档位。 */
+export type DiffContextLines = (typeof DIFF_CONTEXT_OPTIONS)[number];
+
+/** 默认上下文行数，与 Git 默认值保持一致。 */
+export const DEFAULT_DIFF_CONTEXT_LINES: DiffContextLines = 3;
 
 /** 存储名模板支持的占位符说明 */
 export const STASH_TEMPLATE_HINT =
@@ -50,6 +63,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const remoteHintExpandMode = ref<"click" | "auto">("click");
   // 提交记录时间显示：relative 相对时间（如 "2 hours ago"）/ absolute 绝对时间
   const timeFormat = ref<"relative" | "absolute">("relative");
+  // 提交审查 diff 每个改动块上下展示的行数，默认沿用 Git 的 3 行。
+  const diffContextLines = ref<DiffContextLines>(DEFAULT_DIFF_CONTEXT_LINES);
+  // 提交审查是否默认显示每行作者，开启后按当前文件读取 git blame。
+  const showLineAuthors = ref(false);
   // 当前提交历史视图；初次读取时兼容原来的二态字段
   const commitHistoryView = ref<CommitHistoryView>("classic");
 
@@ -71,6 +88,9 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint.value = data.enableRemoteHint ?? true;
         remoteHintExpandMode.value = data.remoteHintExpandMode ?? "click";
         timeFormat.value = data.timeFormat ?? "relative";
+        const savedContextLines = Number(data.diffContextLines);
+        diffContextLines.value = DIFF_CONTEXT_OPTIONS.find((option) => option === savedContextLines) ?? DEFAULT_DIFF_CONTEXT_LINES;
+        showLineAuthors.value = data.showLineAuthors ?? false;
         const savedView = data.commitHistoryView;
         const legacyView = data.commitListMode;
         const validViews: CommitHistoryView[] = ["classic", "swimlane", "graph", "file", "release", "activity"];
@@ -100,6 +120,8 @@ export const useSettingsStore = defineStore("settings", () => {
         enableRemoteHint: enableRemoteHint.value,
         remoteHintExpandMode: remoteHintExpandMode.value,
         timeFormat: timeFormat.value,
+        diffContextLines: diffContextLines.value,
+        showLineAuthors: showLineAuthors.value,
         commitHistoryView: commitHistoryView.value,
       })
     );
@@ -142,6 +164,26 @@ export const useSettingsStore = defineStore("settings", () => {
   /** 设置提交时间显示格式 */
   function setTimeFormat(fmt: "relative" | "absolute") {
     timeFormat.value = fmt;
+    persist();
+  }
+
+  /**
+   * 设置提交审查 diff 的上下文行数。
+   * @param lines - 预设的上下文行数档位
+   * @returns {void}
+   */
+  function setDiffContextLines(lines: DiffContextLines) {
+    diffContextLines.value = lines;
+    persist();
+  }
+
+  /**
+   * 设置提交审查是否默认显示每行作者。
+   * @param enabled - 是否显示每行作者
+   * @returns {void}
+   */
+  function setShowLineAuthors(enabled: boolean) {
+    showLineAuthors.value = enabled;
     persist();
   }
 
@@ -194,6 +236,8 @@ export const useSettingsStore = defineStore("settings", () => {
     enableRemoteHint,
     remoteHintExpandMode,
     timeFormat,
+    diffContextLines,
+    showLineAuthors,
     commitHistoryView,
     load,
     setGitPath,
@@ -203,6 +247,8 @@ export const useSettingsStore = defineStore("settings", () => {
     setProtectRemoteDelete,
     setStashNameTemplate,
     setTimeFormat,
+    setDiffContextLines,
+    setShowLineAuthors,
     setCommitHistoryView,
     setEnableRemoteHint,
     setRemoteHintExpandMode,

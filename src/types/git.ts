@@ -216,3 +216,15 @@ export interface FileDiff {
   additions: number;
   deletions: number;
 }
+
+/** 单行 blame 作者信息（对应后端 BlameLine） */
+export interface BlameLine {
+  /** 文件中的最终行号，从 1 开始 */
+  line: number;
+  author_name: string;
+  author_email: string;
+  commit_hash: string;
+  short_hash: string;
+  /** 最后修改该行的提交标题 */
+  summary: string;
+}

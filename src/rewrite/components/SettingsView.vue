@@ -11,15 +11,22 @@
     - 2026-11-04: Created. 原型设置页生产化，保留旧设置能力。
     - 2026-11-07: Updated. 增加代码对比主题选择和即时配色预览。
     - 2026-11-13: Updated. 代码主题与时间格式统一使用公共选择框。
+    - 2026-11-16: Updated. 增加 Diff 上下文行数设置，可调整提交审查展示的代码范围。
+    - 2026-11-16: Updated. 增加逐行作者默认开关。
 -->
 <script setup lang="ts">
-import { useSettingsStore } from "@/stores/settings";
+import { useSettingsStore, DIFF_CONTEXT_OPTIONS, DEFAULT_DIFF_CONTEXT_LINES } from "@/stores/settings";
 import { CODE_THEME_OPTIONS, useThemeStore, type Density, type ThemeMode } from "@/stores/theme";
 import { highlightCode } from "../utils/highlight";
 import AppSelect from "@/components/AppSelect.vue";
 
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
+
+const diffContextOptions = DIFF_CONTEXT_OPTIONS.map((lines) => ({
+  value: String(lines),
+  label: lines === DEFAULT_DIFF_CONTEXT_LINES ? `${lines} 行（默认）` : `${lines} 行`,
+}));
 
 const timeFormatOptions = [
   { value: "relative", label: "相对时间" },
@@ -76,6 +83,19 @@ function persistCheck(setter: (value: boolean) => void, event: Event): void {
 function persistTimeFormat(timeFormat: string): void {
   if (timeFormat === "relative" || timeFormat === "absolute") {
     settingsStore.setTimeFormat(timeFormat);
+  }
+}
+
+/**
+ * 保存 Diff 上下文行数挡位。
+ * @param value - 选择框返回的字符串档位
+ * @returns {void}
+ */
+function persistDiffContext(value: string): void {
+  const lines = Number(value);
+  const matchedOption = DIFF_CONTEXT_OPTIONS.find((option) => option === lines);
+  if (matchedOption) {
+    settingsStore.setDiffContextLines(matchedOption);
   }
 }
 </script>
@@ -149,6 +169,29 @@ function persistTimeFormat(timeFormat: string): void {
               @click="themeStore.setDensity(option.value)"
             >{{ option.label }}</button>
           </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-copy">
+            <div class="setting-title">Diff 上下文</div>
+            <div class="setting-desc">提交审查右侧每个改动块上下展示的代码行数，越大看到的上下文越多。</div>
+          </div>
+          <AppSelect
+            class="settings-select"
+            :model-value="String(settingsStore.diffContextLines)"
+            :options="diffContextOptions"
+            ariaLabel="Diff 上下文行数"
+            @update:model-value="persistDiffContext"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-copy">
+            <div class="setting-title">逐行作者</div>
+            <div class="setting-desc">在提交审查 diff 的行号右侧显示每行作者（git blame）。</div>
+          </div>
+          <label class="settings-check">
+            <input type="checkbox" :checked="settingsStore.showLineAuthors" @change="persistCheck(settingsStore.setShowLineAuthors, $event)">
+            <span>显示</span>
+          </label>
         </div>
       </section>
 

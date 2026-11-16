@@ -1,7 +1,7 @@
 <!--
   @component ReviewDialog
   @description
-    提交审查弹窗：真实文件 diff、统一/双栏/换行、上下提交切换、复制哈希、Esc/键盘操作。
+    提交审查弹窗：真实文件 diff、统一/双栏/换行、逐行作者、上下提交切换、复制哈希、Esc/键盘操作。
     多选提交时按选择形态切换批量视图：
       - 所选提交在历史中相邻（含连续区间）→ 合并审查，展示「最旧提交的父提交 → 最新提交」的累计改动；
       - 所选提交不相邻（Ctrl 跳选）→ 逐条审查，只展示所选提交各自的改动，避免混入未选中的提交。
@@ -20,11 +20,18 @@
     - 2026-11-04: Created. 新 Review 真实 diff、键盘和复制反馈。
     - 2026-11-13: Updated. 大屏审查随窗口加宽，文件栏按比例扩展并完整换行显示路径。
     - 2026-11-16: Updated. 支持多选提交审查：相邻选择看累计改动，不相邻选择逐条展示各自改动。
+    - 2026-11-16: Updated. 文件列表按文件后缀展示类型图标。
+    - 2026-11-16: Updated. 审查 diff 按设置展示可选的上下文行数。
+    - 2026-11-16: Updated. 顶部统一工具栏支持逐行作者开关，并把复制哈希并入同一工具栏。
+    - 2026-11-16: Updated. 顶部工具栏增加上下文行数选择，切换后保留当前文件并重新读取 diff。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { CommitDiff, CommitInfo, FileDiff } from "@/types/git";
+import { useSettingsStore, DIFF_CONTEXT_OPTIONS } from "@/stores/settings";
+import type { BlameLine, CommitDiff, CommitInfo, FileDiff } from "@/types/git";
+import AppSelect from "@/components/AppSelect.vue";
+import FileTypeIcon from "@/components/layout/FileTypeIcon.vue";
 import { formatDateTime } from "../utils/date";
 import ReviewDiff from "./ReviewDiff.vue";
 
@@ -46,6 +53,12 @@ const emit = defineEmits<{
   focusCommit: [hash: string];
 }>();
 
+const settingsStore = useSettingsStore();
+const diffContextOptions = DIFF_CONTEXT_OPTIONS.map((lines) => ({
+  value: String(lines),
+  label: `${lines} 行`,
+}));
+
 /** 审查模式：单提交 / 相邻选择的累计改动 / 不相邻选择的逐条改动 */
 type ReviewMode = "single" | "aggregate" | "per-commit";
 
@@ -61,8 +74,15 @@ const error = ref<string | null>(null);
 const diffView = ref<"unified" | "split">("unified");
 const wrap = ref(false);
 const copied = ref(false);
+// 弹窗内开关与设置页共用同一偏好，下次打开审查时沿用上次选择。
+const showBlame = ref(settingsStore.showLineAuthors);
+const oldBlame = shallowRef<Map<number, BlameLine>>(new Map());
+const newBlame = shallowRef<Map<number, BlameLine>>(new Map());
+const blameLoading = ref(false);
+const blameCache = new Map<string, Map<number, BlameLine>>();
 let copiedTimer: ReturnType<typeof setTimeout> | null = null;
 let requestSequence = 0;
+let blameSequence = 0;
 
 /** chips 最多展示的提交数，超出部分只提示总数 */
 const CHIP_LIMIT = 8;
@@ -126,6 +146,41 @@ const totals = computed(() => fileCount.value && mode.value === "per-commit"
     { additions: 0, deletions: 0 },
   ));
 
+/** 当前文件逐行作者需要查询的两个版本；新增、删除文件只查存在的一侧。 */
+const blameTarget = computed(() => {
+  const file = currentFile.value;
+  // 无文本差异的文件（二进制、仅模式变化）没有可标注的行。
+  if (!file || !file.hunks.length) {
+    return null;
+  }
+
+  const newRevision = mode.value === "per-commit"
+    ? activeCommit.value?.hash ?? null
+    : mode.value === "aggregate"
+      ? batchNewest.value.hash
+      : props.commit.hash;
+  const oldRevision = mode.value === "per-commit"
+    ? activeCommit.value?.parents[0] ?? null
+    : mode.value === "aggregate"
+      ? batchFrom.value
+      : props.commit.parents[0] ?? null;
+
+  return {
+    newRevision: file.is_deleted ? null : newRevision,
+    oldRevision: file.is_new ? null : oldRevision,
+    newPath: file.new_path || file.old_path,
+    oldPath: file.old_path || file.new_path,
+  };
+});
+/** 当前作者查询的唯一键，文件、版本或审查模式变化时重新读取。 */
+const blameRequestKey = computed(() => {
+  const target = blameTarget.value;
+  if (!target) {
+    return "";
+  }
+  return JSON.stringify([props.repoPath, target.newRevision, target.newPath, target.oldRevision, target.oldPath]);
+});
+
 const hasPrev = computed(() => !isBatch.value && props.index > 0);
 const hasNext = computed(() => !isBatch.value && props.index < props.total - 1);
 
@@ -172,12 +227,17 @@ function fileStatus(file: FileDiff): string {
 
 /**
  * 按当前模式读取 diff 数据。
+ * @param preserveSelection - 是否保留当前文件和逐条审查位置；上下文切换时使用
  * @returns {Promise<void>}
  */
-async function loadDiff(): Promise<void> {
+async function loadDiff(preserveSelection = false): Promise<void> {
+  const previousFile = activeFile.value;
+  const previousEntry = activeEntry.value;
   const sequence = ++requestSequence;
-  activeFile.value = 0;
-  activeEntry.value = 0;
+  if (!preserveSelection) {
+    activeFile.value = 0;
+    activeEntry.value = 0;
+  }
   files.value = [];
   commitDiffs.value = [];
   error.value = null;
@@ -188,6 +248,7 @@ async function loadDiff(): Promise<void> {
       const result = await invoke<CommitDiff[]>("git_get_commits_diff", {
         path: props.repoPath,
         commitHashes: hashes,
+        contextLines: settingsStore.diffContextLines,
       });
       if (sequence !== requestSequence) return;
       commitDiffs.value = result;
@@ -196,6 +257,7 @@ async function loadDiff(): Promise<void> {
         path: props.repoPath,
         fromCommit: batchFrom.value,
         toCommit: batchNewest.value.hash,
+        contextLines: settingsStore.diffContextLines,
       });
       if (sequence !== requestSequence) return;
       files.value = result;
@@ -204,6 +266,7 @@ async function loadDiff(): Promise<void> {
         path: props.repoPath,
         commitHash: props.commit.hash,
         filePath: null,
+        contextLines: settingsStore.diffContextLines,
       });
       if (sequence !== requestSequence) return;
       files.value = result;
@@ -212,9 +275,121 @@ async function loadDiff(): Promise<void> {
     if (sequence !== requestSequence) return;
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
-    if (sequence === requestSequence) loading.value = false;
+    if (sequence === requestSequence) {
+      // 上下文行数变化后列表会重建，恢复原文件位置，避免跳回第一个文件。
+      if (preserveSelection) {
+        activeFile.value = Math.min(previousFile, Math.max(0, files.value.length - 1));
+        activeEntry.value = Math.min(previousEntry, Math.max(0, flatEntries.value.length - 1));
+      }
+      loading.value = false;
+    }
   }
 }
+
+/**
+ * 保存工具栏选择的上下文行数，与设置页共用同一偏好。
+ * @param value - 选择框返回的字符串档位
+ * @returns {void}
+ */
+function persistDiffContext(value: string): void {
+  const lines = Number(value);
+  const matchedOption = DIFF_CONTEXT_OPTIONS.find((option) => option === lines);
+  if (matchedOption) {
+    settingsStore.setDiffContextLines(matchedOption);
+  }
+}
+
+// 设置页或弹窗工具栏改变上下文行数时，按当前文件重新读取。
+watch(() => settingsStore.diffContextLines, () => {
+  void loadDiff(true);
+});
+
+/**
+ * 读取一个版本文件的逐行作者，并在弹窗生命周期内缓存结果。
+ * @param revision - 提交哈希
+ * @param filePath - 该版本下的文件路径
+ * @returns 行号到作者信息的映射；读取失败时为空映射
+ */
+async function readBlame(revision: string, filePath: string): Promise<Map<number, BlameLine>> {
+  const cacheKey = `${revision}\u0000${filePath}`;
+  const cached = blameCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const lines = await invoke<BlameLine[]>("git_blame_file", {
+      path: props.repoPath,
+      revision,
+      filePath,
+    });
+    const indexed = new Map(lines.map((line) => [line.line, line]));
+    blameCache.set(cacheKey, indexed);
+    return indexed;
+  } catch {
+    // 二进制文件、超大文件或历史不可读时不显示作者，不回滚已打开的 diff。
+    return new Map();
+  }
+}
+
+/**
+ * 按当前文件和审查模式读取新旧两个版本的逐行作者。
+ * @returns 作者请求结束
+ */
+async function loadBlame(): Promise<void> {
+  const sequence = ++blameSequence;
+  const target = blameTarget.value;
+
+  // 作者开关关闭、文件未加载或没有可查询版本时，清空旧文件的数据。
+  if (!showBlame.value || !target || (!target.newRevision && !target.oldRevision)) {
+    oldBlame.value = new Map();
+    newBlame.value = new Map();
+    blameLoading.value = false;
+    return;
+  }
+
+  // 切换文件时先清空旧作者，避免新行号配上上一个文件的名字。
+  oldBlame.value = new Map();
+  newBlame.value = new Map();
+  blameLoading.value = true;
+  try {
+    const [nextNewBlame, nextOldBlame] = await Promise.all([
+      target.newRevision
+        ? readBlame(target.newRevision, target.newPath)
+        : Promise.resolve(new Map<number, BlameLine>()),
+      target.oldRevision
+        ? readBlame(target.oldRevision, target.oldPath)
+        : Promise.resolve(new Map<number, BlameLine>()),
+    ]);
+    if (sequence !== blameSequence) {
+      return;
+    }
+    newBlame.value = nextNewBlame;
+    oldBlame.value = nextOldBlame;
+  } finally {
+    if (sequence === blameSequence) {
+      blameLoading.value = false;
+    }
+  }
+}
+
+/**
+ * 切换逐行作者显示；数据加载由监听当前文件与开关状态的 watch 驱动。
+ * @returns {void}
+ */
+function toggleBlame(): void {
+  const enabled = !showBlame.value;
+  showBlame.value = enabled;
+  settingsStore.setShowLineAuthors(enabled);
+}
+
+watch(
+  () => [showBlame.value, blameRequestKey.value] as const,
+  () => {
+    void loadBlame();
+  },
+  { immediate: true },
+);
 
 watch(
   () => [
@@ -375,12 +550,44 @@ onMounted(async () => {
             </div>
           </div>
           <div class="dialog-actions">
-            <button class="ghost-btn" type="button" :class="{ done: copied }" @click="copyHash">
-              {{ copied ? "已复制" : isBatch ? "复制范围" : "复制哈希" }}
-            </button>
             <button class="close-btn" type="button" aria-label="关闭审查" @click="emit('close')">×</button>
           </div>
         </header>
+
+        <!-- 统一工具栏：视图切换、换行、逐行作者、上下文行数和复制哈希都在弹窗内完成 -->
+        <div class="review-toolbar" role="toolbar" aria-label="审查工具栏">
+          <div class="review-toolbar-tabs" role="group" aria-label="差异视图与显示项">
+            <button class="tab" :class="{ active: diffView === 'unified' }" type="button" :aria-pressed="diffView === 'unified'" @click="diffView = 'unified'">统一</button>
+            <button class="tab" :class="{ active: diffView === 'split' }" type="button" :aria-pressed="diffView === 'split'" @click="diffView = 'split'">双栏</button>
+            <button class="tab" :class="{ active: wrap }" type="button" :aria-pressed="wrap" @click="wrap = !wrap">换行</button>
+            <button
+              class="tab"
+              :class="{ active: showBlame }"
+              type="button"
+              :aria-pressed="showBlame"
+              :aria-busy="showBlame && blameLoading"
+              title="显示每行作者（git blame）"
+              @click="toggleBlame"
+            >逐行作者</button>
+          </div>
+          <span class="review-context">
+            <span class="review-context-label">上下文</span>
+            <AppSelect
+              class="review-context-select"
+              :model-value="String(settingsStore.diffContextLines)"
+              :options="diffContextOptions"
+              ariaLabel="Diff 上下文行数"
+              @update:model-value="persistDiffContext"
+            />
+          </span>
+          <span class="review-toolbar-spacer" aria-hidden="true"></span>
+          <span v-if="activeCommit" class="diff-source" :title="activeCommit.subject">
+            {{ activeCommit.short_hash }} · {{ activeCommit.author_name }}
+          </span>
+          <button class="ghost-btn" type="button" :class="{ done: copied }" @click="copyHash">
+            {{ copied ? "已复制" : isBatch ? "复制范围" : "复制哈希" }}
+          </button>
+        </div>
 
         <div class="dialog-body">
           <aside class="files" aria-label="改动文件">
@@ -410,6 +617,7 @@ onMounted(async () => {
                   @click="activeEntry = row.index"
                 >
                   <span class="file-status" :class="fileStatus(row.file).toLowerCase()">{{ fileStatus(row.file) }}</span>
+                  <FileTypeIcon :path="row.file.new_path" />
                   <span class="file-name">{{ row.file.new_path }}</span>
                   <span class="file-stat">+{{ row.file.additions }} −{{ row.file.deletions }}</span>
                 </button>
@@ -428,6 +636,7 @@ onMounted(async () => {
                 @click="activeFile = index"
               >
                 <span class="file-status" :class="fileStatus(file).toLowerCase()">{{ fileStatus(file) }}</span>
+                <FileTypeIcon :path="file.new_path" />
                 <span class="file-name">{{ file.new_path }}</span>
                 <span class="file-stat">+{{ file.additions }} −{{ file.deletions }}</span>
               </button>
@@ -435,17 +644,17 @@ onMounted(async () => {
           </aside>
 
           <section class="diff" :class="{ wrap }" aria-label="文件差异">
-            <div class="diff-toolbar">
-              <button class="tab" :class="{ active: diffView === 'unified' }" type="button" @click="diffView = 'unified'">统一</button>
-              <button class="tab" :class="{ active: diffView === 'split' }" type="button" @click="diffView = 'split'">双栏</button>
-              <button class="tab" :class="{ active: wrap }" type="button" @click="wrap = !wrap">换行</button>
-              <span v-if="activeCommit" class="diff-source" :title="activeCommit.subject">
-                {{ activeCommit.short_hash }} · {{ activeCommit.author_name }}
-              </span>
-            </div>
             <div v-if="loading" class="diff-empty">正在读取差异…</div>
             <div v-else-if="error" class="diff-empty">{{ error }}</div>
-            <ReviewDiff v-else :file="currentFile" :view="diffView" :wrap="wrap" />
+            <ReviewDiff
+              v-else
+              :file="currentFile"
+              :view="diffView"
+              :wrap="wrap"
+              :show-blame="showBlame"
+              :old-blame="oldBlame"
+              :new-blame="newBlame"
+            />
           </section>
         </div>
 
@@ -476,6 +685,81 @@ onMounted(async () => {
   max-width: none;
 }
 
+/* 顶部统一工具栏：差异视图、显示项和复制哈希集中在一处。 */
+.review-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--review-border);
+  background: var(--review-header);
+  color: var(--review-header-text);
+}
+
+.review-toolbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 100%;
+}
+
+.review-context {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-context-label {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.review-context-select {
+  width: 88px;
+}
+
+.review-context-select :deep(.app-select-trigger) {
+  height: 28px;
+  padding: 0 8px;
+  border-color: var(--review-action-border);
+  background: transparent;
+  color: var(--review-action-text);
+  font-size: 11px;
+}
+
+.review-context-select :deep(.app-select-chevron) {
+  width: 12px;
+  height: 12px;
+}
+
+/* 作者数据读取期间在开关后显示旋转指示，不额外占用行内文字。 */
+.review-toolbar .tab[aria-busy="true"]::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.review-toolbar-spacer {
+  flex: 1;
+}
+
+.review-toolbar .ghost-btn {
+  flex-shrink: 0;
+}
+
+.review-toolbar .diff-source {
+  max-width: 38%;
+}
+
 .review-dialog .dialog-body {
   grid-template-columns: minmax(280px, 28%) minmax(0, 1fr);
 }
@@ -484,10 +768,16 @@ onMounted(async () => {
   min-width: 0;
 }
 
-/* 长路径增加行高，状态和统计仍停留在首行，避免文件名被省略号遮住。 */
+/* 长路径增加行高，状态、类型图标和统计仍停留在首行 */
 .review-dialog .file-row {
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
   align-items: start;
   padding-block: 8px;
+}
+
+/* 图标与状态字母按首行对齐，长路径换行时不会被拉伸 */
+.review-dialog .file-row > .file-type-icon {
+  margin-top: 1px;
 }
 
 .review-dialog .file-name {
@@ -568,9 +858,8 @@ onMounted(async () => {
   text-overflow: ellipsis;
 }
 
-/* 逐条审查时在 diff 工具栏标注当前文件来自哪条提交。 */
+/* 逐条审查时在统一工具栏标注当前文件来自哪条提交。 */
 .diff-source {
-  margin-left: auto;
   overflow: hidden;
   color: var(--muted);
   font-family: var(--mono);

@@ -10,6 +10,9 @@ use serde::Serialize;
 use super::executor::GitExecutor;
 use super::types::GitResult;
 
+/// Git 默认的 diff 上下文行数，调用方未指定时沿用。
+const DEFAULT_DIFF_CONTEXT_LINES: u32 = 3;
+
 /// diff 行类型
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -119,33 +122,45 @@ impl GitExecutor {
     /// @param repo_path - 仓库目录
     /// @param commit_hash - 提交哈希
     /// @param file_path - 限定单个文件；为空时返回整条提交的改动
+    /// @param context_lines - 每个改动块上下展示的上下文行数；为空时使用 Git 默认值
     /// @returns 该提交的文件改动；合并提交按第一父提交比较，避免 git show 对 merge 不输出补丁
     pub async fn get_commit_diff(
         repo_path: &Path,
         commit_hash: &str,
         file_path: Option<&str>,
+        context_lines: Option<u32>,
     ) -> GitResult<Vec<FileDiff>> {
+        let context = Self::diff_context_arg(context_lines);
         let args: Vec<&str> = match file_path {
-            Some(path) => vec!["diff", commit_hash, "^{commit}", "--", path],
+            Some(path) => vec!["diff", context.as_str(), commit_hash, "^{commit}", "--", path],
             // --first-parent -m：合并提交只展示相对第一父提交的改动
-            None => vec!["show", commit_hash, "--format=", "--no-color", "--first-parent", "-m"],
+            None => vec!["show", context.as_str(), commit_hash, "--format=", "--no-color", "--first-parent", "-m"],
         };
 
         let output = Self::run_git(repo_path, &args).await?;
         Self::parse_diff(&output)
     }
 
+    /// 生成 git diff 的上下文行数参数。
+    /// @param context_lines - 调用方选择的上下文行数；为空时使用 Git 默认值
+    /// @returns 可直接传给 git 的 `-U` 参数
+    fn diff_context_arg(context_lines: Option<u32>) -> String {
+        format!("-U{}", context_lines.unwrap_or(DEFAULT_DIFF_CONTEXT_LINES))
+    }
+
     /// 逐条读取多条提交各自的文件改动
     /// @param repo_path - 仓库目录
     /// @param commit_hashes - 提交哈希列表，顺序即展示顺序
+    /// @param context_lines - 每个改动块上下展示的上下文行数；为空时使用 Git 默认值
     /// @returns 每条提交及其完整文件改动，只包含这些提交本身的变化
     pub async fn get_commits_diff(
         repo_path: &Path,
         commit_hashes: &[String],
+        context_lines: Option<u32>,
     ) -> GitResult<Vec<CommitDiff>> {
         let mut result = Vec::with_capacity(commit_hashes.len());
         for hash in commit_hashes {
-            let files = Self::get_commit_diff(repo_path, hash, None).await?;
+            let files = Self::get_commit_diff(repo_path, hash, None, context_lines).await?;
             result.push(CommitDiff {
                 hash: hash.clone(),
                 files,
@@ -158,18 +173,21 @@ impl GitExecutor {
     /// @param repo_path - 仓库目录
     /// @param from_commit - 区间起点（不含该提交本身），为空表示仓库根提交之前
     /// @param to_commit - 区间终点（含该提交）
+    /// @param context_lines - 每个改动块上下展示的上下文行数；为空时使用 Git 默认值
     /// @returns 区间内相对起点的累计文件改动
     pub async fn get_commit_range_diff(
         repo_path: &Path,
         from_commit: Option<&str>,
         to_commit: &str,
+        context_lines: Option<u32>,
     ) -> GitResult<Vec<FileDiff>> {
         // 根提交没有父提交，用 Git 内置空树作为比较起点，避免 "unknown revision"
         const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
         let from = from_commit.unwrap_or(EMPTY_TREE);
+        let context = Self::diff_context_arg(context_lines);
         let output = Self::run_git_with_timeout(
             repo_path,
-            &["diff", "--no-color", from, to_commit],
+            &["diff", "--no-color", context.as_str(), from, to_commit],
             Duration::from_secs(120),
         )
         .await?;
