@@ -16,6 +16,11 @@ use super::types::{GitError, GitResult};
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// 让 git 输出原始 UTF-8 路径
+/// git 默认 core.quotepath=true，会把中文等非 ASCII 路径转义成 "\344\270\216" 的
+/// C 风格引号形式，diff/status 的路径解析和界面展示都会因此错乱。
+const QUOTE_PATH_KEEP_RAW: [&str; 2] = ["-c", "core.quotepath=false"];
+
 /// 为命令添加 Windows 无窗口标志（非 Windows 平台为空操作）
 fn no_window(cmd: &mut Command) {
     #[cfg(windows)]
@@ -64,6 +69,8 @@ impl GitExecutor {
     ) -> GitResult<String> {
         // 使用独立命令实例，以便超时只影响调用此方法的操作
         let mut cmd = Command::new("git");
+        // 统一关闭路径转义，避免中文等非 ASCII 路径变成 "\344\270\216" 形式
+        cmd.args(QUOTE_PATH_KEEP_RAW);
         cmd.args(args);
         // 禁止弹出控制台窗口（打包后的 GUI 主进程调用 git 时）
         no_window(&mut cmd);
@@ -106,6 +113,8 @@ impl GitExecutor {
         args: &[&str],
     ) -> GitResult<Output> {
         let mut cmd = Command::new("git");
+        // 统一关闭路径转义，避免中文等非 ASCII 路径在 diff/status 里变成八进制引号形式
+        cmd.args(QUOTE_PATH_KEEP_RAW);
         cmd.args(args);
         // 禁止弹出控制台窗口（打包后的 GUI 主进程调用 git 时）
         no_window(&mut cmd);
@@ -131,6 +140,7 @@ impl GitExecutor {
     /// 用于 hunk 级暂存（7.5）：只暂存单个 hunk 而非整个文件
     pub async fn apply_hunk(repo_path: &Path, patch: &str) -> GitResult<()> {
         let mut cmd = Command::new("git");
+        cmd.args(QUOTE_PATH_KEEP_RAW);
         cmd.args(&["apply", "--cached"]);
         // 禁止弹出控制台窗口
         no_window(&mut cmd);

@@ -256,18 +256,18 @@ impl GitExecutor {
                 continue;
             }
 
-            // rename from / rename to
+            // rename from / rename to（特殊路径同样可能被 Git 加上 C 风格引号）
             if line.starts_with("rename from ") {
                 if let Some(ref mut f) = current_file {
                     f.is_renamed = true;
-                    f.old_path = line["rename from ".len()..].to_string();
+                    f.old_path = Self::parse_path_text(&line["rename from ".len()..]);
                 }
                 continue;
             }
             if line.starts_with("rename to ") {
                 if let Some(ref mut f) = current_file {
                     f.is_renamed = true;
-                    f.new_path = line["rename to ".len()..].to_string();
+                    f.new_path = Self::parse_path_text(&line["rename to ".len()..]);
                 }
                 continue;
             }
@@ -372,22 +372,98 @@ impl GitExecutor {
     }
 
     /// 解析 diff --git 头
+    /// 兼容两种形式：
+    ///   `diff --git a/path b/path`（路径可含空格，按 " b/" 分隔）
+    ///   `diff --git "a/path" "b/path"`（Git 对特殊字符路径使用 C 风格引号）
     fn parse_diff_git_header(line: &str) -> (String, String) {
-        // "diff --git a/path b/path" 或 "diff --git a/path with spaces b/path with spaces"
         let rest = &line["diff --git ".len()..];
+
+        if rest.starts_with('"') {
+            if let Some((old_raw, consumed)) = Self::parse_quoted_path(rest) {
+                let tail = rest[consumed..].trim_start();
+                if let Some((new_raw, _)) = Self::parse_quoted_path(tail) {
+                    return (Self::strip_diff_prefix(&old_raw), Self::strip_diff_prefix(&new_raw));
+                }
+            }
+        }
 
         // 尝试匹配 "a/... b/..."
         if let Some(idx) = rest.find(" b/") {
             let old = &rest[..idx];
             let new = &rest[idx + 3..];
-            let old_path = old.strip_prefix("a/").unwrap_or(old).to_string();
-            let new_path = new.strip_prefix("b/").unwrap_or(new).to_string();
-            return (old_path, new_path);
+            return (Self::strip_diff_prefix(old), Self::strip_diff_prefix(new));
         }
 
         // fallback: 整行作为同一路径
-        let path = rest.to_string();
+        let path = Self::strip_diff_prefix(rest);
         (path.clone(), path)
+    }
+
+    /// 去掉 diff 头里的 a/、b/ 前缀
+    fn strip_diff_prefix(path: &str) -> String {
+        path.strip_prefix("a/")
+            .or_else(|| path.strip_prefix("b/"))
+            .unwrap_or(path)
+            .to_string()
+    }
+
+    /// 解析单行路径文本：裸路径原样返回，引号形式则解转义
+    fn parse_path_text(raw: &str) -> String {
+        if raw.starts_with('"') {
+            if let Some((path, _)) = Self::parse_quoted_path(raw) {
+                return path;
+            }
+        }
+        raw.to_string()
+    }
+
+    /// 解析 Git 的 C 风格引号路径，返回解码后的路径与消耗的字节数
+    /// 依据 git 的 quote.c：支持 \a \b \f \n \r \t \v \\ \" 与三位八进制字节
+    fn parse_quoted_path(input: &str) -> Option<(String, usize)> {
+        let bytes = input.as_bytes();
+        if bytes.first() != Some(&b'"') {
+            return None;
+        }
+        let mut out: Vec<u8> = Vec::new();
+        let mut index = 1;
+        while index < bytes.len() {
+            match bytes[index] {
+                b'"' => return Some((String::from_utf8_lossy(&out).to_string(), index + 1)),
+                b'\\' => {
+                    index += 1;
+                    let escape = *bytes.get(index)?;
+                    match escape {
+                        b'a' => { out.push(0x07); index += 1; }
+                        b'b' => { out.push(0x08); index += 1; }
+                        b'f' => { out.push(0x0c); index += 1; }
+                        b'n' => { out.push(b'\n'); index += 1; }
+                        b'r' => { out.push(b'\r'); index += 1; }
+                        b't' => { out.push(b'\t'); index += 1; }
+                        b'v' => { out.push(0x0b); index += 1; }
+                        b'\\' => { out.push(b'\\'); index += 1; }
+                        b'"' => { out.push(b'"'); index += 1; }
+                        b'0'..=b'7' => {
+                            // 八进制转义：最多三位，表示一个原始字节（UTF-8 会被拆成多段）
+                            let mut value: u16 = 0;
+                            let mut digits = 0;
+                            while digits < 3 {
+                                let Some(byte) = bytes.get(index).copied() else { break };
+                                if !(b'0'..=b'7').contains(&byte) {
+                                    break;
+                                }
+                                value = value * 8 + u16::from(byte - b'0');
+                                index += 1;
+                                digits += 1;
+                            }
+                            out.push(value as u8);
+                        }
+                        other => { out.push(other); index += 1; }
+                    }
+                }
+                other => { out.push(other); index += 1; }
+            }
+        }
+        None
     }
 
     /// 解析 hunk 头，提取 old/new 的 start 和 count
@@ -459,5 +535,43 @@ impl GitExecutor {
         if let Some(file) = current_file.take() {
             files.push(file);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GitExecutor;
+
+    /// 普通路径：按 a/ b/ 前缀解析
+    #[test]
+    fn parses_plain_diff_header() {
+        let (old, new) = GitExecutor::parse_diff_git_header("diff --git a/src/a.ts b/src/a.ts");
+        assert_eq!(old, "src/a.ts");
+        assert_eq!(new, "src/a.ts");
+    }
+
+    /// 含空格的路径：按 " b/" 分隔，不能把空格当成路径边界
+    #[test]
+    fn parses_paths_with_spaces() {
+        let (old, new) =
+            GitExecutor::parse_diff_git_header("diff --git a/my dir/a b.ts b/my dir/a b.ts");
+        assert_eq!(old, "my dir/a b.ts");
+        assert_eq!(new, "my dir/a b.ts");
+    }
+
+    /// 中文路径：Git 默认输出八进制转义的引号形式，必须还原成 UTF-8
+    #[test]
+    fn parses_quoted_octal_paths() {
+        let line = "diff --git \"a/\\346\\255\\245\\351\\252\\244.md\" \"b/\\346\\255\\245\\351\\252\\244.md\"";
+        let (old, new) = GitExecutor::parse_diff_git_header(line);
+        assert_eq!(old, "步骤.md");
+        assert_eq!(new, "步骤.md");
+    }
+
+    /// rename from/to 的路径同样可能带引号
+    #[test]
+    fn parses_quoted_rename_target() {
+        assert_eq!(GitExecutor::parse_path_text("\"\\344\\270\\255.md\""), "中.md");
+        assert_eq!(GitExecutor::parse_path_text("plain.md"), "plain.md");
     }
 }
