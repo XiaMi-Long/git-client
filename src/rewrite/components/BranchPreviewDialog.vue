@@ -13,6 +13,8 @@
     - 2026-11-07: Updated. 本地分支预览支持作者筛选，弹窗尺寸随窗口增大。
     - 2026-11-10: Updated. 提交列表提供与主列表一致的右键菜单，可审查、Cherry-pick 到当前分支并复制提交信息与哈希。
     - 2026-11-13: Updated. 分支预览按窗口宽度展开，移除大屏固定宽度上限。
+    - 2026-11-17: Updated. 提交列表支持 Shift/Ctrl 多选，并可按累计或逐条批量审查。
+    - 2026-11-17: Updated. 远程分支预览同样提供关键词与作者搜索。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
@@ -61,6 +63,12 @@ const notice = ref<string | null>(null);
 const reviewIndex = ref<number | null>(null);
 // 搜索防抖可能在审查打开后完成，审查顺序仍使用点击提交时的列表。
 const reviewCommits = ref<CommitInfo[]>([]);
+/** 批量审查的提交集合；null 表示单提交审查 */
+const reviewBatch = ref<CommitInfo[] | null>(null);
+/** 多选提交审查：选中的提交哈希 */
+const selectedCommitHashes = ref<Set<string>>(new Set());
+/** Shift 连选的锚点提交哈希 */
+const commitAnchorHash = ref<string | null>(null);
 let reviewTrigger: HTMLButtonElement | null = null;
 // 右键打开菜单时记录所在提交行，关闭审查后把焦点还给它。
 let menuTrigger: HTMLElement | null = null;
@@ -73,6 +81,55 @@ const {
 } = useBranchPreview(props.target);
 
 const reviewCommit = computed(() => reviewIndex.value === null ? null : reviewCommits.value[reviewIndex.value]);
+/** 已选提交在弹窗历史中的位置，按列表顺序（最新在前）升序 */
+const selectedCommitIndexes = computed<number[]>(() => {
+  const hashes = selectedCommitHashes.value;
+  if (!hashes.size) return [];
+  const indexes: number[] = [];
+  commits.value.forEach((commit, index) => {
+    if (hashes.has(commit.hash)) indexes.push(index);
+  });
+  return indexes;
+});
+/** 已选提交数量 */
+const selectedCommitCount = computed(() => selectedCommitIndexes.value.length);
+/** 已选提交，按列表顺序（最新在前） */
+const selectedCommits = computed<CommitInfo[]>(() => selectedCommitIndexes.value
+  .map((index) => commits.value[index])
+  .filter((commit): commit is CommitInfo => Boolean(commit)));
+/**
+ * 选中范围：按历史顺序计算区间，连续选择时区间恰好等于所选提交。
+ */
+const selectionRange = computed(() => {
+  const indexes = selectedCommitIndexes.value;
+  if (!indexes.length) return null;
+  const newest = commits.value[indexes[0]];
+  const oldest = commits.value[indexes[indexes.length - 1]];
+  if (!newest || !oldest) return null;
+  const span = indexes[indexes.length - 1] - indexes[0] + 1;
+  return { newest, oldest, missed: span - indexes.length };
+});
+/** 选择工具栏展示的范围文案 */
+const selectionRangeLabel = computed(() => {
+  const range = selectionRange.value;
+  if (!range) return "";
+  if (selectedCommitCount.value === 1) return range.newest.short_hash;
+  const base = `${range.oldest.short_hash} → ${range.newest.short_hash}`;
+  return range.missed > 0 ? `${base} · 不相邻，逐条展示` : base;
+});
+/** 所选提交不相邻时的缺口数量，决定走累计还是逐条审查 */
+const batchGap = computed(() => selectionRange.value?.missed ?? 0);
+/** 工具栏主按钮文案：连续选择看累计，不相邻时逐条展示 */
+const batchActionLabel = computed(() => {
+  if (selectedCommitCount.value <= 1) return "查看改动";
+  return batchGap.value > 0 ? `逐条查看（${selectedCommitCount.value}）` : `查看合并改动（${selectedCommitCount.value}）`;
+});
+/** 右键菜单命中的提交是否在多选集合里，决定是否提供合并审查入口 */
+const commitMenuInSelection = computed(() => {
+  const menu = commitMenu.value;
+  if (!menu) return false;
+  return selectedCommitHashes.value.size > 1 && selectedCommitHashes.value.has(menu.commit.hash);
+});
 const upstreamLabel = computed(() => {
   const upstream = branch.value?.upstream_target;
   // 跟踪引用可以由 refspec 映射到别名，这里展示远程仓库里的实际分支名。
@@ -107,6 +164,176 @@ const syncHint = computed(() => {
 });
 
 /**
+ * 用新的哈希集合替换多选，整体替换以触发行高亮。
+ * @param hashes - 新的选中集合
+ * @returns void
+ */
+function applyCommitSelection(hashes: Set<string>): void {
+  selectedCommitHashes.value = hashes;
+}
+
+/**
+ * 清除多选与连选锚点。
+ * @returns void
+ */
+function clearCommitSelection(): void {
+  if (!selectedCommitHashes.value.size && !commitAnchorHash.value) return;
+  selectedCommitHashes.value = new Set();
+  commitAnchorHash.value = null;
+}
+
+/**
+ * 切换单行选中，并把该行设为连选锚点。
+ * @param index - 提交在弹窗历史中的位置
+ * @returns void
+ */
+function toggleCommitSelection(index: number): void {
+  const commit = commits.value[index];
+  if (!commit) return;
+  const next = new Set(selectedCommitHashes.value);
+  if (next.has(commit.hash)) {
+    next.delete(commit.hash);
+  } else {
+    next.add(commit.hash);
+  }
+  commitAnchorHash.value = commit.hash;
+  applyCommitSelection(next);
+}
+
+/**
+ * 选中从锚点到目标行的连续区间。
+ * @param targetIndex - 目标提交在弹窗历史中的位置
+ * @param additive - 是否在已有选择上追加区间（Ctrl+Shift 点选）
+ * @returns void
+ */
+function selectCommitRange(targetIndex: number, additive = false): void {
+  const target = commits.value[targetIndex];
+  if (!target) return;
+  const anchorIndex = commitAnchorHash.value
+    ? commits.value.findIndex((commit) => commit.hash === commitAnchorHash.value)
+    : -1;
+  const from = anchorIndex >= 0 ? anchorIndex : targetIndex;
+  const next = new Set(additive ? selectedCommitHashes.value : []);
+  for (let index = Math.min(from, targetIndex); index <= Math.max(from, targetIndex); index += 1) {
+    const commit = commits.value[index];
+    if (commit) next.add(commit.hash);
+  }
+  commitAnchorHash.value = commits.value[from]?.hash ?? target.hash;
+  applyCommitSelection(next);
+}
+
+/**
+ * 选中弹窗当前已加载的全部提交（列表内 Ctrl+A）。
+ * @returns void
+ */
+function selectAllCommits(): void {
+  const first = commits.value[0];
+  if (!first) return;
+  commitAnchorHash.value = first.hash;
+  applyCommitSelection(new Set(commits.value.map((commit) => commit.hash)));
+}
+
+/**
+ * 提交行单击：普通点击打开单提交审查，Ctrl 切换多选，Shift 连选。
+ * @param event - 鼠标事件
+ * @param index - 提交在弹窗历史中的位置
+ * @param trigger - 发起审查的提交行
+ * @returns void
+ */
+function onCommitClick(event: MouseEvent, index: number, trigger: HTMLElement): void {
+  if (loading.value || gitBusy.value || activeAction.value) return;
+  if (event.shiftKey) {
+    event.preventDefault();
+    selectCommitRange(index, event.ctrlKey || event.metaKey);
+    return;
+  }
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    toggleCommitSelection(index);
+    return;
+  }
+  clearCommitSelection();
+  // 关闭审查后再 Shift 点选，可从刚看过的提交开始连选。
+  commitAnchorHash.value = commits.value[index]?.hash ?? null;
+  openReview(index, trigger);
+}
+
+/**
+ * 提交行键盘：Enter 查看、Space 多选、↑↓ 移动焦点、Ctrl+A 全选。
+ * @param event - 键盘事件
+ * @param index - 当前行提交在弹窗历史中的位置
+ * @param trigger - 当前行元素
+ * @returns void
+ */
+function onCommitKeydown(event: KeyboardEvent, index: number, trigger: HTMLElement): void {
+  if (loading.value || gitBusy.value || activeAction.value) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    openReviewFromRow(index, trigger);
+    return;
+  }
+  if (event.key === " ") {
+    event.preventDefault();
+    toggleCommitSelection(index);
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    selectAllCommits();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const rows = Array.from(document.querySelectorAll<HTMLElement>(".preview-commits .preview-commit"));
+  const next = rows[rows.indexOf(trigger) + (event.key === "ArrowDown" ? 1 : -1)];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+  if (!event.shiftKey) return;
+  const targetIndex = Number(next.dataset.commitIndex);
+  if (!Number.isInteger(targetIndex)) return;
+  if (!commitAnchorHash.value) commitAnchorHash.value = commits.value[index]?.hash ?? null;
+  selectCommitRange(targetIndex, true);
+}
+
+/**
+ * 行内 Enter：选中的多条包含该行时打开批量审查，否则打开单提交审查。
+ * @param index - 提交在弹窗历史中的位置
+ * @param trigger - 发起审查的提交行
+ * @returns void
+ */
+function openReviewFromRow(index: number, trigger: HTMLElement | null): void {
+  const commit = commits.value[index];
+  if (!commit) return;
+  if (selectedCommitHashes.value.size > 1 && selectedCommitHashes.value.has(commit.hash)) {
+    openBatchReview(trigger);
+    return;
+  }
+  openReview(index, trigger);
+}
+
+/**
+ * 打开多选提交的批量审查；只选中一条时退回单提交审查。
+ * @param trigger - 发起审查的提交行，用于关闭后恢复焦点
+ * @returns void
+ */
+function openBatchReview(trigger: HTMLElement | null = null): void {
+  const commitsInBatch = selectedCommits.value;
+  const indexes = selectedCommitIndexes.value;
+  if (!commitsInBatch.length) return;
+  if (commitsInBatch.length === 1) {
+    openReview(indexes[0], trigger);
+    return;
+  }
+  closeCommitMenu();
+  reviewTrigger = trigger instanceof HTMLButtonElement ? trigger : null;
+  reviewCommits.value = commits.value.slice();
+  // 现有审查界面挂到 body，暂时关闭原生弹窗以免审查被遮住，同时保留历史和滚动状态。
+  dialog.value?.close();
+  reviewBatch.value = commitsInBatch;
+  reviewIndex.value = indexes[0];
+}
+
+/**
  * 从预览打开所选提交的现有审查界面。
  * @param index - 提交在弹窗历史中的位置
  * @param trigger - 发起审查的提交行，用于关闭审查后恢复焦点
@@ -118,6 +345,7 @@ function openReview(index: number, trigger: HTMLElement | null): void {
   reviewCommits.value = commits.value.slice();
   // 现有审查界面挂到 body，暂时关闭原生弹窗以免审查被遮住，同时保留历史和滚动状态。
   dialog.value?.close();
+  reviewBatch.value = null;
   reviewIndex.value = index;
 }
 
@@ -256,12 +484,16 @@ async function cherryPickFromMenu(): Promise<void> {
 }
 
 /**
- * 弹窗内 Esc 优先收起右键菜单，菜单关闭后再退出预览。
+ * 弹窗内 Esc 优先收起右键菜单，其次清除多选，最后退出预览。
  * @returns void
  */
 function onDialogCancel(): void {
   if (commitMenu.value) {
     closeCommitMenu();
+    return;
+  }
+  if (selectedCommitHashes.value.size) {
+    clearCommitSelection();
     return;
   }
   emit("close");
@@ -288,6 +520,7 @@ function onDocumentMouseDown(event: MouseEvent): void {
  */
 async function closeReview(): Promise<void> {
   reviewIndex.value = null;
+  reviewBatch.value = null;
   reviewCommits.value = [];
   await nextTick();
   dialog.value?.showModal();
@@ -296,11 +529,24 @@ async function closeReview(): Promise<void> {
 }
 
 /**
- * 在预览已加载的提交范围内切换审查对象。
+ * 批量审查内切换到某条提交的单提交审查，弹窗保持打开。
+ * @param hash - 目标提交哈希
+ * @returns void
+ */
+function focusCommitFromBatch(hash: string): void {
+  const index = reviewCommits.value.findIndex((commit) => commit.hash === hash);
+  if (index < 0) return;
+  reviewBatch.value = null;
+  reviewIndex.value = index;
+}
+
+/**
+ * 在预览已加载的提交范围内切换审查对象；批量审查不参与逐条切换。
  * @param delta - 现有审查界面发出的上一个或下一个偏移量
  * @returns void
  */
 function stepReview(delta: number): void {
+  if (reviewBatch.value) return;
   const nextIndex = (reviewIndex.value ?? 0) + delta;
   if (nextIndex >= 0 && nextIndex < reviewCommits.value.length) {
     reviewIndex.value = nextIndex;
@@ -338,7 +584,8 @@ onBeforeUnmount(() => {
           </div>
           <h2 id="branch-preview-title" :title="target.branch.name">{{ target.branch.name }}</h2>
         </div>
-        <CommitSearchBox v-if="!target.branch.is_remote" class="preview-search" :controller="commitSearch" />
+        <!-- 本地和远程分支共用同一套关键词/作者筛选，查询范围固定在打开时的提交快照 -->
+        <CommitSearchBox class="preview-search" :controller="commitSearch" />
         <button class="close-btn" type="button" aria-label="关闭分支预览" autofocus @click="emit('close')">×</button>
       </header>
 
@@ -387,6 +634,17 @@ onBeforeUnmount(() => {
       </section>
       <div v-else class="preview-sync preview-hint">历史来自本地保存的远程分支引用</div>
 
+      <!-- 多选提交后的操作条：展示选中范围，提供批量审查与清除入口 -->
+      <div v-if="selectedCommitCount > 0" class="preview-selection-bar" role="group" aria-label="已选中的提交">
+        <span class="selection-count">已选择 {{ selectedCommitCount }} 个提交</span>
+        <span class="selection-range" :title="selectionRangeLabel">{{ selectionRangeLabel }}</span>
+        <span class="selection-hint">Shift 连选 · Ctrl 点选 · Enter 查看</span>
+        <div class="selection-actions">
+          <button class="selection-btn" type="button" @click="clearCommitSelection">清除选择</button>
+          <button class="selection-btn primary" type="button" @click="openBatchReview()">{{ batchActionLabel }}</button>
+        </div>
+      </div>
+
       <!-- 独立的提交历史与分页 -->
       <section class="preview-history" aria-label="分支提交历史" :aria-busy="loading || loadingMore" @scroll="closeCommitMenu">
         <div v-if="historyError" class="preview-empty preview-error" role="status">
@@ -403,9 +661,14 @@ onBeforeUnmount(() => {
             <li v-for="(commit, index) in commits" :key="commit.hash">
               <button
                 class="preview-commit"
+                :class="{ selected: selectedCommitHashes.has(commit.hash) }"
                 type="button"
                 :disabled="loading || !!gitBusy || !!activeAction"
-                @click="openReview(index, $event.currentTarget as HTMLElement)"
+                :data-commit-index="index"
+                :aria-pressed="selectedCommitHashes.has(commit.hash)"
+                :title="`${commit.subject}\nCtrl / Shift 点选可多选提交`"
+                @click="onCommitClick($event, index, $event.currentTarget as HTMLElement)"
+                @keydown="onCommitKeydown($event, index, $event.currentTarget as HTMLElement)"
                 @contextmenu.prevent="openCommitContext($event, commit, index)"
               >
                 <span class="preview-commit-body">
@@ -440,6 +703,7 @@ onBeforeUnmount(() => {
         <div class="menu-hash">{{ commitMenu.commit.short_hash }}</div>
         <div class="menu-subject">{{ commitMenu.commit.subject }}</div>
       </div>
+      <button v-if="commitMenuInSelection" class="menu-item" type="button" @click="openBatchReview(menuTrigger); closeCommitMenu()"><span>查看选中的 {{ selectedCommitCount }} 个提交改动</span></button>
       <button class="menu-item" type="button" @click="reviewFromMenu"><span>查看改动</span><span class="hint">Enter</span></button>
       <button class="menu-item" type="button" @click="cherryPickFromMenu"><span>Cherry-pick 到当前分支</span></button>
       <div class="menu-sep"></div>
@@ -458,8 +722,11 @@ onBeforeUnmount(() => {
     :repo-path="target.repoPath"
     :index="reviewIndex ?? 0"
     :total="reviewCommits.length"
+    :batch="reviewBatch"
+    :batch-gap="batchGap"
     @close="closeReview"
     @step="stepReview"
+    @focus-commit="focusCommitFromBatch"
   />
 </template>
 
@@ -595,6 +862,33 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* 多选提交：左侧强调条 + 淡底色，hover 时仍能看清选中态。 */
+.preview-commit.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.preview-commit.selected:hover {
+  background: var(--accent-soft);
+}
+
+.preview-commit.selected .preview-subject {
+  color: var(--accent-strong);
+}
+
+/* 批量审查工具条：子元素复用主列表的 .selection-* 样式，这里只处理弹窗内间距。 */
+.preview-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 24px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
 }
 
 .preview-empty,
