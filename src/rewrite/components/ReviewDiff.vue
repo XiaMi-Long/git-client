@@ -15,6 +15,7 @@
   @changeLog
     - 2026-11-04: Created. 新 Review 真实 diff 渲染，统一/双栏/换行。
     - 2026-11-16: Updated. 支持在行号右侧展示逐行作者信息。
+    - 2026-11-17: Updated. 逐行作者可额外展示该行的提交时间。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -27,12 +28,15 @@ const props = withDefaults(defineProps<{
   wrap: boolean;
   /** 是否在行号右侧展示逐行作者 */
   showBlame?: boolean;
+  /** 是否在作者右侧额外展示该行的提交时间 */
+  showBlameTime?: boolean;
   /** 旧版本行号对应的 blame，删除行和双栏左侧使用 */
   oldBlame?: Map<number, BlameLine>;
   /** 新版本行号对应的 blame，新增行、上下文和双栏右侧使用 */
   newBlame?: Map<number, BlameLine>;
 }>(), {
   showBlame: false,
+  showBlameTime: false,
   oldBlame: () => new Map<number, BlameLine>(),
   newBlame: () => new Map<number, BlameLine>(),
 });
@@ -65,13 +69,28 @@ function unifiedBlame(line: DiffLine): BlameLine | null {
 /**
  * 生成作者列悬停说明。
  * @param blame - 作者信息
- * @returns 作者、提交短哈希和标题
+ * @returns 作者、提交短哈希、提交时间和标题
  */
 function blameTitle(blame: BlameLine): string {
   const authorName = blame.author_name || "未知作者";
   const identity = blame.author_email ? `${authorName} <${blame.author_email}>` : authorName;
+  const time = formatBlameTime(blame);
+  const timePart = time ? ` · ${time}` : "";
   const summary = blame.summary ? ` · ${blame.summary}` : "";
-  return `${identity} · ${blame.short_hash}${summary}`;
+  return `${identity} · ${blame.short_hash}${timePart}${summary}`;
+}
+
+/**
+ * 把 blame 的提交时间格式化为本地 `YYYY-MM-DD HH:mm`。
+ * @param blame - 作者信息
+ * @returns 时间文案；缺少时间戳时为空
+ */
+function formatBlameTime(blame: BlameLine): string {
+  if (!blame.author_time) return "";
+  const date = new Date(blame.author_time * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** 统一视图行样式：真实 line_type -> 原型 class */
@@ -153,13 +172,16 @@ const splitHunks = computed(() => {
           v-for="(entry, index) in hunk.lines"
           :key="`${hunk.header}-${index}`"
           class="diff-line"
-          :class="[lineClass(entry.line), { 'with-blame': showBlame }]"
+          :class="[lineClass(entry.line), { 'with-blame': showBlame, 'with-blame-time': showBlame && showBlameTime }]"
         >
           <span class="ln">{{ entry.line.old_line_no ?? "" }}</span>
           <span class="ln">{{ entry.line.new_line_no ?? "" }}</span>
           <span class="sign">{{ lineSign(entry.line) }}</span>
           <span v-if="showBlame" class="blame" :title="entry.blame ? blameTitle(entry.blame) : undefined">
             {{ entry.blame?.author_name || "" }}
+          </span>
+          <span v-if="showBlame && showBlameTime" class="blame-time" :title="entry.blame ? blameTitle(entry.blame) : undefined">
+            {{ entry.blame ? formatBlameTime(entry.blame) : "" }}
           </span>
           <span class="code" v-html="highlightCode(entry.line.content)"></span>
         </div>
@@ -175,12 +197,15 @@ const splitHunks = computed(() => {
             v-for="(row, index) in hunk.rows"
             :key="`left-${hunk.header}-${index}`"
             class="split-line"
-            :class="[row.left ? lineClass(row.left) : 'blank', { 'with-blame': showBlame }]"
+            :class="[row.left ? lineClass(row.left) : 'blank', { 'with-blame': showBlame, 'with-blame-time': showBlame && showBlameTime }]"
           >
             <span class="ln">{{ row.left?.old_line_no ?? "" }}</span>
             <span class="sign">{{ row.left ? lineSign(row.left) : "" }}</span>
             <span v-if="showBlame" class="blame" :title="row.leftBlame ? blameTitle(row.leftBlame) : undefined">
               {{ row.leftBlame?.author_name || "" }}
+            </span>
+            <span v-if="showBlame && showBlameTime" class="blame-time" :title="row.leftBlame ? blameTitle(row.leftBlame) : undefined">
+              {{ row.leftBlame ? formatBlameTime(row.leftBlame) : "" }}
             </span>
             <span class="code" v-html="row.left ? highlightCode(row.left.content) : ''"></span>
           </div>
@@ -195,12 +220,15 @@ const splitHunks = computed(() => {
             v-for="(row, index) in hunk.rows"
             :key="`right-${hunk.header}-${index}`"
             class="split-line"
-            :class="[row.right ? lineClass(row.right) : 'blank', { 'with-blame': showBlame }]"
+            :class="[row.right ? lineClass(row.right) : 'blank', { 'with-blame': showBlame, 'with-blame-time': showBlame && showBlameTime }]"
           >
             <span class="ln">{{ row.right?.new_line_no ?? "" }}</span>
             <span class="sign">{{ row.right ? lineSign(row.right) : "" }}</span>
             <span v-if="showBlame" class="blame" :title="row.rightBlame ? blameTitle(row.rightBlame) : undefined">
               {{ row.rightBlame?.author_name || "" }}
+            </span>
+            <span v-if="showBlame && showBlameTime" class="blame-time" :title="row.rightBlame ? blameTitle(row.rightBlame) : undefined">
+              {{ row.rightBlame ? formatBlameTime(row.rightBlame) : "" }}
             </span>
             <span class="code" v-html="row.right ? highlightCode(row.right.content) : ''"></span>
           </div>

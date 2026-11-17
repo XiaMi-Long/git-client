@@ -88,6 +88,10 @@ pub struct LogQuery {
     /// 使用拓扑顺序排列提交
     #[serde(default)]
     pub topo_order: bool,
+    /// 只沿第一父提交遍历（--first-parent）
+    /// 用于分支预览的「仅本分支」视图：合进来的其他分支提交不会出现在结果里
+    #[serde(default)]
+    pub first_parent: bool,
     /// 起始时间（Git 可识别的日期表达式）
     #[serde(default)]
     pub since: Option<String>,
@@ -107,6 +111,7 @@ impl Default for LogQuery {
             all_branches: false,
             path: None,
             topo_order: false,
+            first_parent: false,
             since: None,
             until: None,
         }
@@ -152,6 +157,7 @@ impl GitExecutor {
         repo_path: &Path,
         branch: Option<&str>,
         all_branches: bool,
+        first_parent: bool,
     ) -> GitResult<Vec<CommitAuthor>> {
         let mut args = vec![
             "log".to_string(),
@@ -163,6 +169,10 @@ impl GitExecutor {
             "--until=now".to_string(),
         ];
         Self::append_log_scope(&mut args, branch, all_branches);
+        // 作者候选与提交列表使用同一遍历范围，避免出现选不到任何提交的作者。
+        if first_parent {
+            args.push("--first-parent".to_string());
+        }
         args.push("--".to_string());
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let output = match Self::run_git_with_timeout(repo_path, &arg_refs, RECENT_AUTHOR_TIMEOUT).await
@@ -222,6 +232,11 @@ impl GitExecutor {
 
         if query.topo_order {
             args.push("--topo-order".to_string());
+        }
+
+        // 只看本分支主干：合并进来的其他分支提交不再出现在列表里。
+        if query.first_parent {
+            args.push("--first-parent".to_string());
         }
 
         if let Some(since) = &query.since {

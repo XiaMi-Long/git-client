@@ -24,6 +24,7 @@
     - 2026-11-16: Updated. 审查 diff 按设置展示可选的上下文行数。
     - 2026-11-16: Updated. 顶部统一工具栏支持逐行作者开关，并把复制哈希并入同一工具栏。
     - 2026-11-16: Updated. 顶部工具栏增加上下文行数选择，切换后保留当前文件并重新读取 diff。
+    - 2026-11-17: Updated. 逐行作者后可再开启「提交时间」，在作者列右侧展示该行提交时间。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
@@ -76,6 +77,8 @@ const wrap = ref(false);
 const copied = ref(false);
 // 弹窗内开关与设置页共用同一偏好，下次打开审查时沿用上次选择。
 const showBlame = ref(settingsStore.showLineAuthors);
+// 提交时间列跟随逐行作者出现，默认关闭，仅在本次审查内使用。
+const showBlameTime = ref(false);
 const oldBlame = shallowRef<Map<number, BlameLine>>(new Map());
 const newBlame = shallowRef<Map<number, BlameLine>>(new Map());
 const blameLoading = ref(false);
@@ -569,6 +572,15 @@ onMounted(async () => {
               title="显示每行作者（git blame）"
               @click="toggleBlame"
             >逐行作者</button>
+            <button
+              class="tab"
+              :class="{ active: showBlameTime }"
+              type="button"
+              :disabled="!showBlame"
+              :aria-pressed="showBlameTime"
+              :title="showBlame ? '在作者右侧显示该行的提交时间' : '先开启逐行作者'"
+              @click="showBlameTime = !showBlameTime"
+            >提交时间</button>
           </div>
           <span class="review-context">
             <span class="review-context-label">上下文</span>
@@ -652,6 +664,7 @@ onMounted(async () => {
               :view="diffView"
               :wrap="wrap"
               :show-blame="showBlame"
+              :show-blame-time="showBlameTime"
               :old-blame="oldBlame"
               :new-blame="newBlame"
             />
@@ -734,6 +747,12 @@ onMounted(async () => {
 .review-context-select :deep(.app-select-chevron) {
   width: 12px;
   height: 12px;
+}
+
+/* 提交时间开关在未开启逐行作者时不可用。 */
+.review-toolbar .tab:disabled {
+  color: var(--muted-2);
+  cursor: default;
 }
 
 /* 作者数据读取期间在开关后显示旋转指示，不额外占用行内文字。 */

@@ -81,10 +81,16 @@ pub async fn git_list_recent_commit_authors(
     path: String,
     branch: Option<String>,
     all_branches: bool,
+    first_parent: Option<bool>,
 ) -> Result<Vec<CommitAuthor>, String> {
-    GitExecutor::list_recent_commit_authors(&to_path(&path), branch.as_deref(), all_branches)
-        .await
-        .map_err(|error| error.to_string())
+    GitExecutor::list_recent_commit_authors(
+        &to_path(&path),
+        branch.as_deref(),
+        all_branches,
+        first_parent.unwrap_or(false),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// 获取指定分支范围内最近一段时间的每日提交数量

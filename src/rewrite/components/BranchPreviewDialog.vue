@@ -75,7 +75,7 @@ let menuTrigger: HTMLElement | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 const {
   branch, commits, loading, loadingMore, hasMore, historyError, paginationError,
-  commitSearch, hasCommitFilters,
+  commitSearch, hasCommitFilters, showAllCommits, setShowAllCommits,
   activeAction, actionResult, gitBusy, hasKnownUpstream, isDiverged, canFetch, canPull, canPush,
   refreshPreview, loadMore, execute,
 } = useBranchPreview(props.target);
@@ -584,6 +584,21 @@ onBeforeUnmount(() => {
           </div>
           <h2 id="branch-preview-title" :title="target.branch.name">{{ target.branch.name }}</h2>
         </div>
+        <!-- 历史范围：默认只看本分支主干，避免合并进来的其他分支提交重复出现 -->
+        <div class="preview-scope" role="group" aria-label="历史范围">
+          <button
+            type="button"
+            :class="{ active: !showAllCommits }"
+            title="只看本分支主干上的提交，不含合并进来的其他分支"
+            @click="setShowAllCommits(false)"
+          >仅本分支</button>
+          <button
+            type="button"
+            :class="{ active: showAllCommits }"
+            title="显示完整历史，包含合并进来的其他分支提交"
+            @click="setShowAllCommits(true)"
+          >全部</button>
+        </div>
         <!-- 本地和远程分支共用同一套关键词/作者筛选，查询范围固定在打开时的提交快照 -->
         <CommitSearchBox class="preview-search" :controller="commitSearch" />
         <button class="close-btn" type="button" aria-label="关闭分支预览" autofocus @click="emit('close')">×</button>
@@ -634,19 +649,18 @@ onBeforeUnmount(() => {
       </section>
       <div v-else class="preview-sync preview-hint">历史来自本地保存的远程分支引用</div>
 
-      <!-- 多选提交后的操作条：展示选中范围，提供批量审查与清除入口 -->
-      <div v-if="selectedCommitCount > 0" class="preview-selection-bar" role="group" aria-label="已选中的提交">
-        <span class="selection-count">已选择 {{ selectedCommitCount }} 个提交</span>
-        <span class="selection-range" :title="selectionRangeLabel">{{ selectionRangeLabel }}</span>
-        <span class="selection-hint">Shift 连选 · Ctrl 点选 · Enter 查看</span>
-        <div class="selection-actions">
-          <button class="selection-btn" type="button" @click="clearCommitSelection">清除选择</button>
-          <button class="selection-btn primary" type="button" @click="openBatchReview()">{{ batchActionLabel }}</button>
-        </div>
-      </div>
-
       <!-- 独立的提交历史与分页 -->
       <section class="preview-history" aria-label="分支提交历史" :aria-busy="loading || loadingMore" @scroll="closeCommitMenu">
+        <!-- 多选提交后的操作条：放在滚动容器内，才能和提交行同宽并对齐，滚动时吸顶 -->
+        <div v-if="selectedCommitCount > 0" class="preview-selection-bar" role="group" aria-label="已选中的提交">
+          <span class="selection-count">已选择 {{ selectedCommitCount }} 个提交</span>
+          <span class="selection-range" :title="selectionRangeLabel">{{ selectionRangeLabel }}</span>
+          <span class="selection-hint">Shift 连选 · Ctrl 点选 · Enter 查看</span>
+          <div class="selection-actions">
+            <button class="selection-btn" type="button" @click="clearCommitSelection">清除选择</button>
+            <button class="selection-btn primary" type="button" @click="openBatchReview()">{{ batchActionLabel }}</button>
+          </div>
+        </div>
         <div v-if="historyError" class="preview-empty preview-error" role="status">
           <p>读取分支失败。{{ historyError }}</p>
           <button class="icon-control" type="button" @click="refreshPreview">重试</button>
@@ -878,17 +892,49 @@ onBeforeUnmount(() => {
   color: var(--accent-strong);
 }
 
-/* 批量审查工具条：子元素复用主列表的 .selection-* 样式，这里只处理弹窗内间距。 */
+/* 批量审查工具条：在滚动容器内吸顶，宽度与提交行一致，子元素复用主列表的 .selection-* 样式。 */
 .preview-selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin: 12px 24px 0;
-  padding: 8px 12px;
-  border: 1px solid var(--accent);
-  border-radius: 10px;
+  padding: 9px 24px;
+  border-bottom: 1px solid var(--border);
   background: var(--accent-soft);
+}
+
+/* 历史范围切换：与弹窗内的控件保持同样的圆角和高度。 */
+.preview-scope {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.preview-scope button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.preview-scope button:hover {
+  color: var(--text);
+}
+
+.preview-scope button.active {
+  background: var(--surface);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.12));
 }
 
 .preview-empty,

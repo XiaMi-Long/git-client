@@ -25,6 +25,8 @@ pub struct BlameLine {
     pub commit_hash: String,
     /// 提交短哈希，供界面展示。
     pub short_hash: String,
+    /// 最后修改该行的提交时间（Unix 秒），供「提交时间」列展示。
+    pub author_time: i64,
     /// 提交标题，供悬停提示。
     pub summary: String,
 }
@@ -61,6 +63,7 @@ impl GitExecutor {
         let mut final_line = 0u32;
         let mut author_name = String::new();
         let mut author_email = String::new();
+        let mut author_time = 0i64;
         let mut summary = String::new();
 
         for line in raw.lines() {
@@ -77,6 +80,7 @@ impl GitExecutor {
                         author_email: author_email.clone(),
                         short_hash: commit_hash.chars().take(7).collect(),
                         commit_hash: commit_hash.clone(),
+                        author_time,
                         summary: summary.clone(),
                     });
                 }
@@ -97,6 +101,10 @@ impl GitExecutor {
                     .to_string();
                 continue;
             }
+            if let Some(value) = line.strip_prefix("author-time ") {
+                author_time = value.trim().parse::<i64>().unwrap_or(0);
+                continue;
+            }
             if let Some(value) = line.strip_prefix("summary ") {
                 summary = value.to_string();
                 continue;
@@ -108,6 +116,7 @@ impl GitExecutor {
                 final_line = line_number;
                 author_name.clear();
                 author_email.clear();
+                author_time = 0;
                 summary.clear();
             }
         }

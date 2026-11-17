@@ -131,6 +131,8 @@ export interface LogQuery {
   path?: string | null;
   /** 是否使用拓扑顺序排列提交 */
   topo_order?: boolean;
+  /** 只沿第一父提交遍历（不含合并进来的其他分支提交） */
+  first_parent?: boolean;
   /** 可选的起始时间表达式 */
   since?: string | null;
   /** 可选的结束时间表达式 */
@@ -225,6 +227,8 @@ export interface BlameLine {
   author_email: string;
   commit_hash: string;
   short_hash: string;
+  /** 最后修改该行的提交时间（Unix 秒） */
+  author_time: number;
   /** 最后修改该行的提交标题 */
   summary: string;
 }

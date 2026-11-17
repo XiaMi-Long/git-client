@@ -17,6 +17,7 @@
     - 2026-11-13: Updated. 选择框统一由 AppSelect 展示，保留各表单的既有尺寸。
     - 2026-11-14: Updated. 项目栏增加分组标题、快捷添加按钮、拖拽目标与分组管理菜单样式。
     - 2026-11-16: Updated. 增加提交多选工具条、选中行强调样式与合并审查内的提交 chips。
+    - 2026-11-17: Updated. 逐行作者可追加提交时间列。
 */
 
 /* ===== 主题 token ===== */
@@ -1707,6 +1708,22 @@ body.modal-open { overflow: hidden; }
   grid-template-columns: 42px 42px 18px 100px minmax(0, 1fr);
 }
 
+/* 逐行作者 + 提交时间：在作者列后追加时间列，宽度容纳 `YYYY-MM-DD HH:mm`。 */
+.diff-line.with-blame-time {
+  grid-template-columns: 42px 42px 18px 100px 116px minmax(0, 1fr);
+}
+
+.blame-time {
+  overflow: hidden;
+  padding: 0 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .blame {
   overflow: hidden;
   padding: 0 8px;
@@ -1720,6 +1737,11 @@ body.modal-open { overflow: hidden; }
 
 .split-line.with-blame {
   grid-template-columns: 42px 18px 88px minmax(0, 1fr);
+}
+
+/* 双栏视野更窄，时间列相应收窄。 */
+.split-line.with-blame-time {
+  grid-template-columns: 42px 18px 88px 110px minmax(0, 1fr);
 }
 
 .ln {

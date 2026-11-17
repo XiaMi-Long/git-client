@@ -26,6 +26,8 @@ interface CommitSearchScope {
   /** Git 日志范围，null 表示按当前检出分支读取。 */
   branch: string | null;
   allBranches: boolean;
+  /** 只沿第一父提交遍历时，作者候选也要用同一范围，避免选到不存在的作者。 */
+  firstParent?: boolean;
   /** 主列表跟随 HEAD 时，以当前检出引用识别范围切换。 */
   headRef?: string;
 }
@@ -86,6 +88,7 @@ export function useCommitSearch(source: CommitSearchSource) {
         path: requestScope.path,
         branch: requestScope.branch,
         allBranches: requestScope.allBranches,
+        firstParent: Boolean(requestScope.firstParent),
       });
       if (requestSequence === authorRequestSequence) {
         authorOptions.value = recentAuthors;
@@ -238,6 +241,7 @@ export function useCommitSearch(source: CommitSearchSource) {
     () => scope.value?.path,
     () => scope.value?.branch,
     () => scope.value?.allBranches,
+    () => scope.value?.firstParent,
     () => scope.value?.headRef,
   ], ([repoId], [previousRepoId]) => {
     authorRequestSequence++;
