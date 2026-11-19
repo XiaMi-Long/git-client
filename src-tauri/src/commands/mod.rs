@@ -231,8 +231,9 @@ pub async fn git_create_branch(
     path: String,
     name: String,
     checkout: bool,
+    start_point: Option<String>,
 ) -> Result<BranchOperationResult, String> {
-    GitExecutor::create_branch(&to_path(&path), &name, checkout)
+    GitExecutor::create_branch(&to_path(&path), &name, checkout, start_point.as_deref())
         .await
         .map_err(|e| e.to_string())
 }

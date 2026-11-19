@@ -285,12 +285,17 @@ impl GitExecutor {
         repo_path: &Path,
         name: &str,
         checkout: bool,
+        start_point: Option<&str>,
     ) -> GitResult<BranchOperationResult> {
-        let args: Vec<&str> = if checkout {
+        // 指定基线提交时把起点追加在分支名之后；`--` 防止以 - 开头的名字被当成参数。
+        let mut args: Vec<&str> = if checkout {
             vec!["checkout", "-b", name]
         } else {
-            vec!["branch", name]
+            vec!["branch", "--", name]
         };
+        if let Some(start) = start_point {
+            args.push(start);
+        }
 
         match Self::run_git(repo_path, &args).await {
             Ok(_) => {
@@ -301,7 +306,14 @@ impl GitExecutor {
                 };
                 Ok(BranchOperationResult {
                     success: true,
-                    message: format!("分支 '{name}' 创建成功"),
+                    message: match start_point {
+                        Some(start) => {
+                            // 提示里用短哈希，避免整条 40 位哈希挤满提示条。
+                            let short: String = start.chars().take(7).collect();
+                            format!("分支 '{name}' 已基于 {short} 创建")
+                        }
+                        None => format!("分支 '{name}' 创建成功"),
+                    },
                     current_branch: current,
                 })
             }

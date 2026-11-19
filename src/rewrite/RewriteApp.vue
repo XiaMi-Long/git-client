@@ -35,6 +35,7 @@
     - 2026-11-14: Updated. 项目栏支持手动分组、拖拽/右键归组、分组内快捷添加项目、折叠和分组管理。
     - 2026-11-16: Updated. 提交列表支持 Shift/Ctrl 多选与合并审查，普通点击仍直接打开单提交审查。
     - 2026-11-16: Updated. 顶栏和冲突条增加「刷新」入口，外部解决冲突后自动同步操作状态并收起弹窗。
+    - 2026-11-19: Updated. 提交右键菜单支持以该提交为基线创建本地分支。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -160,6 +161,9 @@ interface BranchDialogState {
 
 const branchDialog = ref<BranchDialogState | null>(null);
 const branchDialogInput = ref<HTMLInputElement | null>(null);
+/** 「以此为基线创建分支」对话框：以右键提交为起点，可选择是否顺手切换过去。 */
+const createFromCommitDialog = ref<{ commit: CommitInfo; value: string; checkout: boolean } | null>(null);
+const createFromCommitInput = ref<HTMLInputElement | null>(null);
 
 type StashDialogMode = "create" | "drop" | "batchDrop";
 const stashDialog = ref<{ mode: StashDialogMode; stash: StashInfo | null; value: string } | null>(null);
@@ -1209,6 +1213,49 @@ async function openCreateBranch(): Promise<void> {
     return;
   }
   await openBranchDialog("create", base);
+}
+
+/**
+ * 以右键提交为基线打开创建分支对话框。
+ * @param commit - 作为新分支起点的提交
+ * @returns {Promise<void>}
+ */
+async function openCreateFromCommitDialog(commit: CommitInfo): Promise<void> {
+  commitMenu.value = null;
+  closeFloatingPanels();
+  createFromCommitDialog.value = {
+    commit,
+    // 默认名带短哈希，直接回车也能得到一个不易重名的分支。
+    value: `branch-${commit.short_hash}`,
+    checkout: false,
+  };
+  await nextTick();
+  createFromCommitInput.value?.focus();
+  createFromCommitInput.value?.select();
+}
+
+/**
+ * 确认以指定提交为基线创建本地分支。
+ * @returns {Promise<void>}
+ */
+async function confirmCreateFromCommit(): Promise<void> {
+  const dialog = createFromCommitDialog.value;
+  if (!dialog || actionBusy.value) return;
+  const name = dialog.value.trim();
+  if (!name) {
+    showToast("分支名不能为空");
+    return;
+  }
+  if (/\s/.test(name)) {
+    showToast("分支名不能含空格");
+    return;
+  }
+  if (name.startsWith("-")) {
+    showToast("分支名不能以 - 开头");
+    return;
+  }
+  createFromCommitDialog.value = null;
+  showActionResult(await actions.createBranch(name, dialog.commit.hash, dialog.checkout));
 }
 
 /**
@@ -2746,6 +2793,7 @@ onUnmounted(() => {
       </button>
       <button class="menu-item" type="button" @click="openReview(commitMenu.index); commitMenu = null"><span>查看改动</span><span class="hint">Enter</span></button>
       <button class="menu-item" type="button" @click="cherryPickCommit(commitMenu.commit)"><span>Cherry-pick 到当前分支</span></button>
+      <button class="menu-item" type="button" @click="openCreateFromCommitDialog(commitMenu.commit)"><span>以此为基线创建新分支…</span></button>
       <div class="menu-sep"></div>
       <button class="menu-item" type="button" @click="copyCommitMessage(commitMenu.commit)"><span>复制提交信息</span></button>
       <button class="menu-item" type="button" @click="copyText(commitMenu.commit.short_hash, '已复制短哈希'); commitMenu = null"><span>复制短哈希</span></button>
@@ -2802,6 +2850,37 @@ onUnmounted(() => {
           <button class="action-btn secondary" type="button" @click="branchDialog = null">取消</button>
           <button class="action-btn" :class="branchDialogCopy.danger ? 'danger' : 'primary'" type="button" :disabled="!!actionBusy" @click="confirmBranchDialog()">
             {{ actionBusy ? "处理中…" : branchDialogCopy.confirm }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 以提交为基线创建本地分支：默认只创建不切换，可按需勾选 -->
+    <div v-if="createFromCommitDialog" class="action-backdrop" @click.self="createFromCommitDialog = null">
+      <section class="action-dialog" role="dialog" aria-modal="true" tabindex="-1" @keydown.esc.prevent="createFromCommitDialog = null">
+        <h2 class="action-title">以此为基线创建分支</h2>
+        <p class="action-desc">
+          基于提交 {{ createFromCommitDialog.commit.short_hash }} · {{ createFromCommitDialog.commit.subject }}
+        </p>
+        <div class="action-body">
+          <label class="action-field">
+            <span>分支名</span>
+            <input
+              ref="createFromCommitInput"
+              v-model="createFromCommitDialog.value"
+              placeholder="例如 feat/from-abc1234"
+              @keydown.enter.prevent="confirmCreateFromCommit()"
+            >
+          </label>
+          <label class="action-check">
+            <input v-model="createFromCommitDialog.checkout" type="checkbox">
+            <span>创建后切换到该分支</span>
+          </label>
+        </div>
+        <div class="action-actions">
+          <button class="action-btn secondary" type="button" @click="createFromCommitDialog = null">取消</button>
+          <button class="action-btn primary" type="button" :disabled="!!actionBusy" @click="confirmCreateFromCommit()">
+            {{ actionBusy ? "处理中…" : "创建" }}
           </button>
         </div>
       </section>

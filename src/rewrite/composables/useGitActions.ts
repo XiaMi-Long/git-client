@@ -152,11 +152,21 @@ export function useGitActions() {
    * @param name - 分支名
    * @returns 操作结果
    */
-  async function createBranch(name: string): Promise<GitActionResult> {
+  async function createBranch(
+    name: string,
+    startPoint?: string,
+    checkout = true,
+  ): Promise<GitActionResult> {
     return run("新建分支", async () => {
       const path = repoStore.activeRepo?.path;
       if (!path) return { ok: false, message: "仓库未打开" };
-      const result = await invoke<BranchOperationResult>("git_create_branch", { path, name, checkout: true });
+      const result = await invoke<BranchOperationResult>("git_create_branch", {
+        path,
+        name,
+        checkout,
+        // 未指定基线时由后端从当前 HEAD 创建。
+        startPoint: startPoint ?? null,
+      });
       focusCurrentBranch();
       await refreshAll();
       return { ok: result.success, message: result.message };
