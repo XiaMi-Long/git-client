@@ -10,6 +10,7 @@
  *   - 2026-11-07: Updated. 分支历史支持独立的关键词和作者条件。
  *   - 2026-11-10: Updated. 分支历史的作者筛选同步支持多选。
  *   - 2026-11-17: Updated. 增加「仅本分支 / 全部提交」范围切换，默认只沿第一父提交遍历。
+ *   - 2026-11-21: Updated. 默认显示所选分支的完整历史，并保留主线筛选。
  */
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -58,8 +59,8 @@ export function useBranchPreview(target: BranchPreviewTarget) {
   // 这里保存已提交给分支历史的条件，输入草稿由 useCommitSearch 管理。
   const keyword = ref("");
   const authorFilters = ref<CommitAuthor[]>([]);
-  /** 是否显示完整历史（含合并进来的其他分支提交）；默认只看本分支主干 */
-  const showAllCommits = ref(false);
+  /** 仅在选择「主线」时沿第一父提交查询，默认包含已合入的提交。 */
+  const mainlineOnly = ref(false);
   const hasCommitFilters = computed(() => Boolean(keyword.value || authorFilters.value.length));
   // 分页固定到同一个提交和筛选条件。条件变化时清除 loadedHead，使历史从第一页重新读取。
   let loadedHead: string | null = null;
@@ -72,7 +73,7 @@ export function useBranchPreview(target: BranchPreviewTarget) {
       path: target.repoPath,
       branch: `${branch.value?.commit_hash ?? target.branch.commit_hash}^{commit}`,
       allBranches: false,
-      firstParent: !showAllCommits.value,
+      firstParent: mainlineOnly.value,
     }),
     selectedAuthors: () => authorFilters.value,
     setKeyword: (nextKeyword) => applyHistoryFilters(authorFilters.value, nextKeyword),
@@ -126,22 +127,22 @@ export function useBranchPreview(target: BranchPreviewTarget) {
       search: keyword.value || null,
       authors: authorFilters.value,
       all_branches: false,
-      // 默认只沿第一父提交遍历：合并进来的其他分支提交不会重复出现在本分支列表里。
-      first_parent: !showAllCommits.value,
+      // 提交列表和作者候选共用主线条件，确保切换后两者仍按同一历史范围查询。
+      first_parent: mainlineOnly.value,
     };
     return invoke<CommitInfo[]>("git_get_log", { path: target.repoPath, query });
   }
 
   /**
-   * 切换历史范围（仅本分支主干 / 包含合并进来的提交）。
-   * @param all - true 显示完整历史，false 只看本分支
+   * 在所选分支的完整历史和主线历史之间切换。
+   * @param onlyMainline - 是否只沿第一父提交查询
    * @returns void
    */
-  function setShowAllCommits(all: boolean): void {
-    if (showAllCommits.value === all) {
+  function setMainlineOnly(onlyMainline: boolean): void {
+    if (mainlineOnly.value === onlyMainline) {
       return;
     }
-    showAllCommits.value = all;
+    mainlineOnly.value = onlyMainline;
     // 范围变化后旧列表不再成立，从第一页重新读取。
     loadedHead = null;
     commits.value = [];
@@ -293,7 +294,7 @@ export function useBranchPreview(target: BranchPreviewTarget) {
 
   return {
     branch, commits, loading, loadingMore, hasMore, historyError, paginationError,
-    commitSearch, hasCommitFilters, showAllCommits, setShowAllCommits,
+    commitSearch, hasCommitFilters, mainlineOnly, setMainlineOnly,
     activeAction, actionResult, gitBusy, hasKnownUpstream, isDiverged, canFetch, canPull, canPush,
     refreshPreview, loadMore, execute,
   };

@@ -9,6 +9,7 @@
  *   - 2026-11-07: Created. 支持提交搜索框的作者快捷筛选。
  *   - 2026-11-07: Updated. 主列表和分支预览分别传入查询范围及筛选状态。
  *   - 2026-11-10: Updated. 作者筛选改为多选，切换选项时保留浮层并支持一键清除。
+ *   - 2026-11-21: Updated. 支持从提交历史打开搜索弹窗时预填关键词。
  */
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -35,6 +36,8 @@ interface CommitSearchScope {
 /** 将搜索交互与历史视图的查询和筛选状态连接起来。 */
 interface CommitSearchSource {
   scope: () => CommitSearchScope | null;
+  /** 搜索视图打开时展示的关键词，由调用方决定首次查询时机。 */
+  initialKeyword?: string;
   selectedAuthors: () => CommitAuthor[];
   setKeyword: (keyword: string) => void;
   setAuthors: (authors: CommitAuthor[], keyword: string) => void;
@@ -48,7 +51,7 @@ interface CommitSearchSource {
 export function useCommitSearch(source: CommitSearchSource) {
   const scope = computed(source.scope);
   const selectedAuthors = computed(source.selectedAuthors);
-  const localSearch = ref("");
+  const localSearch = ref(source.initialKeyword ?? "");
   const searchInput = ref<HTMLInputElement | null>(null);
   const authorOptionsOpen = ref(false);
   const authorOptions = ref<CommitAuthor[]>([]);

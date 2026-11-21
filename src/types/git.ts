@@ -137,6 +137,8 @@ export interface LogQuery {
   limit: number;
   branch: string | null;
   search: string | null;
+  /** 将关键词按字面匹配提交信息，查询结果支持分页。 */
+  search_message_only?: boolean;
   /** 选中的精确作者，空数组表示不限制作者；多个作者按 OR 匹配。 */
   authors?: CommitAuthor[];
   /** 是否查询所有分支（--all），为 true 时忽略 branch */
@@ -145,7 +147,7 @@ export interface LogQuery {
   path?: string | null;
   /** 是否使用拓扑顺序排列提交 */
   topo_order?: boolean;
-  /** 只沿第一父提交遍历（不含合并进来的其他分支提交） */
+  /** 遇到合并提交时，只沿第一个父提交继续查询。 */
   first_parent?: boolean;
   /** 可选的起始时间表达式 */
   since?: string | null;

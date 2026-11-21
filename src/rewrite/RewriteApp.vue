@@ -37,6 +37,7 @@
     - 2026-11-16: Updated. 顶栏和冲突条增加「刷新」入口，外部解决冲突后自动同步操作状态并收起弹窗。
     - 2026-11-19: Updated. 提交右键菜单支持以该提交为基线创建本地分支。
     - 2026-11-21: Updated. 提交右键菜单支持安全撤销当前分支最新一次未推送的合入。
+    - 2026-11-21: Updated. 主提交列表支持按标题查询同系列提交。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -54,11 +55,13 @@ import type { BranchPreviewTarget } from "./composables/useBranchPreview";
 import { useGitActions, type GitActionResult } from "./composables/useGitActions";
 import type { BranchInfo, CommitInfo, FileDiff, IntegrationUndoTarget, StashInfo } from "@/types/git";
 import { useCommitSearch } from "./composables/useCommitSearch";
+import type { SimilarCommitSearchTarget } from "./composables/useSimilarCommitSearch";
 import { useProjectLayout, type ProjectGroup } from "./composables/useProjectLayout";
 import { useRemoteSync, type RemoteSyncAction } from "./composables/useRemoteSync";
 import { authorMark, authorTone } from "./utils/author";
 import { dateKey, formatTime, groupLabel } from "./utils/date";
 import BranchPreviewDialog from "./components/BranchPreviewDialog.vue";
+import SimilarCommitsDialog from "./components/SimilarCommitsDialog.vue";
 import ProjectTools from "./components/ProjectTools.vue";
 import CommitSearchBox from "./components/CommitSearchBox.vue";
 import ReviewDialog from "./components/ReviewDialog.vue";
@@ -121,6 +124,9 @@ const dragOverPath = ref<string | null>(null);
 const branchOpen = ref(false);
 const branchButton = ref<HTMLButtonElement | null>(null);
 const branchPreview = ref<BranchPreviewTarget | null>(null);
+const similarCommitTarget = ref<SimilarCommitSearchTarget | null>(null);
+// 关闭相似提交弹窗后，将焦点还给打开菜单的提交行。
+let similarCommitTrigger: HTMLElement | null = null;
 const stashOpen = ref(false);
 
 // 单击会打开模态预览，必须等双击判定结束再执行，避免弹窗抢在第二次点击前出现。
@@ -133,6 +139,8 @@ const commitMenu = ref<{
   y: number;
   commit: CommitInfo;
   index: number;
+  /** 从菜单打开相似提交弹窗时，用于关闭后还原提交行焦点。 */
+  trigger: HTMLElement | null;
   /** 仅当前菜单实例可使用此查询结果，避免上一次右键覆盖当前选择。 */
   undoTarget: IntegrationUndoTarget | null;
 } | null>(null);
@@ -1686,7 +1694,8 @@ async function openCommitContext(event: MouseEvent, commit: CommitInfo, index: n
   stashOpen.value = false;
   projectMenu.value = null;
   branchMenu.value = null;
-  commitMenu.value = { x: event.clientX, y: event.clientY, commit, index, undoTarget: null };
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  commitMenu.value = { x: event.clientX, y: event.clientY, commit, index, trigger, undoTarget: null };
   const openedMenu = commitMenu.value;
   const repo = activeRepo.value;
   const branch = currentBranch.value;
@@ -1749,6 +1758,48 @@ function copyCommitMessage(commit: CommitInfo): void {
   const commitMessage = commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject;
   void copyText(commitMessage, "已复制提交信息");
   commitMenu.value = null;
+}
+
+/**
+ * 打开独立的相似提交弹窗，沿用主列表的分支范围和右键选中的提交标题。
+ * @returns void
+ */
+function openSimilarCommitSearch(): void {
+  // 1. 只有菜单仍有关联提交和仓库时，才能固定本次查找的来源。
+  const menu = commitMenu.value;
+  const repo = activeRepo.value;
+  if (!menu || !repo) {
+    return;
+  }
+
+  // 2. 在收起菜单前记录查询范围和触发行，弹窗使用独立的筛选条件。
+  const allBranches = commitStore.queryAllBranches;
+  const branch = commitStore.queryBranch ?? currentBranch.value?.full_name ?? null;
+  similarCommitTrigger = menu.trigger;
+  closeFloatingPanels();
+  similarCommitTarget.value = {
+    repoId: repo.id,
+    repoPath: repo.path,
+    repoName: layout.displayName(repo),
+    scopeLabel: branchLabel.value,
+    branch: allBranches ? null : branch,
+    allBranches,
+    commitSubject: menu.commit.subject,
+  };
+}
+
+/**
+ * 关闭相似提交弹窗，并将焦点还给仍留在列表中的触发行。
+ * @returns 弹窗已卸载且焦点恢复后完成
+ */
+async function closeSimilarCommitSearch(): Promise<void> {
+  const trigger = similarCommitTrigger;
+  similarCommitTrigger = null;
+  similarCommitTarget.value = null;
+  await nextTick();
+  if (trigger?.isConnected) {
+    trigger.focus({ preventScroll: true });
+  }
 }
 
 /**
@@ -2182,8 +2233,8 @@ function onDocumentKeydown(event: KeyboardEvent): void {
   if (undoIntegrationDialog.value) {
     return;
   }
-  // 预览和提交审查各自处理键盘，避免快捷键将焦点移到弹窗外。
-  if (branchPreview.value) {
+  // 分支预览、相似提交和它们打开的审查各自处理键盘，避免焦点移到弹窗外。
+  if (branchPreview.value || similarCommitTarget.value) {
     return;
   }
   if (event.key === "Escape") {
@@ -2267,6 +2318,8 @@ watch(() => gitOperation.value, (state) => {
 watch(() => repoStore.activeId, async (id) => {
   undoIntegrationDialog.value = null;
   branchPreview.value = null;
+  similarCommitTarget.value = null;
+  similarCommitTrigger = null;
   if (!id) {
     showStartupHistoryNotice.value = false;
     return;
@@ -2881,6 +2934,7 @@ onUnmounted(() => {
         <span>查看选中的 {{ selectedCommitCount }} 个提交改动</span>
       </button>
       <button class="menu-item" type="button" @click="openReview(commitMenu.index); commitMenu = null"><span>查看改动</span><span class="hint">Enter</span></button>
+      <button v-if="commitMenu.commit.subject.trim()" class="menu-item" type="button" @click="openSimilarCommitSearch"><span>查询相似提交</span></button>
       <button class="menu-item" type="button" @click="cherryPickCommit(commitMenu.commit)"><span>Cherry-pick 到当前分支</span></button>
       <button class="menu-item" type="button" @click="openCreateFromCommitDialog(commitMenu.commit)"><span>以此为基线创建新分支…</span></button>
       <div class="menu-sep"></div>
@@ -3087,6 +3141,7 @@ onUnmounted(() => {
     </div>
 
     <BranchPreviewDialog v-if="branchPreview" :target="branchPreview" @close="closeBranchPreview" @conflict="openConflictFromPreview" />
+    <SimilarCommitsDialog v-if="similarCommitTarget" :target="similarCommitTarget" @close="closeSimilarCommitSearch" />
 
     <ReviewDialog
       v-if="reviewOpen && reviewCommit && activeRepo"

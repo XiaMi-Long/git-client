@@ -9,6 +9,7 @@
   @changeLog
     - 2026-11-07: Created. 提取原提交搜索界面，供两个历史视图共用。
     - 2026-11-10: Updated. 作者筛选支持多选与清除，输入框内汇总已选作者。
+    - 2026-11-21: Updated. 相似提交弹窗可使用仅搜索提交信息的占位文案。
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useId } from "vue";
@@ -18,6 +19,8 @@ import { authorMark, authorTone } from "../utils/author";
 const props = defineProps<{
   /** 当前历史视图独立创建的搜索状态和交互方法。 */
   controller: ReturnType<typeof useCommitSearch>;
+  /** 专用搜索视图可指定与实际匹配范围对应的提示。 */
+  placeholder?: string;
 }>();
 
 const searchRegion = ref<HTMLDivElement | null>(null);
@@ -79,7 +82,7 @@ onUnmounted(() => document.removeEventListener("mousedown", closeOptionsOnOutsid
         v-model="localSearch"
         class="search-input"
         type="search"
-        placeholder="搜索提交、作者或哈希"
+        :placeholder="props.placeholder ?? '搜索提交、作者或哈希'"
         aria-label="搜索提交"
         :aria-controls="authorOptionsOpen ? authorOptionsId : undefined"
         autocomplete="off"

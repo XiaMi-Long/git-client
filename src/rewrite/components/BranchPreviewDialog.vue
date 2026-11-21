@@ -15,6 +15,7 @@
     - 2026-11-13: Updated. 分支预览按窗口宽度展开，移除大屏固定宽度上限。
     - 2026-11-17: Updated. 提交列表支持 Shift/Ctrl 多选，并可按累计或逐条批量审查。
     - 2026-11-17: Updated. 远程分支预览同样提供关键词与作者搜索。
+    - 2026-11-21: Updated. 打开弹窗时显示所选分支的完整历史，可切换到主线。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
@@ -75,7 +76,7 @@ let menuTrigger: HTMLElement | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 const {
   branch, commits, loading, loadingMore, hasMore, historyError, paginationError,
-  commitSearch, hasCommitFilters, showAllCommits, setShowAllCommits,
+  commitSearch, hasCommitFilters, mainlineOnly, setMainlineOnly,
   activeAction, actionResult, gitBusy, hasKnownUpstream, isDiverged, canFetch, canPull, canPush,
   refreshPreview, loadMore, execute,
 } = useBranchPreview(props.target);
@@ -584,20 +585,20 @@ onBeforeUnmount(() => {
           </div>
           <h2 id="branch-preview-title" :title="target.branch.name">{{ target.branch.name }}</h2>
         </div>
-        <!-- 历史范围：默认只看本分支主干，避免合并进来的其他分支提交重复出现 -->
+        <!-- 历史范围固定在所选分支内，可切换完整历史和主线。 -->
         <div class="preview-scope" role="group" aria-label="历史范围">
           <button
             type="button"
-            :class="{ active: !showAllCommits }"
-            title="只看本分支主干上的提交，不含合并进来的其他分支"
-            @click="setShowAllCommits(false)"
+            :class="{ active: !mainlineOnly }"
+            title="显示所选分支的完整历史，包含已合入的提交"
+            @click="setMainlineOnly(false)"
           >仅本分支</button>
           <button
             type="button"
-            :class="{ active: showAllCommits }"
-            title="显示完整历史，包含合并进来的其他分支提交"
-            @click="setShowAllCommits(true)"
-          >全部</button>
+            :class="{ active: mainlineOnly }"
+            title="只沿第一父提交查看所选分支的主线历史"
+            @click="setMainlineOnly(true)"
+          >主线</button>
         </div>
         <!-- 本地和远程分支共用同一套关键词/作者筛选，查询范围固定在打开时的提交快照 -->
         <CommitSearchBox class="preview-search" :controller="commitSearch" />

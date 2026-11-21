@@ -77,6 +77,9 @@ pub struct LogQuery {
     pub branch: Option<String>,
     /// 搜索关键词（匹配提交信息/作者/哈希）
     pub search: Option<String>,
+    /// 仅按字面匹配提交信息，沿用分页和精确作者筛选。
+    #[serde(default)]
+    pub search_message_only: bool,
     /// 精确作者筛选，多个作者之间按 Git 的 OR 语义匹配；旧调用方可省略。
     #[serde(default)]
     pub authors: Vec<CommitAuthor>,
@@ -89,7 +92,7 @@ pub struct LogQuery {
     #[serde(default)]
     pub topo_order: bool,
     /// 只沿第一父提交遍历（--first-parent）
-    /// 用于分支预览的「仅本分支」视图：合进来的其他分支提交不会出现在结果里
+    /// 分支预览的「主线」筛选会启用该参数，跳过合并提交的其他父提交路径。
     #[serde(default)]
     pub first_parent: bool,
     /// 起始时间（Git 可识别的日期表达式）
@@ -107,6 +110,7 @@ impl Default for LogQuery {
             limit: PAGE_SIZE,
             branch: None,
             search: None,
+            search_message_only: false,
             authors: Vec::new(),
             all_branches: false,
             path: None,
@@ -135,7 +139,7 @@ impl GitExecutor {
         // 搜索模式：提交信息 / 作者 / 哈希 任一匹配（OR），合并去重
         if let Some(search) = &query.search {
             let s = search.trim();
-            if !s.is_empty() {
+            if !s.is_empty() && !query.search_message_only {
                 return Self::get_log_search(repo_path, query, s).await;
             }
         }
@@ -143,9 +147,23 @@ impl GitExecutor {
         Self::get_log_page(repo_path, query).await
     }
 
-    /// 读取指定范围及作者的一页提交，供普通浏览和作者命中关键词时复用。
+    /// 读取指定范围及作者的一页提交，支持按字面匹配提交信息。
     async fn get_log_page(repo_path: &Path, query: &LogQuery) -> GitResult<Vec<CommitInfo>> {
         let mut args = Self::build_log_args(query, None);
+        if query.search_message_only {
+            if let Some(keyword) = query
+                .search
+                .as_deref()
+                .map(str::trim)
+                .filter(|keyword| !keyword.is_empty())
+            {
+                // 作者筛选已使用基本正则，按相同规则转义消息，避免提交标题里的方括号被当作通配表达式。
+                if query.authors.is_empty() {
+                    args.push("--basic-regexp".to_string());
+                }
+                args.push(format!("--grep={}", Self::escape_basic_regexp(keyword)));
+            }
+        }
         Self::append_pathspec(&mut args, query);
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = Self::run_git(repo_path, &arg_refs).await?;
@@ -234,7 +252,7 @@ impl GitExecutor {
             args.push("--topo-order".to_string());
         }
 
-        // 只看本分支主干：合并进来的其他分支提交不再出现在列表里。
+        // 同一分支同步合入的提交如果只在其他父提交路径上，主线查询也会跳过它们。
         if query.first_parent {
             args.push("--first-parent".to_string());
         }
@@ -266,15 +284,19 @@ impl GitExecutor {
     /// 将 Git 作者头中的完整身份转成带边界的基本正则，按字面匹配姓名和邮箱。
     fn exact_author_arg(author: &CommitAuthor) -> String {
         let identity = format!("{} <{}>", author.name, author.email);
-        let mut arg = String::from("--author=^");
-        for character in identity.chars() {
+        format!("--author=^{}$", Self::escape_basic_regexp(&identity))
+    }
+
+    /// 转义 Git 基本正则的元字符，让提交信息与作者身份都按字面内容匹配。
+    fn escape_basic_regexp(literal: &str) -> String {
+        let mut pattern = String::with_capacity(literal.len());
+        for character in literal.chars() {
             if matches!(character, '\\' | '.' | '[' | '*' | '^' | '$') {
-                arg.push('\\');
+                pattern.push('\\');
             }
-            arg.push(character);
+            pattern.push(character);
         }
-        arg.push('$');
-        arg
+        pattern
     }
 
     /// 用代表提交单次检查关键词是否命中作者身份，避免把精确作者条件混入关键词探测。
