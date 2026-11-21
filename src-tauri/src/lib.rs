@@ -76,6 +76,8 @@ pub fn run() {
             commands::git_cherry_pick,
             commands::git_cherry_pick_continue,
             commands::git_cherry_pick_abort,
+            commands::git_get_integration_undo_target,
+            commands::git_undo_integration,
             commands::git_pull,
             commands::git_fetch,
             commands::git_push,

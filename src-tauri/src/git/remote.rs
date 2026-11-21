@@ -387,7 +387,7 @@ impl GitExecutor {
     }
 
     /// 按实际退出码判断两个提交的祖先关系，查询失败时停止快进。
-    async fn branch_commit_is_ancestor(repo_path: &Path, ancestor: &str, descendant: &str) -> GitResult<bool> {
+    pub(super) async fn branch_commit_is_ancestor(repo_path: &Path, ancestor: &str, descendant: &str) -> GitResult<bool> {
         let result = Self::run_git_raw(
             Some(repo_path),
             &["merge-base", "--is-ancestor", ancestor, descendant],

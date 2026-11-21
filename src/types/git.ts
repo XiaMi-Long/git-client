@@ -66,6 +66,20 @@ export interface BranchPreviewInfo extends BranchInfo {
   upstream_gone: boolean;
 }
 
+/** 用户二次确认绑定的合入操作。前端仅回传此快照，实际状态由 Git 重新校验。 */
+export interface IntegrationUndoTarget {
+  /** 选中提交所在的当前本地分支完整引用。 */
+  branch_ref: string;
+  /** 合入结束时的分支顶端提交。 */
+  head_hash: string;
+  /** 已核实的合入前提交，不一定是顶端提交的直接父节点。 */
+  previous_hash: string;
+  /** 确认期间不得改变的上游同步目标。 */
+  upstream: BranchUpstreamTarget;
+  /** 确认时已与服务器核对的上游提交。 */
+  upstream_hash: string;
+}
+
 /** 存储（stash）条目 */
 export interface StashInfo {
   /** stash 引用名，如 stash@{0} */

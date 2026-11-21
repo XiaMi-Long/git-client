@@ -6,6 +6,7 @@
  * @changeLog
  *   - 2026-11-04: Created. 分支/远程/冲突/储藏/cherry-pick 真实命令与刷新。
  *   - 2026-11-06: Updated. 与顶栏远程同步共享互斥器，并隔离过期的冲突状态请求。
+ *   - 2026-11-21: Updated. 接入最近一次未推送合入的资格核对和安全回退。
  */
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,6 +16,7 @@ import type {
   BranchInfo,
   BranchOperationResult,
   FileDiff,
+  IntegrationUndoTarget,
   OperationState,
   RemoteResult,
 } from "@/types/git";
@@ -510,6 +512,45 @@ export function useGitActions() {
     });
   }
 
+  /**
+   * 查询右键选中的分支顶端是否可以撤销。查询失败时不显示入口，不打断其他菜单操作。
+   * @param path - 右键发生时的仓库路径
+   * @param branchRef - 当前分支的完整引用
+   * @param headHash - 右键选中的完整提交哈希
+   * @returns 可供二次确认的撤销对象，无法确认时为 null
+   */
+  function getIntegrationUndoTarget(
+    path: string,
+    branchRef: string,
+    headHash: string,
+  ): Promise<IntegrationUndoTarget | null> {
+    return invoke<IntegrationUndoTarget | null>("git_get_integration_undo_target", { path, branchRef, headHash })
+      .catch(() => null);
+  }
+
+  /**
+   * 撤销用户确认的合入，并更新分支、提交历史和工作区状态。
+   * @param path - 确认时绑定的原仓库路径
+   * @param target - 后端核对过的合入对象，执行时仍会再次校验
+   * @returns 回退的操作结果，失败时沿用 Git 操作的统一反馈
+   */
+  async function undoIntegration(path: string, target: IntegrationUndoTarget): Promise<GitActionResult> {
+    return run("取消本次合并", async () => {
+      // 即使两个仓库的分支和哈希相同，也不能把确认用到切换后的项目。
+      if (repoStore.activeRepo?.path !== path) {
+        return { ok: false, message: "仓库未打开" };
+      }
+      try {
+        await invoke<void>("git_undo_integration", { path, target });
+        return { ok: true, message: "" };
+      } finally {
+        if (repoStore.activeRepo?.path === path) {
+          await refreshAll();
+        }
+      }
+    });
+  }
+
   return {
     busy,
     operation,
@@ -539,5 +580,7 @@ export function useGitActions() {
     dropStashes,
     showStash,
     cherryPick,
+    getIntegrationUndoTarget,
+    undoIntegration,
   };
 }

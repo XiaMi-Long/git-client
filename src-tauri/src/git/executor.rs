@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+use super::integration::stale_undo_target;
 use super::types::{GitError, GitResult};
 
 // Windows 下 GUI 进程创建控制台子进程（git.exe）时默认分配新控制台窗口，
@@ -128,6 +129,95 @@ impl GitExecutor {
         cmd.env("GIT_TERMINAL_PROMPT", "0");
 
         cmd.output().await.map_err(Into::into)
+    }
+
+    /// 在 Git 锁住 HEAD 和当前分支后更新工作区，避免把确认之后出现的新提交一起回退。
+    pub(super) async fn update_head_for_integration_undo(
+        repo_path: &Path,
+        branch_ref: &str,
+        head_hash: &str,
+        previous_hash: &str,
+        tracking_ref: &str,
+        tracking_hash: &str,
+    ) -> GitResult<()> {
+        // 1. 让 Git 校验旧哈希并持有引用锁。只使用已从本仓库解析、校验过的完整哈希。
+        let mut cmd = Command::new("git");
+        cmd.args(QUOTE_PATH_KEEP_RAW);
+        cmd.args(["update-ref", "--stdin", "-m", "GitTrail: undo local integration"]);
+        no_window(&mut cmd);
+        cmd.current_dir(repo_path);
+        cmd.env("LC_ALL", "C");
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.spawn()?;
+        let (Some(mut input), Some(output), Some(mut errors)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        else {
+            return Err(GitError::Io("无法打开 Git 引用事务的输入输出".to_owned()));
+        };
+
+        // 2. prepare 后复核检出的分支与工作区，再用两棵树更新文件，让 Git 拒绝覆盖本地文件。
+        let mut updated_worktree = false;
+        let mut stderr = Vec::new();
+        let (updated, read_errors) = tokio::join!(
+            async {
+                let result: GitResult<()> = async {
+                    let mut replies = BufReader::new(output).lines();
+                    let request = format!("start\nupdate HEAD {previous_hash} {head_hash}\nverify {tracking_ref} {tracking_hash}\nprepare\n");
+                    input.write_all(request.as_bytes()).await?;
+                    let started = replies.next_line().await?.as_deref() == Some("start: ok");
+                    let prepared = replies.next_line().await?.as_deref() == Some("prepare: ok");
+                    if !started || !prepared {
+                        return Err(stale_undo_target());
+                    }
+                    let actual_ref = Self::run_git(repo_path, &["symbolic-ref", "--quiet", "--no-recurse", "HEAD"]).await?;
+                    let is_confirmed_branch = actual_ref.trim_end() == branch_ref;
+                    if !is_confirmed_branch || !Self::is_integration_undo_worktree_clean(repo_path, branch_ref).await? {
+                        return Err(stale_undo_target());
+                    }
+                    Self::update_integration_undo_tree(repo_path, head_hash, previous_hash).await?;
+                    updated_worktree = true;
+                    input.write_all(b"commit\n").await?;
+                    // 等待提交确认再关闭输出管道，否则 Git 可能已更新引用却来不及返回结果。
+                    if replies.next_line().await?.as_deref() != Some("commit: ok") {
+                        return Err(stale_undo_target());
+                    }
+                    Ok(())
+                }.await;
+
+                // 未提交时关闭输入会释放 Git 引用锁；同时读取 stderr，避免命令因输出管道阻塞。
+                drop(input);
+                result
+            },
+            errors.read_to_end(&mut stderr),
+        );
+        let status = child.wait().await?;
+        if updated.is_ok() && status.success() {
+            return Ok(());
+        }
+
+        // 3. 文件已更新却未能写入引用时，只在确认仍处于原分支和原提交后尝试还原文件。
+        if updated_worktree {
+            let current_ref = Self::run_git(repo_path, &["symbolic-ref", "--quiet", "--no-recurse", "HEAD"]).await?;
+            let current_hash = Self::run_git(repo_path, &["rev-parse", "--verify", "HEAD"]).await?;
+            if current_ref.trim_end() == branch_ref {
+                if current_hash.trim_end() == previous_hash {
+                    return Ok(());
+                }
+                if current_hash.trim_end() == head_hash {
+                    Self::update_integration_undo_tree(repo_path, previous_hash, head_hash).await?;
+                }
+            }
+        }
+        read_errors?;
+        let stderr = String::from_utf8_lossy(&stderr);
+        if updated.is_err() && stderr.trim().is_empty() {
+            return updated;
+        }
+        Err(GitError::CommandFailed {
+            stderr: stderr.trim().to_owned(),
+            exit_code: status.code(),
+        })
     }
 
     /// 获取仓库根目录（git rev-parse --show-toplevel）

@@ -11,6 +11,7 @@ pub mod blame;
 pub mod branch;
 pub mod remote;
 pub mod stash;
+pub mod integration;
 
 use std::path::PathBuf;
 
@@ -25,6 +26,7 @@ pub use blame::BlameLine;
 pub use branch::{BranchInfo, TagInfo, BranchOperationResult, BranchPreviewInfo, BranchUpstreamTarget, CompareResult};
 pub use remote::{BranchSyncAction, RemoteResult, OperationState};
 pub use stash::StashInfo;
+pub use integration::IntegrationUndoTarget;
 
 /// git 版本检测结果
 #[derive(Debug, Clone, Serialize)]

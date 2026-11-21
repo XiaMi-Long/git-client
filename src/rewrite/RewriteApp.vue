@@ -36,6 +36,7 @@
     - 2026-11-16: Updated. 提交列表支持 Shift/Ctrl 多选与合并审查，普通点击仍直接打开单提交审查。
     - 2026-11-16: Updated. 顶栏和冲突条增加「刷新」入口，外部解决冲突后自动同步操作状态并收起弹窗。
     - 2026-11-19: Updated. 提交右键菜单支持以该提交为基线创建本地分支。
+    - 2026-11-21: Updated. 提交右键菜单支持安全撤销当前分支最新一次未推送的合入。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -51,7 +52,7 @@ import { useRepoWatcher } from "@/composables/useRepoWatcher";
 import AppSelect from "@/components/AppSelect.vue";
 import type { BranchPreviewTarget } from "./composables/useBranchPreview";
 import { useGitActions, type GitActionResult } from "./composables/useGitActions";
-import type { BranchInfo, CommitInfo, FileDiff, StashInfo } from "@/types/git";
+import type { BranchInfo, CommitInfo, FileDiff, IntegrationUndoTarget, StashInfo } from "@/types/git";
 import { useCommitSearch } from "./composables/useCommitSearch";
 import { useProjectLayout, type ProjectGroup } from "./composables/useProjectLayout";
 import { useRemoteSync, type RemoteSyncAction } from "./composables/useRemoteSync";
@@ -127,7 +128,17 @@ const BRANCH_SINGLE_CLICK_DELAY = 240;
 let branchClickTimer: ReturnType<typeof setTimeout> | null = null;
 
 const projectMenu = ref<{ x: number; y: number; repo: RepoTab } | null>(null);
-const commitMenu = ref<{ x: number; y: number; commit: CommitInfo; index: number } | null>(null);
+const commitMenu = ref<{
+  x: number;
+  y: number;
+  commit: CommitInfo;
+  index: number;
+  /** 仅当前菜单实例可使用此查询结果，避免上一次右键覆盖当前选择。 */
+  undoTarget: IntegrationUndoTarget | null;
+} | null>(null);
+const undoIntegrationDialog = ref<{ path: string; target: IntegrationUndoTarget } | null>(null);
+const undoIntegrationCancel = ref<HTMLButtonElement | null>(null);
+const undoIntegrationConfirm = ref<HTMLButtonElement | null>(null);
 const branchMenu = ref<{ x: number; y: number; branch: BranchInfo; remote: boolean } | null>(null);
 const groupMenu = ref<{ x: number; y: number; group: ProjectGroup } | null>(null);
 const projectDialog = ref<{ mode: "rename" | "remove"; repo: RepoTab; value: string } | null>(null);
@@ -326,6 +337,15 @@ const hasWorkingChanges = computed(() => {
   const status = activeRepo.value?.status;
   if (!status) return false;
   return status.staged.length + status.unstaged.length + status.untracked.length + status.conflicted.length > 0;
+});
+// 菜单打开后分支或工作区仍可能刷新；查询结果不能盖过新读到的状态。
+const commitUndoTarget = computed(() => {
+  const target = commitMenu.value?.undoTarget;
+  if (!target) {
+    return null;
+  }
+  const isCurrentTarget = currentBranch.value?.full_name === target.branch_ref && canCheckUndoIntegration(target.head_hash);
+  return isCurrentTarget ? target : null;
 });
 const conflictLabel = computed(() => {
   if (gitOperation.value === "cherrypicking") return "挑拣冲突";
@@ -1642,18 +1662,82 @@ async function cherryPickCommit(commit: CommitInfo): Promise<void> {
 }
 
 /**
- * 打开提交右键菜单。
- * @param event - 右键事件
- * @param commit - 提交
- * @param index - 当前列表索引
- * @returns {void}
+ * 先用已加载的仓库状态过滤右键目标，避免每个提交都发起 Git 查询。
+ * @param headHash - 用户右键选中的提交哈希
+ * @returns 选中提交是否有资格进一步核对能否撤销
  */
-function openCommitContext(event: MouseEvent, commit: CommitInfo, index: number): void {
+function canCheckUndoIntegration(headHash: string): boolean {
+  const branch = currentBranch.value;
+  const isCurrentUnpushedHead = !!branch?.upstream && branch.ahead > 0 && branch.commit_hash === headHash;
+  const isWorktreeReady = !!activeRepo.value?.status && !hasWorkingChanges.value && gitOperation.value === "normal";
+  return isCurrentUnpushedHead && isWorktreeReady && !syncDisabled.value;
+}
+
+/**
+ * 先打开提交右键菜单，再异步补充已核实的撤销操作。
+ * @param event - 右键事件
+ * @param commit - 用户操作的提交
+ * @param index - 当前列表索引
+ * @returns 菜单的撤销资格查询结束时完成
+ */
+async function openCommitContext(event: MouseEvent, commit: CommitInfo, index: number): Promise<void> {
+  // 1. 常用操作不需要等待仓库或远程查询，可以立即使用。
   branchOpen.value = false;
   stashOpen.value = false;
   projectMenu.value = null;
   branchMenu.value = null;
-  commitMenu.value = { x: event.clientX, y: event.clientY, commit, index };
+  commitMenu.value = { x: event.clientX, y: event.clientY, commit, index, undoTarget: null };
+  const openedMenu = commitMenu.value;
+  const repo = activeRepo.value;
+  const branch = currentBranch.value;
+  if (!repo || !branch) {
+    return;
+  }
+  if (!canCheckUndoIntegration(commit.hash)) {
+    return;
+  }
+
+  // 2. 菜单收起、重新打开或切换仓库后，不能采用上一个请求的结果。
+  const target = await actions.getIntegrationUndoTarget(repo.path, branch.full_name, commit.hash);
+  if (commitMenu.value === openedMenu && activeRepo.value?.id === repo.id) {
+    openedMenu.undoTarget = target;
+  }
+}
+
+/**
+ * 二次确认已核实的本地合入，将默认焦点放在取消按钮，降低键盘误操作风险。
+ * @returns 确认框出现并移动焦点后完成
+ */
+async function openUndoIntegrationDialog(): Promise<void> {
+  const path = activeRepo.value?.path;
+  const target = commitUndoTarget.value;
+  if (!path || !target) {
+    return;
+  }
+  closeContextMenus();
+  undoIntegrationDialog.value = { path, target };
+  await nextTick();
+  undoIntegrationCancel.value?.focus();
+}
+
+/**
+ * 使用已确认的仓库和提交执行回退；失败时只显示一次已有的 Git 操作反馈。
+ * @returns 回退和状态刷新结束时完成
+ */
+async function confirmUndoIntegration(): Promise<void> {
+  const dialog = undoIntegrationDialog.value;
+  if (!dialog) {
+    return;
+  }
+  const canConfirm = !syncDisabled.value && activeRepo.value?.path === dialog.path;
+  if (!canConfirm) {
+    return;
+  }
+  undoIntegrationDialog.value = null;
+  const result = await actions.undoIntegration(dialog.path, dialog.target);
+  if (!result.ok) {
+    showActionResult(result);
+  }
 }
 
 /**
@@ -2094,6 +2178,10 @@ function onDocumentKeydown(event: KeyboardEvent): void {
   if (event.target instanceof Element && event.target.closest(".project-command-dialog")) {
     return;
   }
+  // 撤销确认框使用自己的 Esc 和焦点顺序，避免在确认期间打开背后的搜索框。
+  if (undoIntegrationDialog.value) {
+    return;
+  }
   // 预览和提交审查各自处理键盘，避免快捷键将焦点移到弹窗外。
   if (branchPreview.value) {
     return;
@@ -2177,6 +2265,7 @@ watch(() => gitOperation.value, (state) => {
 });
 
 watch(() => repoStore.activeId, async (id) => {
+  undoIntegrationDialog.value = null;
   branchPreview.value = null;
   if (!id) {
     showStartupHistoryNotice.value = false;
@@ -2798,6 +2887,10 @@ onUnmounted(() => {
       <button class="menu-item" type="button" @click="copyCommitMessage(commitMenu.commit)"><span>复制提交信息</span></button>
       <button class="menu-item" type="button" @click="copyText(commitMenu.commit.short_hash, '已复制短哈希'); commitMenu = null"><span>复制短哈希</span></button>
       <button class="menu-item" type="button" @click="copyText(commitMenu.commit.hash, '已复制完整哈希'); commitMenu = null"><span>复制完整哈希</span></button>
+      <template v-if="commitUndoTarget">
+        <div class="menu-sep"></div>
+        <button class="menu-item danger" type="button" @click="openUndoIntegrationDialog"><span>取消本次合并</span></button>
+      </template>
     </div>
 
     <div v-if="branchMenu" class="context-menu" :style="{ left: `${branchMenu.x}px`, top: `${branchMenu.y}px` }" role="menu">
@@ -2851,6 +2944,37 @@ onUnmounted(() => {
           <button class="action-btn" :class="branchDialogCopy.danger ? 'danger' : 'primary'" type="button" :disabled="!!actionBusy" @click="confirmBranchDialog()">
             {{ actionBusy ? "处理中…" : branchDialogCopy.confirm }}
           </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="undoIntegrationDialog" class="action-backdrop" @click.self="undoIntegrationDialog = null">
+      <section
+        class="action-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="undo-integration-title"
+        aria-describedby="undo-integration-description"
+        @keydown.esc.stop.prevent="undoIntegrationDialog = null"
+      >
+        <h2 id="undo-integration-title" class="action-title">取消本次合并</h2>
+        <p id="undo-integration-description" class="action-desc">当前分支将回到合入前，本次合入的改动将被移除。</p>
+        <div class="action-actions">
+          <button
+            ref="undoIntegrationCancel"
+            class="action-btn secondary"
+            type="button"
+            @keydown.tab.prevent="undoIntegrationConfirm?.focus()"
+            @click="undoIntegrationDialog = null"
+          >取消</button>
+          <button
+            ref="undoIntegrationConfirm"
+            class="action-btn danger"
+            type="button"
+            :disabled="syncDisabled"
+            @keydown.tab.prevent="undoIntegrationCancel?.focus()"
+            @click="confirmUndoIntegration"
+          >确定</button>
         </div>
       </section>
     </div>

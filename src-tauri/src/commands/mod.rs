@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::git::{
     BlameLine, BranchInfo, BranchOperationResult, BranchPreviewInfo, BranchSyncAction, BranchUpstreamTarget,
     CommitActivityDay, CommitAuthor, CommitDiff, CommitInfo, CompareResult, FileDiff, GitExecutor,
-    GitVersionInfo, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
+    GitVersionInfo, IntegrationUndoTarget, LogQuery, OperationState, RemoteResult, StashInfo, TagInfo, WorkingAreaStatus,
 };
 
 /// 将路径字符串转为 PathBuf
@@ -388,6 +388,26 @@ pub async fn git_cherry_pick(
         .map_err(|e| e.to_string())
 }
 
+/// 查找当前提交是否是可以撤销的最近一次未推送合入。
+#[tauri::command]
+pub async fn git_get_integration_undo_target(
+    path: String,
+    branch_ref: String,
+    head_hash: String,
+) -> Result<Option<IntegrationUndoTarget>, String> {
+    GitExecutor::get_integration_undo_target(&to_path(&path), &branch_ref, &head_hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 按二次确认的分支和提交回退尚未推送的合入。
+#[tauri::command]
+pub async fn git_undo_integration(path: String, target: IntegrationUndoTarget) -> Result<(), String> {
+    GitExecutor::undo_integration(&to_path(&path), &target)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// cherry-pick 继续
 #[tauri::command]
 pub async fn git_cherry_pick_continue(path: String) -> Result<RemoteResult, String> {
@@ -695,6 +715,8 @@ pub fn all_commands() -> Vec<&'static str> {
         "git_cherry_pick",
         "git_cherry_pick_continue",
         "git_cherry_pick_abort",
+        "git_get_integration_undo_target",
+        "git_undo_integration",
         "git_pull",
         "git_fetch",
         "git_push",
